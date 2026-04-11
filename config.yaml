@@ -1,0 +1,66 @@
+# 三体模拟经营游戏配置文件
+
+game:
+  title: "三体文明"
+  resolution: [1280, 720]
+  fps: 60
+  fullscreen: false        # 是否全屏
+  resizable: true          # 是否可调整窗口大小
+  center: true             # 窗口居中显示
+
+simulation:
+  time_scale: 1.0        # 时间流逝速度
+  accuracy: "medium"     # 积分精度
+  initial_paused: false
+
+camera:
+  fov: 500
+  default_distance: 500
+  move_speed: 5
+  rotation_sensitivity: 0.005
+  zoom_speed: 10
+
+colors:
+  star_1: [255, 200, 100]    # 橙色
+  star_2: [100, 200, 255]    # 蓝色
+  star_3: [255, 100, 100]    # 红色
+  earth: [100, 255, 150]
+  background: [10, 10, 20]
+  ui_bg: [30, 30, 50]
+  ui_border: [80, 80, 120]
+  ui_text: [200, 200, 255]
+
+stars:
+  - name: "Alpha"
+    mass: 1000.0
+    position: [0, 0, 0]
+    velocity: [0, 0, 0]
+    color: [255, 200, 100]
+    radius: 25.0
+  - name: "Beta"
+    mass: 800.0
+    position: [200, 0, 0]
+    velocity: [0, 0, 2]
+    color: [100, 200, 255]
+    radius: 20.0
+  - name: "Gamma"
+    mass: 600.0
+    position: [-100, 0, 100]
+    velocity: [0, 0, -1.5]
+    color: [255, 100, 100]
+    radius: 15.0
+
+initial_entities:
+  resources:
+    - name: "minerals"
+      amount: 1000
+      max_storage: 10000
+      regeneration_rate: 1.0
+    - name: "energy"
+      amount: 500
+      max_storage: 5000
+      regeneration_rate: 0.5
+    - name: "food"
+      amount: 800
+      max_storage: 8000
+      regeneration_rate: 0.8
