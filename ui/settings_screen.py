@@ -458,6 +458,7 @@ class SettingsScreen(Screen):
 
     def on_back(self):
         """返回"""
+        # 直接返回上级界面，go_back有fallback处理
         self.screen_manager.go_back()
 
     def apply_display_settings(self):
@@ -478,6 +479,8 @@ class SettingsScreen(Screen):
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
+        # 重新设置UI以适应可能的窗口大小变化
+        self.setup_ui()
         self.load_settings()
         self.refresh_tab_content()
 

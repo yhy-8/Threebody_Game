@@ -233,10 +233,13 @@ class StarmapView(Screen):
         if self.ui_manager:
             self.ui_manager.render(screen)
 
-        # 渲染顶部按钮
-        self.back_button.render(screen)
-        self.pause_button.render(screen)
-        self.help_button.render(screen)
+        # 渲染顶部按钮（如果按钮存在）
+        if hasattr(self, 'back_button'):
+            self.back_button.render(screen)
+        if hasattr(self, 'pause_button'):
+            self.pause_button.render(screen)
+        if hasattr(self, 'help_button'):
+            self.help_button.render(screen)
 
         # 渲染游戏结束画面
         if self.game_over:

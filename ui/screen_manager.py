@@ -79,6 +79,10 @@ class Screen:
                 self.animation_progress = 0.0
                 self.finish_exit()
 
+    def setup_ui(self):
+        """设置UI - 子类可重写此方法"""
+        pass
+
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理输入事件，返回是否处理了事件"""
         return False
@@ -177,6 +181,22 @@ class ScreenManager:
             self.switch_to(previous, push_to_stack=False)
         elif fallback_screen:
             self.switch_to(fallback_screen, push_to_stack=False)
+        else:
+            # 如果没有fallback，尝试回到初始菜单
+            try:
+                self.switch_to(ScreenType.INITIAL_MENU, push_to_stack=False)
+            except:
+                # 如果连初始菜单都没有，不做任何操作
+                pass
+
+    def clear_stack_and_switch(self, screen_type: ScreenType, **kwargs):
+        """清空栈并切换到指定界面
+        用于从游戏内退出到主菜单时，确保清理完整的状态
+        """
+        # 清空栈
+        self.screen_stack.clear()
+        # 切换到目标界面，不推入栈
+        self.switch_to(screen_type, push_to_stack=False, **kwargs)
 
     def update(self, dt: float):
         """更新当前界面"""

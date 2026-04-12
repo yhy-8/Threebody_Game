@@ -201,6 +201,9 @@ def init_screen_manager(screen: pygame.Surface) -> ScreenManager:
     """初始化界面管理器并注册所有界面"""
     manager = ScreenManager()
 
+    # 清空之前的注册（防止重新初始化时重复注册）
+    manager.screens.clear()
+
     # 注册初始菜单
     initial_menu = InitialMenu(manager, screen)
     manager.register_screen(ScreenType.INITIAL_MENU, initial_menu)
@@ -303,6 +306,16 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.VIDEORESIZE:
+                # 窗口大小改变，重新创建窗口
+                screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
+                # 更新所有屏幕的尺寸引用
+                for scr in screen_manager.screens.values():
+                    scr.screen = screen
+                    scr.rect = screen.get_rect()
+                # 通知当前界面重新设置UI
+                if screen_manager.current_screen:
+                    screen_manager.current_screen.setup_ui()
             else:
                 # 先让界面管理器处理事件
                 if not screen_manager.handle_event(event):
@@ -360,120 +373,6 @@ def main():
 
     # 运行游戏主循环
     run_game_loop(config, screen_manager, screen)
-
-
-if __name__ == "__main__":
-    main()
-    running = True
-    while running:
-        # 计算delta time
-        dt = clock.tick(fps) / 1000.0  # 转换为秒
-
-        # 始终更新模拟器（两个界面都运行）
-        if not simulator.paused:
-            simulator.update(dt)
-
-        # 获取当前状态
-        state = simulator.get_state()
-
-        # 检测窗口大小变化（两种模式都检测）
-        new_screen_size = screen.get_size()
-        if new_screen_size != current_screen_size:
-            current_screen_size = new_screen_size
-
-        # 根据模式处理输入
-        if current_mode == SCREEN_MODE_MAIN:
-            # 2D主界面模式
-            running, next_mode = handle_input_main(
-                pygame.event.get(), simulator, current_screen_size[0], current_screen_size[1]
-            )
-
-            # 渲染2D主界面
-            render_main_screen(screen, simulator, *current_screen_size)
-
-            # 绘制右上角星图按钮
-            _draw_starmap_button(screen, current_screen_size[0], current_screen_size[1])
-
-        else:
-            # 3D星图模式
-            running, next_mode = handle_input_starmap(
-                pygame.event.get(), camera, simulator, ui_manager
-            )
-
-            # 窗口大小变化时重新创建UI
-            if new_screen_size != current_screen_size:
-                # 重新创建UI以适应新窗口大小
-                ui_manager = create_hud(state, *current_screen_size, camera)
-
-            if not game_over:
-                # 碰撞检测
-                if camera.check_collision(state["environment"]["stars"]):
-                    game_over = True
-
-            # 更新UI数据
-            update_hud(ui_manager, simulator.get_state(), camera)
-
-            # 渲染3D星图
-            scene.clear(tuple(config.get("colors", {}).get("background", [10, 10, 20])))
-            scene.render(simulator.get_state())
-            ui_manager.render(screen)
-
-            # 游戏结束画面最后渲染（在最上层）
-            if game_over:
-                scene.render_game_over(screen)
-
-        # 切换模式
-        if next_mode == "switch_starmap":
-            current_mode = SCREEN_MODE_STARMAP
-            # 重置摄像机位置（复用camera对象）
-            camera.position = np.array([0, 0, -camera_config.get("default_distance", 500)])
-            camera.rotation = [0, 0]
-            camera.fov = camera_config.get("fov", 500)
-            camera.speed = camera_config.get("move_speed", 5)
-            # 更新scene的camera引用
-            scene.camera = camera
-            # 重新创建UI
-            ui_manager = create_hud(state, *current_screen_size, camera)
-        elif next_mode == "switch_main":
-            current_mode = SCREEN_MODE_MAIN
-
-        # 翻转显示
-        pygame.display.flip()
-
-    pygame.quit()
-    sys.exit()
-
-
-def _draw_starmap_button(screen: pygame.Surface, width: int, height: int):
-    """绘制右上角星图按钮"""
-    # 按钮区域
-    btn_x = width - 160
-    btn_y = 10
-    btn_w = 150
-    btn_h = 50
-
-    # 按钮背景
-    btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
-
-    # 检测鼠标悬停
-    mouse_pos = pygame.mouse.get_pos()
-    is_hovered = btn_rect.collidepoint(mouse_pos)
-
-    # 颜色
-    if is_hovered:
-        bg_color = (60, 80, 120)
-    else:
-        bg_color = (40, 60, 100)
-
-    # 绘制按钮
-    pygame.draw.rect(screen, bg_color, btn_rect, border_radius=8)
-    pygame.draw.rect(screen, (100, 130, 180), btn_rect, 2, border_radius=8)
-
-    # 文字
-    font = get_font(28)
-    text_surf = font.render("星图", True, (200, 220, 255))
-    text_rect = text_surf.get_rect(center=btn_rect.center)
-    screen.blit(text_surf, text_rect)
 
 
 if __name__ == "__main__":

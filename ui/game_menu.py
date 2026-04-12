@@ -1,5 +1,6 @@
 """游戏内菜单 - 游戏过程中按ESC打开的菜单"""
 
+import os
 import pygame
 from typing import Optional, List
 
@@ -66,6 +67,7 @@ class GameMenu(Screen):
 
     def on_settings(self):
         """打开设置"""
+        from .screen_manager import ScreenType
         self.screen_manager.switch_to(ScreenType.SETTINGS)
 
     def on_save(self):
@@ -75,8 +77,10 @@ class GameMenu(Screen):
         if current_slot:
             self.save_game(current_slot)
         else:
-            # 没有当前存档，需要选择槽位
-            self.screen_manager.switch_to(ScreenType.SAVE_LOAD_DIALOG, mode='save')
+            # 没有当前存档，需要选择槽位 - 暂时不做处理
+            print("需要先选择存档槽位")
+            # TODO: 打开存档对话框
+            pass
 
     def save_game(self, slot: int):
         """保存游戏到指定槽位"""
@@ -105,7 +109,9 @@ class GameMenu(Screen):
     def on_main_menu(self):
         """返回主菜单"""
         # TODO: 如果有未保存的更改，显示确认对话框
-        self.screen_manager.switch_to(ScreenType.INITIAL_MENU)
+        from .screen_manager import ScreenType
+        # 使用清空栈的方式切换，避免栈污染
+        self.screen_manager.clear_stack_and_switch(ScreenType.INITIAL_MENU)
 
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""

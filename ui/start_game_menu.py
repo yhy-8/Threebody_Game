@@ -35,8 +35,17 @@ class SaveSlot:
             except:
                 pass
 
+    def update(self, dt: float):
+        """更新存档槽位状态"""
+        # 可以在这里添加动画或状态更新
+        pass
+
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理事件"""
+        # 空槽位不响应事件
+        if not self.has_save:
+            return False
+
         if event.type == pygame.MOUSEMOTION:
             self.hovered = self.rect.collidepoint(event.pos)
 
@@ -98,6 +107,7 @@ class StartGameMenu(Screen):
         self.save_slots: List[SaveSlot] = []
         self.showing_save_slots = False
         self.selected_slot: Optional[int] = None
+        self.back_button: Optional[MenuButton] = None  # 返回按钮（用于存档界面）
         self.setup_ui()
 
     def setup_ui(self):
@@ -147,6 +157,14 @@ class StartGameMenu(Screen):
 
         # 创建存档槽位（用于加载存档）
         self.create_save_slots()
+
+        # 创建返回按钮（用于存档界面）
+        self.back_button = MenuButton(
+            50, height - 80, 120, 45,
+            "← 返回",
+            callback=self.on_back,
+            font_size=28
+        )
 
         self.load_fonts()
 
@@ -212,7 +230,10 @@ class StartGameMenu(Screen):
             self.showing_save_slots = False
             self.selected_slot = None
         else:
-            self.screen_manager.go_back()
+            from .screen_manager import ScreenType
+            # 清空栈并返回到初始菜单
+            # 这确保不会有残留的游戏状态影响后续操作
+            self.screen_manager.clear_stack_and_switch(ScreenType.INITIAL_MENU)
 
     def find_latest_save(self) -> Optional[int]:
         """找到最新的存档槽位"""
@@ -250,6 +271,10 @@ class StartGameMenu(Screen):
         for slot in self.save_slots:
             slot._load_save_info()
 
+        # 重新初始化背景（确保窗口大小变化时背景正确）
+        width, height = self.screen.get_size()
+        self.background = StarBackground(width, height, star_count=250)
+
     def update(self, dt: float):
         """更新界面"""
         super().update(dt)
@@ -272,11 +297,19 @@ class StartGameMenu(Screen):
 
         # 处理存档槽位事件
         if self.showing_save_slots:
+            # 先处理返回按钮
+            if self.back_button and self.back_button.handle_event(event):
+                return True
+            # 处理存档槽位
             for slot in self.save_slots:
                 if slot.handle_event(event):
                     if slot.selected and slot.has_save:
                         self.load_game(slot.slot_id)
                     return True
+            # 点击空白区域不处理，防止穿透
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                return True
+            return False
 
         # 处理按钮事件
         for button in self.buttons:
@@ -344,12 +377,7 @@ class StartGameMenu(Screen):
             for slot in self.save_slots:
                 slot.render(screen, font, small_font)
 
-            # 返回按钮
-            back_btn = MenuButton(
-                50, height - 80, 120, 45,
-                "← 返回",
-                callback=self.on_back,
-                font_size=28
-            )
-            back_btn.update(0.016)
-            back_btn.render(screen)
+            # 渲染返回按钮
+            if self.back_button:
+                self.back_button.update(0.016)
+                self.back_button.render(screen)
