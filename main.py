@@ -13,7 +13,7 @@ from render.scene import SceneRenderer
 from render.ui import create_hud, update_hud, Button, UIManager, get_font, Panel, Label
 
 # UI模块 - 新的界面管理系统
-from ui import ScreenManager, InitialMenu, StartGameMenu, SettingsScreen, GameMenu
+from ui import ScreenManager, InitialMenu, StartGameMenu, SettingsScreen, GameMenu, MainScreen, StarmapView
 from ui.screen_manager import ScreenType
 
 
@@ -217,7 +217,13 @@ def init_screen_manager(screen: pygame.Surface) -> ScreenManager:
     game_menu = GameMenu(manager, screen)
     manager.register_screen(ScreenType.GAME_MENU, game_menu)
 
-    # TODO: 注册主游戏界面和星图界面（需要适配现有代码）
+    # 注册主游戏界面
+    main_screen = MainScreen(manager, screen)
+    manager.register_screen(ScreenType.MAIN_SCREEN, main_screen)
+
+    # 注册3D星图界面
+    starmap_view = StarmapView(manager, screen)
+    manager.register_screen(ScreenType.STARMAP_VIEW, starmap_view)
 
     return manager
 
@@ -247,6 +253,27 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
     # 创建场景渲染器
     scene = SceneRenderer(screen, camera)
 
+    # 初始化3D场景（用于StarmapView）
+    # 获取StarmapView实例并初始化
+    starmap_view = screen_manager.get_screen(ScreenType.STARMAP_VIEW)
+    if starmap_view:
+        starmap_view.init_3d_scene(simulator)
+        # 共享摄像机和场景渲染器
+        starmap_view.camera = camera
+        starmap_view.scene = scene
+        starmap_view.ui_manager = create_hud(simulator.get_state(), *screen.get_size(), camera)
+
+    # 为主界面设置模拟器引用（用于获取游戏状态）
+    main_screen = screen_manager.get_screen(ScreenType.MAIN_SCREEN)
+    if main_screen:
+        # 设置模拟器引用，让主界面可以获取游戏状态
+        main_screen.simulator = simulator
+
+    # 为StarmapView设置必要的引用
+    starmap_view = screen_manager.get_screen(ScreenType.STARMAP_VIEW)
+    if starmap_view:
+        starmap_view.simulator = simulator
+
     # 创建UI管理器
     state = simulator.get_state()
     ui_manager = create_hud(state, *screen.get_size(), camera)
@@ -256,8 +283,21 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
     while running:
         dt = clock.tick(fps) / 1000.0
 
+        # 获取按键状态（用于StarmapView的持续移动）
+        keys = pygame.key.get_pressed()
+
+        # 如果当前是StarmapView，处理持续按键
+        if screen_manager.is_current(ScreenType.STARMAP_VIEW):
+            starmap_view = screen_manager.get_screen(ScreenType.STARMAP_VIEW)
+            if starmap_view:
+                starmap_view.handle_continuous_input(keys)
+
         # 更新界面管理器
         screen_manager.update(dt)
+
+        # 更新模拟器（游戏逻辑）
+        if simulator and not simulator.paused:
+            simulator.update(dt)
 
         # 处理事件
         for event in pygame.event.get():

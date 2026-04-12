@@ -1,13 +1,22 @@
-"""设置界面 - 游戏各种设置选项"""
+"""设置界面 - 游戏各种设置"""
 
 import pygame
-import json
 import os
+import json
 from typing import Optional, List, Dict, Callable, Any
 from dataclasses import dataclass, asdict
+from enum import Enum
 
 from .screen_manager import Screen, ScreenType
 from .initial_menu import StarBackground, MenuButton
+
+
+class SettingTab(Enum):
+    """设置标签页"""
+    GAME = "游戏"
+    DISPLAY = "显示"
+    AUDIO = "音频"
+    CONTROLS = "控制"
 
 
 @dataclass
@@ -15,57 +24,66 @@ class GameSettings:
     """游戏设置数据类"""
     # 游戏设置
     time_scale: float = 1.0
-    auto_save_interval: int = 300  # 秒
-    tutorial_enabled: bool = True
+    auto_save_interval: int = 5  # 分钟
+    enable_tutorial: bool = True
+    show_notifications: bool = True
 
     # 显示设置
     resolution: str = "1280x720"
     fullscreen: bool = False
-    quality: str = "medium"
-    particles_enabled: bool = True
+    vsync: bool = True
+    quality_level: int = 2  # 0-3
+    particle_effects: bool = True
+    show_fps: bool = False
 
     # 音频设置
     master_volume: float = 0.8
     music_volume: float = 0.7
     sfx_volume: float = 0.9
+    ambient_volume: float = 0.6
+    mute_when_unfocused: bool = True
 
     # 控制设置
     mouse_sensitivity: float = 1.0
+    invert_mouse_y: bool = False
+    enable_edge_scrolling: bool = True
+    edge_scroll_speed: float = 1.0
+    keyboard_layout: str = "qwerty"
 
     def to_dict(self) -> dict:
+        """转换为字典"""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> 'GameSettings':
+        """从字典创建"""
         return cls(**data)
 
 
 class SettingSlider:
     """设置滑块组件"""
 
-    def __init__(self, x: int, y: int, width: int, label: str,
-                 min_value: float, max_value: float, current_value: float,
-                 callback: Callable[[float], None] = None,
-                 show_value: bool = True, decimal_places: int = 1):
-        self.rect = pygame.Rect(x, y, width, 30)
+    def __init__(self, x: int, y: int, width: int, height: int,
+                 min_val: float, max_val: float, initial: float,
+                 label: str, decimals: int = 1, suffix: str = "",
+                 on_change: Optional[Callable[[float], None]] = None):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.min_val = min_val
+        self.max_val = max_val
+        self.value = initial
         self.label = label
-        self.min_value = min_value
-        self.max_value = max_value
-        self.current_value = current_value
-        self.callback = callback
-        self.show_value = show_value
-        self.decimal_places = decimal_places
-        self.hovered = False
+        self.decimals = decimals
+        self.suffix = suffix
+        self.on_change = on_change
+
         self.dragging = False
+        self.hovered = False
+        self.track_rect = pygame.Rect(x, y + height // 2 - 4, width, 8)
+        self.handle_radius = 10
 
-        self.slider_rect = pygame.Rect(x + 100, y + 5, width - 200, 20)
-        self.handle_radius = 8
-
-    def get_value_text(self) -> str:
-        """获取显示的值文本"""
-        if self.decimal_places == 0:
-            return str(int(self.current_value))
-        return f"{self.current_value:.{self.decimal_places}f}"
+        from render.ui import get_font
+        self.font = get_font(20)
+        self.label_font = get_font(18)
 
     def update(self, dt: float):
         """更新滑块"""
@@ -74,35 +92,16 @@ class SettingSlider:
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理事件"""
         if event.type == pygame.MOUSEMOTION:
-            self.hovered = self.slider_rect.collidepoint(event.pos)
-
+            self.hovered = self.rect.collidepoint(event.pos)
             if self.dragging:
-                # 更新滑块值
-                rel_x = event.pos[0] - self.slider_rect.x
-                ratio = max(0, min(1, rel_x / self.slider_rect.width))
-                new_value = self.min_value + (self.max_value - self.min_value) * ratio
-
-                # 四舍五入到指定小数位
-                if self.decimal_places == 0:
-                    new_value = round(new_value)
-                else:
-                    new_value = round(new_value, self.decimal_places)
-
-                if new_value != self.current_value:
-                    self.current_value = new_value
-                    if self.callback:
-                        self.callback(self.current_value)
+                self._update_value_from_pos(event.pos[0])
+                return True
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:  # 左键
-                if self.slider_rect.collidepoint(event.pos):
+            if event.button == 1:
+                if self.rect.collidepoint(event.pos):
                     self.dragging = True
-                    # 立即更新值
-                    rel_x = event.pos[0] - self.slider_rect.x
-                    ratio = max(0, min(1, rel_x / self.slider_rect.width))
-                    self.current_value = self.min_value + (self.max_value - self.min_value) * ratio
-                    if self.callback:
-                        self.callback(self.current_value)
+                    self._update_value_from_pos(event.pos[0])
                     return True
 
         elif event.type == pygame.MOUSEBUTTONUP:
@@ -111,62 +110,152 @@ class SettingSlider:
 
         return False
 
-    def render(self, screen: pygame.Surface, font: pygame.font.Font,
-               value_font: pygame.font.Font):
+    def _update_value_from_pos(self, x: int):
+        """从鼠标位置更新值"""
+        ratio = (x - self.track_rect.x) / self.track_rect.width
+        ratio = max(0, min(1, ratio))
+        self.value = self.min_val + ratio * (self.max_val - self.min_val)
+
+        if self.decimals == 0:
+            self.value = round(self.value)
+        else:
+            self.value = round(self.value, self.decimals)
+
+        if self.on_change:
+            self.on_change(self.value)
+
+    def render(self, screen: pygame.Surface):
         """渲染滑块"""
         # 绘制标签
-        label_surf = font.render(self.label, True, (200, 210, 230))
-        screen.blit(label_surf, (self.rect.x, self.rect.y + 2))
+        label_surf = self.label_font.render(self.label, True, (180, 190, 220))
+        screen.blit(label_surf, (self.rect.x, self.rect.y - 5))
 
-        # 绘制滑块轨道
-        track_color = (60, 70, 100) if not self.hovered else (80, 90, 130)
-        pygame.draw.rect(screen, track_color, self.slider_rect, border_radius=4)
+        # 绘制轨道
+        track_color = (60, 70, 100) if not self.hovered else (80, 90, 120)
+        pygame.draw.rect(screen, track_color, self.track_rect, border_radius=4)
 
-        # 绘制已填充部分
-        ratio = (self.current_value - self.min_value) / (self.max_value - self.min_value)
-        filled_width = int(self.slider_rect.width * ratio)
-        if filled_width > 0:
-            filled_rect = pygame.Rect(
-                self.slider_rect.x, self.slider_rect.y,
-                filled_width, self.slider_rect.height
-            )
-            fill_color = (120, 150, 220) if not self.dragging else (150, 180, 255)
-            pygame.draw.rect(screen, fill_color, filled_rect, border_radius=4)
+        # 绘制填充部分
+        ratio = (self.value - self.min_val) / (self.max_val - self.min_val)
+        fill_width = int(self.track_rect.width * ratio)
+        fill_rect = pygame.Rect(self.track_rect.x, self.track_rect.y, fill_width, self.track_rect.height)
+        fill_color = (100, 150, 220) if not self.dragging else (120, 170, 255)
+        pygame.draw.rect(screen, fill_color, fill_rect, border_radius=4)
 
-        # 绘制滑块手柄
-        handle_x = self.slider_rect.x + filled_width
-        handle_y = self.slider_rect.centery
-        handle_color = (200, 210, 255) if not self.dragging else (255, 255, 255)
-
+        # 绘制手柄
+        handle_x = self.track_rect.x + fill_width
+        handle_y = self.track_rect.centery
+        handle_color = (180, 200, 255) if not self.dragging else (220, 230, 255)
         pygame.draw.circle(screen, handle_color, (handle_x, handle_y), self.handle_radius)
-        pygame.draw.circle(screen, (100, 120, 180), (handle_x, handle_y), self.handle_radius, 2)
+        pygame.draw.circle(screen, (100, 120, 160), (handle_x, handle_y), self.handle_radius, 2)
 
         # 绘制值
-        if self.show_value:
-            value_text = self.get_value_text()
-            value_surf = value_font.render(value_text, True, (180, 190, 220))
-            value_x = self.slider_rect.right + 15
-            screen.blit(value_surf, (value_x, self.rect.y + 2))
+        value_text = f"{self.value:.{self.decimals}f}{self.suffix}"
+        value_surf = self.font.render(value_text, True, (200, 210, 240))
+        screen.blit(value_surf, (self.rect.right - value_surf.get_width(), self.rect.y + 15))
+
+
+class SettingCheckbox:
+    """设置复选框组件"""
+
+    def __init__(self, x: int, y: int, width: int, height: int,
+                 label: str, initial: bool = False,
+                 on_change: Optional[Callable[[bool], None]] = None):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.label = label
+        self.checked = initial
+        self.on_change = on_change
+        self.hovered = False
+
+        from render.ui import get_font
+        self.font = get_font(20)
+        self.checkbox_size = 24
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """处理事件"""
+        if event.type == pygame.MOUSEMOTION:
+            self.hovered = self.rect.collidepoint(event.pos)
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1 and self.rect.collidepoint(event.pos):
+                self.checked = not self.checked
+                if self.on_change:
+                    self.on_change(self.checked)
+                return True
+
+        return False
+
+    def render(self, screen: pygame.Surface):
+        """渲染复选框"""
+        # 绘制复选框
+        checkbox_rect = pygame.Rect(
+            self.rect.x,
+            self.rect.centery - self.checkbox_size // 2,
+            self.checkbox_size,
+            self.checkbox_size
+        )
+
+        # 背景
+        bg_color = (60, 70, 100) if not self.hovered else (80, 90, 120)
+        if self.checked:
+            bg_color = (80, 120, 180)
+        pygame.draw.rect(screen, bg_color, checkbox_rect, border_radius=4)
+        pygame.draw.rect(screen, (120, 140, 180), checkbox_rect, 2, border_radius=4)
+
+        # 勾选标记
+        if self.checked:
+            # 绘制对勾
+            check_color = (200, 220, 255)
+            points = [
+                (checkbox_rect.x + 5, checkbox_rect.centery),
+                (checkbox_rect.x + 10, checkbox_rect.centery + 5),
+                (checkbox_rect.x + 19, checkbox_rect.centery - 6)
+            ]
+            pygame.draw.lines(screen, check_color, False, points, 3)
+
+        # 绘制标签
+        label_surf = self.font.render(self.label, True, (200, 210, 240))
+        label_pos = (checkbox_rect.right + 10, checkbox_rect.centery - label_surf.get_height() // 2)
+        screen.blit(label_surf, label_pos)
 
 
 class SettingsScreen(Screen):
     """设置界面"""
 
+    SETTINGS_FILE = "data/settings.json"
+
     def __init__(self, screen_manager, screen: pygame.Surface):
         super().__init__(screen_manager, screen)
         self.background: Optional[StarBackground] = None
+        self.current_tab = SettingTab.GAME
         self.settings = GameSettings()
-        self.sliders: List[SettingSlider] = []
-        self.current_tab = "game"  # game, display, audio, control
-        self.tabs: Dict[str, str] = {
-            'game': '游戏',
-            'display': '显示',
-            'audio': '音频',
-            'control': '控制'
-        }
-        self.buttons: List[MenuButton] = []
-        self.setup_ui()
         self.load_settings()
+
+        # UI组件
+        self.tab_buttons: Dict[SettingTab, MenuButton] = {}
+        self.sliders: List[SettingSlider] = []
+        self.checkboxes: List[SettingCheckbox] = []
+        self.buttons: List[MenuButton] = []
+
+        self.setup_ui()
+
+    def load_settings(self):
+        """从文件加载设置"""
+        if os.path.exists(self.SETTINGS_FILE):
+            try:
+                with open(self.SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.settings = GameSettings.from_dict(data)
+            except Exception as e:
+                print(f"加载设置失败: {e}")
+
+    def save_settings(self):
+        """保存设置到文件"""
+        try:
+            os.makedirs(os.path.dirname(self.SETTINGS_FILE), exist_ok=True)
+            with open(self.SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.settings.to_dict(), f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"保存设置失败: {e}")
 
     def setup_ui(self):
         """设置UI"""
@@ -176,169 +265,221 @@ class SettingsScreen(Screen):
         self.background = StarBackground(width, height, star_count=200)
 
         # 创建标签页按钮
-        tab_width = 100
-        tab_height = 40
-        tab_start_x = width // 2 - (len(self.tabs) * tab_width) // 2
-        tab_y = 120
+        tab_width = 140
+        tab_height = 45
+        tab_gap = 10
+        start_x = width // 2 - (tab_width * 4 + tab_gap * 3) // 2
+        tab_y = 80
 
-        self.tab_buttons = []
-        for i, (key, label) in enumerate(self.tabs.items()):
+        for i, tab in enumerate(SettingTab):
             btn = MenuButton(
-                tab_start_x + i * (tab_width + 10), tab_y,
+                start_x + i * (tab_width + tab_gap), tab_y,
                 tab_width, tab_height,
-                label,
-                callback=lambda k=key: self.switch_tab(k),
+                tab.value,
+                callback=lambda t=tab: self.on_tab_changed(t),
                 font_size=24
             )
-            self.tab_buttons.append((key, btn))
-
-        # 创建滑块
-        self.create_sliders()
+            self.tab_buttons[tab] = btn
 
         # 创建底部按钮
-        btn_width = 140
+        btn_width = 120
         btn_height = 45
         btn_y = height - 80
 
         self.buttons = [
             MenuButton(
-                width // 2 - 160, btn_y, btn_width, btn_height,
-                "应用", callback=self.apply_settings, font_size=26
+                width // 2 - btn_width - 20, btn_y,
+                btn_width, btn_height,
+                "应用",
+                callback=self.on_apply,
+                font_size=26
             ),
             MenuButton(
-                width // 2 + 20, btn_y, btn_width, btn_height,
-                "重置", callback=self.reset_settings, font_size=26
-            ),
-            MenuButton(
-                50, btn_y, 100, btn_height,
-                "← 返回", callback=self.on_back, font_size=24
+                width // 2 + 20, btn_y,
+                btn_width, btn_height,
+                "返回",
+                callback=self.on_back,
+                font_size=26
             ),
         ]
 
         self.load_fonts()
+        self.refresh_tab_content()
 
-    def create_sliders(self):
-        """创建设置滑块"""
+    def refresh_tab_content(self):
+        """刷新当前标签页内容"""
+        self.sliders.clear()
+        self.checkboxes.clear()
+
         width, height = self.screen.get_size()
-        slider_width = 400
-        start_x = width // 2 - slider_width // 2
-        start_y = 200
-        gap = 60
+        content_x = width // 2 - 200
+        content_y = 160
+        gap = 70
 
-        self.sliders = [
+        s = self.settings
+
+        if self.current_tab == SettingTab.GAME:
             # 游戏设置
-            SettingSlider(
-                start_x, start_y, slider_width,
-                "时间流逝速度", 0.1, 5.0, self.settings.time_scale,
-                lambda v: setattr(self.settings, 'time_scale', v),
-                decimal_places=1
-            ),
-            SettingSlider(
-                start_x, start_y + gap, slider_width,
-                "自动保存间隔(分钟)", 1, 30, self.settings.auto_save_interval // 60,
-                lambda v: setattr(self.settings, 'auto_save_interval', int(v) * 60),
-                decimal_places=0
-            ),
+            self.sliders = [
+                SettingSlider(
+                    content_x, content_y, 400, 50,
+                    0.1, 5.0, s.time_scale,
+                    "时间流逝速度", decimals=1, suffix="x",
+                    on_change=lambda v: setattr(self.settings, 'time_scale', v)
+                ),
+                SettingSlider(
+                    content_x, content_y + gap, 400, 50,
+                    1, 30, s.auto_save_interval,
+                    "自动保存间隔", decimals=0, suffix="分钟",
+                    on_change=lambda v: setattr(self.settings, 'auto_save_interval', int(v))
+                ),
+            ]
+            self.checkboxes = [
+                SettingCheckbox(
+                    content_x, content_y + gap * 2, 400, 40,
+                    "启用教程提示", s.enable_tutorial,
+                    on_change=lambda v: setattr(self.settings, 'enable_tutorial', v)
+                ),
+                SettingCheckbox(
+                    content_x, content_y + gap * 2 + 50, 400, 40,
+                    "显示通知消息", s.show_notifications,
+                    on_change=lambda v: setattr(self.settings, 'show_notifications', v)
+                ),
+            ]
+
+        elif self.current_tab == SettingTab.DISPLAY:
+            # 显示设置
+            self.checkboxes = [
+                SettingCheckbox(
+                    content_x, content_y, 400, 40,
+                    "全屏模式", s.fullscreen,
+                    on_change=lambda v: setattr(self.settings, 'fullscreen', v)
+                ),
+                SettingCheckbox(
+                    content_x, content_y + 50, 400, 40,
+                    "垂直同步", s.vsync,
+                    on_change=lambda v: setattr(self.settings, 'vsync', v)
+                ),
+                SettingCheckbox(
+                    content_x, content_y + 100, 400, 40,
+                    "粒子效果", s.particle_effects,
+                    on_change=lambda v: setattr(self.settings, 'particle_effects', v)
+                ),
+                SettingCheckbox(
+                    content_x, content_y + 150, 400, 40,
+                    "显示FPS", s.show_fps,
+                    on_change=lambda v: setattr(self.settings, 'show_fps', v)
+                ),
+            ]
+            self.sliders = [
+                SettingSlider(
+                    content_x, content_y + 220, 400, 50,
+                    0, 3, s.quality_level,
+                    "画质等级", decimals=0, suffix="",
+                    on_change=lambda v: setattr(self.settings, 'quality_level', int(v))
+                ),
+            ]
+
+        elif self.current_tab == SettingTab.AUDIO:
             # 音频设置
-            SettingSlider(
-                start_x, start_y, slider_width,
-                "主音量", 0.0, 1.0, self.settings.master_volume,
-                lambda v: setattr(self.settings, 'master_volume', v),
-                decimal_places=2
-            ),
-            SettingSlider(
-                start_x, start_y + gap, slider_width,
-                "音乐音量", 0.0, 1.0, self.settings.music_volume,
-                lambda v: setattr(self.settings, 'music_volume', v),
-                decimal_places=2
-            ),
-            SettingSlider(
-                start_x, start_y + gap * 2, slider_width,
-                "音效音量", 0.0, 1.0, self.settings.sfx_volume,
-                lambda v: setattr(self.settings, 'sfx_volume', v),
-                decimal_places=2
-            ),
+            self.sliders = [
+                SettingSlider(
+                    content_x, content_y, 400, 50,
+                    0.0, 1.0, s.master_volume,
+                    "主音量", decimals=2, suffix="",
+                    on_change=lambda v: setattr(self.settings, 'master_volume', v)
+                ),
+                SettingSlider(
+                    content_x, content_y + 70, 400, 50,
+                    0.0, 1.0, s.music_volume,
+                    "音乐音量", decimals=2, suffix="",
+                    on_change=lambda v: setattr(self.settings, 'music_volume', v)
+                ),
+                SettingSlider(
+                content_x, content_y + 140, 400, 50,
+                    0.0, 1.0, s.sfx_volume,
+                    "音效音量", decimals=2, suffix="",
+                    on_change=lambda v: setattr(self.settings, 'sfx_volume', v)
+                ),
+                SettingSlider(
+                    content_x, content_y + 210, 400, 50,
+                    0.0, 1.0, s.ambient_volume,
+                    "环境音量", decimals=2, suffix="",
+                    on_change=lambda v: setattr(self.settings, 'ambient_volume', v)
+                ),
+            ]
+            self.checkboxes = [
+                SettingCheckbox(
+                    content_x, content_y + 290, 400, 40,
+                    "失去焦点时静音", s.mute_when_unfocused,
+                    on_change=lambda v: setattr(self.settings, 'mute_when_unfocused', v)
+                ),
+            ]
+
+        elif self.current_tab == SettingTab.CONTROLS:
             # 控制设置
-            SettingSlider(
-                start_x, start_y, slider_width,
-                "鼠标灵敏度", 0.1, 3.0, self.settings.mouse_sensitivity,
-                lambda v: setattr(self.settings, 'mouse_sensitivity', v),
-                decimal_places=1
-            ),
-        ]
+            self.sliders = [
+                SettingSlider(
+                    content_x, content_y, 400, 50,
+                    0.1, 3.0, s.mouse_sensitivity,
+                    "鼠标灵敏度", decimals=1, suffix="x",
+                    on_change=lambda v: setattr(self.settings, 'mouse_sensitivity', v)
+                ),
+                SettingSlider(
+                    content_x, content_y + 70, 400, 50,
+                    0.5, 2.0, s.edge_scroll_speed,
+                    "边缘滚动速度", decimals=1, suffix="x",
+                    on_change=lambda v: setattr(self.settings, 'edge_scroll_speed', v)
+                ),
+            ]
+            self.checkboxes = [
+                SettingCheckbox(
+                    content_x, content_y + 140, 400, 40,
+                    "反转鼠标Y轴", s.invert_mouse_y,
+                    on_change=lambda v: setattr(self.settings, 'invert_mouse_y', v)
+                ),
+                SettingCheckbox(
+                    content_x, content_y + 190, 400, 40,
+                    "启用边缘滚动", s.enable_edge_scrolling,
+                    on_change=lambda v: setattr(self.settings, 'enable_edge_scrolling', v)
+                ),
+            ]
 
-    def switch_tab(self, tab_name: str):
-        """切换设置标签页"""
-        self.current_tab = tab_name
+    def on_tab_changed(self, tab: SettingTab):
+        """标签页切换"""
+        self.current_tab = tab
+        self.refresh_tab_content()
 
-    def get_visible_sliders(self) -> List[SettingSlider]:
-        """获取当前标签页可见的滑块"""
-        tab_ranges = {
-            'game': (0, 2),
-            'display': (2, 2),  # 暂无显示滑块
-            'audio': (2, 5),
-            'control': (5, 6),
-        }
-
-        start, end = tab_ranges.get(self.current_tab, (0, 0))
-        return self.sliders[start:end]
-
-    def load_settings(self):
-        """从文件加载设置"""
-        settings_path = "data/settings.json"
-        if os.path.exists(settings_path):
-            try:
-                with open(settings_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.settings = GameSettings.from_dict(data)
-            except Exception as e:
-                print(f"加载设置失败: {e}")
-
-        # 更新滑块值
-        for slider in self.sliders:
-            slider.callback(slider.current_value)
-
-    def save_settings(self):
-        """保存设置到文件"""
-        os.makedirs("data", exist_ok=True)
-        settings_path = "data/settings.json"
-
-        try:
-            with open(settings_path, 'w', encoding='utf-8') as f:
-                json.dump(self.settings.to_dict(), f, indent=2, ensure_ascii=False)
-            return True
-        except Exception as e:
-            print(f"保存设置失败: {e}")
-            return False
-
-    def apply_settings(self):
+    def on_apply(self):
         """应用设置"""
-        if self.save_settings():
-            print("设置已保存")
-            # TODO: 显示成功提示
-        else:
-            print("设置保存失败")
-            # TODO: 显示错误提示
-
-    def reset_settings(self):
-        """重置为默认设置"""
-        self.settings = GameSettings()
-        # 更新所有滑块
-        self.create_sliders()
-        print("设置已重置为默认值")
+        self.save_settings()
+        self.apply_display_settings()
+        print("设置已应用并保存")
 
     def on_back(self):
         """返回"""
         self.screen_manager.go_back()
 
+    def apply_display_settings(self):
+        """应用显示设置"""
+        # 获取主屏幕以应用显示设置
+        if self.settings.fullscreen:
+            pygame.display.set_mode(
+                (1920, 1080),  # 使用默认分辨率
+                pygame.FULLSCREEN | pygame.DOUBLEBUF
+            )
+        else:
+            width, height = map(int, self.settings.resolution.split('x'))
+            pygame.display.set_mode(
+                (width, height),
+                pygame.RESIZABLE | pygame.DOUBLEBUF
+            )
+
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
-        self.current_tab = 'game'
         self.load_settings()
-
-        # 重新设置UI（窗口大小可能改变）
-        self.setup_ui()
+        self.refresh_tab_content()
 
     def update(self, dt: float):
         """更新界面"""
@@ -347,12 +488,15 @@ class SettingsScreen(Screen):
         if self.background:
             self.background.update(dt)
 
-        for button in self.buttons:
-            button.update(dt)
-
-        for key, btn in self.tab_buttons:
+        # 更新标签页按钮
+        for btn in self.tab_buttons.values():
             btn.update(dt)
 
+        # 更新底部按钮
+        for btn in self.buttons:
+            btn.update(dt)
+
+        # 更新滑块和复选框
         for slider in self.sliders:
             slider.update(dt)
 
@@ -361,19 +505,24 @@ class SettingsScreen(Screen):
         if not self.active:
             return False
 
-        # 处理标签页按钮
-        for key, btn in self.tab_buttons:
-            if btn.handle_event(event):
-                return True
-
-        # 处理当前标签页的滑块
-        for slider in self.get_visible_sliders():
+        # 处理滑块事件
+        for slider in self.sliders:
             if slider.handle_event(event):
                 return True
 
-        # 处理按钮
-        for button in self.buttons:
-            if button.handle_event(event):
+        # 处理复选框事件
+        for checkbox in self.checkboxes:
+            if checkbox.handle_event(event):
+                return True
+
+        # 处理标签页按钮
+        for btn in self.tab_buttons.values():
+            if btn.handle_event(event):
+                return True
+
+        # 处理底部按钮
+        for btn in self.buttons:
+            if btn.handle_event(event):
                 return True
 
         # ESC返回
@@ -396,35 +545,38 @@ class SettingsScreen(Screen):
         width, height = screen.get_size()
 
         # 渲染标题
-        if 'subtitle' in self.fonts:
-            title = self.fonts['subtitle'].render("游戏设置", True, (220, 230, 255))
-            title_rect = title.get_rect(center=(width // 2, 60))
+        if 'title' in self.fonts:
+            title = self.fonts['title'].render("设置", True, (220, 230, 255))
+            title_rect = title.get_rect(center=(width // 2, 40))
             screen.blit(title, title_rect)
 
         # 渲染标签页按钮
-        for key, btn in self.tab_buttons:
+        for tab, btn in self.tab_buttons.items():
             # 高亮当前标签
-            if key == self.current_tab:
-                pygame.draw.rect(screen, (80, 100, 160), btn.rect, border_radius=5)
+            is_current = tab == self.current_tab
+            if is_current:
+                # 绘制下划线
+                pygame.draw.rect(screen, (100, 150, 220),
+                               (btn.rect.x, btn.rect.bottom - 3, btn.rect.width, 3))
             btn.render(screen)
 
-        # 渲染当前标签页的内容
-        tab_names = {
-            'game': '游戏设置',
-            'display': '显示设置',
-            'audio': '音频设置',
-            'control': '控制设置'
-        }
+        # 渲染设置内容区域背景
+        content_rect = pygame.Rect(width // 2 - 250, 140, 500, 350)
+        pygame.draw.rect(screen, (20, 25, 40, 180), content_rect, border_radius=12)
+        pygame.draw.rect(screen, (50, 60, 90), content_rect, 2, border_radius=12)
 
-        if 'normal' in self.fonts:
-            tab_title = self.fonts['normal'].render(tab_names.get(self.current_tab, ''), True, (180, 190, 220))
-            screen.blit(tab_title, (width // 2 - 200, 180))
+        # 渲染滑块和复选框
+        for slider in self.sliders:
+            slider.render(screen)
 
-        # 渲染可见滑块
-        for slider in self.get_visible_sliders():
-            from render.ui import get_font
-            slider.render(screen, get_font(24), get_font(20))
+        for checkbox in self.checkboxes:
+            checkbox.render(screen)
 
         # 渲染底部按钮
-        for button in self.buttons:
-            button.render(screen)
+        for btn in self.buttons:
+            btn.render(screen)
+
+        # 渲染提示文字
+        if 'tiny' in self.fonts:
+            hint = self.fonts['tiny'].render("* 部分设置需要重启游戏才能生效", True, (120, 130, 150))
+            screen.blit(hint, (width // 2 - hint.get_width() // 2, height - 25))

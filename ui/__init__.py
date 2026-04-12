@@ -13,7 +13,8 @@ from .initial_menu import InitialMenu
 from .start_game_menu import StartGameMenu
 from .settings_screen import SettingsScreen
 from .game_menu import GameMenu
-from .save_load_dialog import SaveLoadDialog
+from .main_screen import MainScreen
+from .starmap_view import StarmapView
 
 __all__ = [
     'ScreenManager',
@@ -22,5 +23,6 @@ __all__ = [
     'StartGameMenu',
     'SettingsScreen',
     'GameMenu',
-    'SaveLoadDialog',
+    'MainScreen',
+    'StarmapView',
 ]

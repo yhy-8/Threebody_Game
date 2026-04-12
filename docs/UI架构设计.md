@@ -247,22 +247,93 @@ class UIEvents:
 
 ### 5.1 界面层
 
-- [ ] **InitialMenu** - 初始菜单界面
-- [ ] **StartGameMenu** - 开始游戏菜单
-- [ ] **SettingsScreen** - 设置界面
-- [ ] **GameMenu** - 游戏内菜单
-- [ ] **SaveLoadDialog** - 存档管理对话框
-- [ ] **ConfirmDialog** - 确认对话框
+- [x] **InitialMenu** - 初始菜单界面
+- [x] **StartGameMenu** - 开始游戏菜单
+- [x] **SettingsScreen** - 设置界面
+- [x] **GameMenu** - 游戏内菜单
+- [ ] **MainScreen** - 2D主游戏界面（待整合）
+- [ ] **StarmapView** - 3D星图界面（待整合）
 
-### 5.2 功能层
+### 5.2 对话框系统（简化实现）
 
-- [ ] **GameStateManager** - 游戏状态管理器
-- [ ] **SaveManager** - 存档管理器
-- [ ] **SettingsManager** - 设置管理器
-- [ ] **EventSystem** - 事件系统
+**设计理念**：对话框不是独立的界面类型，而是**在当前界面上叠加一个带遮罩的面板**。每个界面自行管理对话框状态。
 
-### 5.3 整合层
+**实现方式**：
 
-- [ ] 主循环与界面系统整合
-- [ ] 现有MainScreen和StarmapView接入新架构
-- [ ] 配置系统扩展支持设置保存
+```python
+class SomeScreen(Screen):
+    def __init__(self, ...):
+        ...
+        # 对话框状态管理
+        self.showing_dialog = False
+        self.dialog_type = None  # 'confirm_exit', 'save_success', etc.
+        self.dialog_panel = None  # 对话框面板实例
+        
+    def on_quit_clicked(self):
+        """点击退出按钮时显示确认对话框"""
+        self.showing_dialog = True
+        self.dialog_type = 'confirm_exit'
+        self.dialog_panel = ConfirmPanel(
+            title="确认退出",
+            message="确定要退出游戏吗？",
+            on_confirm=self._do_quit,
+            on_cancel=self._close_dialog
+        )
+    
+    def _close_dialog(self):
+        """关闭对话框"""
+        self.showing_dialog = False
+        self.dialog_type = None
+        self.dialog_panel = None
+    
+    def handle_event(self, event):
+        # 如果显示对话框，优先处理对话框事件
+        if self.showing_dialog and self.dialog_panel:
+            if self.dialog_panel.handle_event(event):
+                return True
+        
+        # 正常界面事件处理...
+        
+    def render(self, screen):
+        # 先渲染正常界面
+        ...
+        
+        # 如果显示对话框，渲染遮罩和对话框
+        if self.showing_dialog and self.dialog_panel:
+            # 半透明黑色遮罩
+            overlay = pygame.Surface(screen.get_size())
+            overlay.fill((0, 0, 0))
+            overlay.set_alpha(180)
+            screen.blit(overlay, (0, 0))
+            
+            # 渲染对话框面板
+            self.dialog_panel.render(screen)
+```
+
+**对话框类型**：
+
+1. **ConfirmPanel** - 确认对话框（是/否）
+2. **MessagePanel** - 消息对话框（确定）
+3. **InputPanel** - 输入对话框（文本输入）
+4. **SaveSlotPanel** - 存档槽位选择（用于存档/读档）
+
+**优点**：
+- 无需独立界面类型，减少架构复杂度
+- 对话框与当前界面上下文保持关联
+- 实现简单，维护方便
+- 动画效果易于实现（淡入、缩放等）
+
+### 5.3 功能层
+
+- [x] **ScreenManager** - 界面管理器（单例模式，管理所有界面）
+- [x] **SettingsManager** - 设置管理器（内嵌于SettingsScreen，支持JSON序列化）
+- [x] **EventSystem** - 事件系统（基于Pygame事件循环）
+- [ ] **GameStateManager** - 游戏状态管理器（需进一步整合游戏逻辑）
+- [ ] **SaveManager** - 存档管理器（基础功能已集成，需完善完整游戏状态序列化）
+
+### 5.4 整合层（已完成 ✅）
+
+- [x] 主循环与界面系统整合
+- [x] 现有MainScreen和StarmapView接入新架构
+- [x] 配置系统扩展支持设置保存
+- [x] UI联动功能（返回按钮、ESC键、状态保存、游戏暂停）
