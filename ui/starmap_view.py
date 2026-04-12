@@ -96,6 +96,10 @@ class StarmapView(Screen):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
 
+        # 更新屏幕引用，确保尺寸正确
+        self.screen = pygame.display.get_surface()
+        self.rect = self.screen.get_rect()
+
         # 如果是从主界面或其他界面进入，可能需要初始化
         if self.camera is None:
             # 等待外部注入simulator后初始化

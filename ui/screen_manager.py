@@ -51,17 +51,20 @@ class Screen:
         self.active = True
         self.visible = True
         self.is_animating_in = True
+        self.is_animating_out = False
         self.animation_progress = 0.0
 
     def on_exit(self):
         """退出界面时调用"""
         self.is_animating_out = True
+        self.is_animating_in = False
 
     def finish_exit(self):
         """完成退出动画后调用"""
         self.active = False
         self.visible = False
         self.is_animating_out = False
+        self.is_animating_in = False
 
     def update(self, dt: float):
         """更新界面状态"""
@@ -72,8 +75,13 @@ class Screen:
                 self.animation_progress = 1.0
                 self.is_animating_in = False
 
-        # 处理退出动画
+        # 处理退出动画 - 注意：当屏幕不在当前时，直接完成退出
         if self.is_animating_out:
+            # 如果已经不再是当前屏幕，直接完成退出
+            if not self.active and not self.visible:
+                self.finish_exit()
+                return
+
             self.animation_progress -= dt * self.animation_speed
             if self.animation_progress <= 0.0:
                 self.animation_progress = 0.0
@@ -152,14 +160,17 @@ class ScreenManager:
             print(f"错误：界面 {screen_type} 未注册")
             return
 
+        # 如果当前已经是目标界面，不做任何操作
+        if self.current_screen_type == screen_type:
+            return
+
         new_screen = self.screens[screen_type]
 
-        # 保存当前界面到栈
-        if push_to_stack and self.current_screen_type:
-            self.screen_stack.append(self.current_screen_type)
-
-        # 退出当前界面
+        # 先退出当前界面
         if self.current_screen:
+            # 保存当前界面到栈（在退出前保存）
+            if push_to_stack and self.current_screen_type:
+                self.screen_stack.append(self.current_screen_type)
             self.current_screen.on_exit()
 
         # 更新状态
@@ -176,6 +187,11 @@ class ScreenManager:
 
     def go_back(self, fallback_screen: Optional[ScreenType] = None):
         """返回上级界面"""
+        # 先清空当前界面的退出动画状态，确保能正确切换
+        if self.current_screen:
+            self.current_screen.is_animating_out = False
+            self.current_screen.animation_progress = 1.0
+
         if self.screen_stack:
             previous = self.screen_stack.pop()
             self.switch_to(previous, push_to_stack=False)

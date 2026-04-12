@@ -63,6 +63,8 @@ class GameMenu(Screen):
 
     def on_resume(self):
         """继续游戏"""
+        # 直接返回上级界面，不强制指定fallback
+        # 因为从游戏界面打开菜单时，上级就是主界面
         self.screen_manager.go_back()
 
     def on_settings(self):
@@ -111,13 +113,22 @@ class GameMenu(Screen):
         # TODO: 如果有未保存的更改，显示确认对话框
         from .screen_manager import ScreenType
         # 使用清空栈的方式切换，避免栈污染
+        # 同时确保退出动画状态被正确重置
+        if self.screen_manager.current_screen:
+            self.screen_manager.current_screen.is_animating_out = False
+            self.screen_manager.current_screen.animation_progress = 1.0
         self.screen_manager.clear_stack_and_switch(ScreenType.INITIAL_MENU)
 
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
+        # 重置动画状态
         self.overlay_alpha = 0.0
         self.menu_y_offset = -50
+        # 更新屏幕引用，确保尺寸正确
+        self.screen = pygame.display.get_surface()
+        self.rect = self.screen.get_rect()
+        # 重新设置UI
         self.setup_ui()
 
     def update(self, dt: float):

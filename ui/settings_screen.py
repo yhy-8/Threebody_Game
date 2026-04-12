@@ -458,8 +458,15 @@ class SettingsScreen(Screen):
 
     def on_back(self):
         """返回"""
-        # 直接返回上级界面，go_back有fallback处理
-        self.screen_manager.go_back()
+        # 返回上级界面，使用当前屏幕类型的前一个屏幕类型作为fallback
+        # 这样可以从设置界面返回到游戏菜单或初始菜单
+        prev_type = self.screen_manager.previous_screen_type
+
+        if prev_type is not None:
+            self.screen_manager.go_back(fallback_screen=prev_type)
+        else:
+            from .screen_manager import ScreenType
+            self.screen_manager.go_back(fallback_screen=ScreenType.INITIAL_MENU)
 
     def apply_display_settings(self):
         """应用显示设置"""
@@ -479,8 +486,15 @@ class SettingsScreen(Screen):
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
+        # 更新屏幕引用以确保尺寸正确
+        self.screen = pygame.display.get_surface()
+        self.rect = self.screen.get_rect()
         # 重新设置UI以适应可能的窗口大小变化
         self.setup_ui()
+        # 确保状态正确
+        self.active = True
+        self.visible = True
+        self.is_animating_out = False
         self.load_settings()
         self.refresh_tab_content()
 

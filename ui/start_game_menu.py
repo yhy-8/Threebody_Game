@@ -267,6 +267,10 @@ class StartGameMenu(Screen):
         self.showing_save_slots = False
         self.selected_slot = None
 
+        # 更新屏幕引用，确保尺寸正确
+        self.screen = pygame.display.get_surface()
+        self.rect = self.screen.get_rect()
+
         # 刷新存档信息
         for slot in self.save_slots:
             slot._load_save_info()
@@ -274,6 +278,9 @@ class StartGameMenu(Screen):
         # 重新初始化背景（确保窗口大小变化时背景正确）
         width, height = self.screen.get_size()
         self.background = StarBackground(width, height, star_count=250)
+
+        # 重新设置UI
+        self.setup_ui()
 
     def update(self, dt: float):
         """更新界面"""

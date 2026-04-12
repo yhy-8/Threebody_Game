@@ -93,6 +93,11 @@ class MainScreen(Screen):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
         self.showing_menu = False
+
+        # 更新屏幕引用，确保尺寸正确
+        self.screen = pygame.display.get_surface()
+        self.rect = self.screen.get_rect()
+
         # 重新生成星空（窗口大小可能改变）
         self.generate_stars()
         self.setup_ui()
