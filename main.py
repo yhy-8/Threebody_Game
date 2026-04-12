@@ -12,8 +12,12 @@ from render.camera import Camera
 from render.scene import SceneRenderer
 from render.ui import create_hud, update_hud, Button, UIManager, get_font, Panel, Label
 
+# UI模块 - 新的界面管理系统
+from ui import ScreenManager, InitialMenu, StartGameMenu, SettingsScreen, GameMenu
+from ui.screen_manager import ScreenType
 
-# 屏幕模式
+
+# 屏幕模式（保留用于兼容性）
 SCREEN_MODE_MAIN = "main"  # 2D主界面
 SCREEN_MODE_STARMAP = "starmap"  # 3D星图
 
@@ -193,6 +197,87 @@ def handle_input_main(events, simulator, width, height):
     return True, "main"
 
 
+def init_screen_manager(screen: pygame.Surface) -> ScreenManager:
+    """初始化界面管理器并注册所有界面"""
+    manager = ScreenManager()
+
+    # 注册初始菜单
+    initial_menu = InitialMenu(manager, screen)
+    manager.register_screen(ScreenType.INITIAL_MENU, initial_menu)
+
+    # 注册开始游戏菜单
+    start_game_menu = StartGameMenu(manager, screen)
+    manager.register_screen(ScreenType.START_GAME_MENU, start_game_menu)
+
+    # 注册设置界面
+    settings_screen = SettingsScreen(manager, screen)
+    manager.register_screen(ScreenType.SETTINGS, settings_screen)
+
+    # 注册游戏内菜单
+    game_menu = GameMenu(manager, screen)
+    manager.register_screen(ScreenType.GAME_MENU, game_menu)
+
+    # TODO: 注册主游戏界面和星图界面（需要适配现有代码）
+
+    return manager
+
+
+def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Surface):
+    """运行游戏主循环"""
+    # 创建时钟
+    fps = config.get("game", {}).get("fps", 60)
+    clock = pygame.time.Clock()
+
+    # 创建游戏模拟器
+    simulator = GameSimulator()
+
+    # 设置初始暂停状态
+    sim_config = config.get("simulation", {})
+    if sim_config.get("initial_paused", False):
+        simulator.paused = True
+
+    # 创建摄像机（用于星图）
+    camera_config = config.get("camera", {})
+    camera = Camera(
+        position=(0, 0, -camera_config.get("default_distance", 500)),
+        fov=camera_config.get("fov", 500)
+    )
+    camera.speed = camera_config.get("move_speed", 5)
+
+    # 创建场景渲染器
+    scene = SceneRenderer(screen, camera)
+
+    # 创建UI管理器
+    state = simulator.get_state()
+    ui_manager = create_hud(state, *screen.get_size(), camera)
+
+    # 运行主循环
+    running = True
+    while running:
+        dt = clock.tick(fps) / 1000.0
+
+        # 更新界面管理器
+        screen_manager.update(dt)
+
+        # 处理事件
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            else:
+                # 先让界面管理器处理事件
+                if not screen_manager.handle_event(event):
+                    # 如果界面没有处理，进行游戏事件处理
+                    pass
+
+        # 渲染
+        screen.fill((10, 10, 20))
+        screen_manager.render(screen)
+
+        pygame.display.flip()
+
+    pygame.quit()
+
+
 def main():
     # 加载配置
     config = load_config()
@@ -204,7 +289,6 @@ def main():
     game_config = config.get("game", {})
     title = game_config.get("title", "三体文明")
     resolution = tuple(game_config.get("resolution", [1280, 720]))
-    fps = game_config.get("fps", 60)
     fullscreen = game_config.get("fullscreen", False)
     resizable = game_config.get("resizable", True)
 
@@ -220,78 +304,26 @@ def main():
 
     # 窗口居中（仅非全屏时有效）
     if game_config.get("center", True) and not fullscreen:
-        # 获取显示器尺寸
         display_info = pygame.display.Info()
         display_width = display_info.current_w
         display_height = display_info.current_h
-        # 计算居中位置
         x = (display_width - resolution[0]) // 2
         y = (display_height - resolution[1]) // 2
         os.environ['SDL_VIDEO_WINDOW_POS'] = f'{x},{y}'
-        # 重新设置窗口位置（需要重新创建窗口）
         pygame.display.set_mode(resolution, flags)
 
-    # 创建时钟
-    clock = pygame.time.Clock()
+    # 初始化界面管理器
+    screen_manager = init_screen_manager(screen)
 
-    # 创建摄像机
-    camera_config = config.get("camera", {})
-    camera = Camera(
-        position=(0, 0, -camera_config.get("default_distance", 500)),
-        fov=camera_config.get("fov", 500)
-    )
-    camera.speed = camera_config.get("move_speed", 5)
+    # 切换到初始菜单
+    screen_manager.switch_to(ScreenType.INITIAL_MENU)
 
-    # 创建场景渲染器
-    scene = SceneRenderer(screen, camera)
+    # 运行游戏主循环
+    run_game_loop(config, screen_manager, screen)
 
-    # 创建游戏模拟器
-    simulator = GameSimulator()
 
-    # 设置初始暂停状态
-    sim_config = config.get("simulation", {})
-    if sim_config.get("initial_paused", False):
-        simulator.paused = True
-
-    # 创建UI
-    state = simulator.get_state()
-    ui_manager = create_hud(state, *resolution, camera)
-    current_screen_size = resolution
-
-    # 添加一些测试实体
-    from game.entities import Person, Building, Resource
-
-    # 添加初始资源
-    res_config = config.get("initial_entities", {}).get("resources", [])
-    for rc in res_config:
-        resource = Resource(
-            name=rc["name"],
-            amount=rc["amount"],
-            max_storage=rc["max_storage"],
-            regeneration_rate=rc["regeneration_rate"]
-        )
-        simulator.entities.add_resource(resource)
-
-    # 添加测试人物
-    for name in ["张三", "李四", "王五"]:
-        person = Person(name=name, role="worker")
-        simulator.entities.add_person(person)
-
-    # 添加测试建筑
-    building = Building(name="采矿站", building_type="mine", level=1)
-    building.production = {"minerals": 5}
-    building.consumption = {"energy": 2}
-    simulator.entities.add_building(building)
-
-    building2 = Building(name="发电站", building_type="power", level=1)
-    building2.production = {"energy": 10}
-    simulator.entities.add_building(building2)
-
-    # 游戏状态
-    game_over = False
-    current_mode = SCREEN_MODE_MAIN  # 初始模式：2D主界面
-
-    # 主循环
+if __name__ == "__main__":
+    main()
     running = True
     while running:
         # 计算delta time
