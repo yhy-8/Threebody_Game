@@ -49,6 +49,14 @@ class MainScreen(Screen):
             font_size=btn_font_size
         )
 
+        # 暂停/继续按钮 (新加)
+        self.pause_button = MenuButton(
+            20 + max(80, width // 13) + 20, 20, max(80, width // 13), max(32, height // 18),
+            "暂停",
+            callback=self.on_pause_toggle,
+            font_size=btn_font_size
+        )
+
         # 右上角星图按钮
         self.starmap_button = MenuButton(
             width - max(140, width // 9) - 20, 20,
@@ -58,32 +66,43 @@ class MainScreen(Screen):
             font_size=btn_font_size + 2
         )
 
-        # 创建信息面板 - 根据窗口大小动态计算
+        # 创建信息面板 - 4个面板
         margin = max(30, int(width * 0.04))
         available_width = width - margin * 2
-        panel_width = max(200, (available_width - margin * 2) // 3)
+        panel_width = max(160, (available_width - margin * 3) // 4)
         panel_height = max(200, int(height * 0.45))
-        gap = max(15, (available_width - panel_width * 3) // 2)
+        gap = max(10, (available_width - panel_width * 4) // 3)
         start_x = margin
-        start_y = max(80, int(height * 0.14))
+        start_y = max(80, int(height * 0.18))
 
-        # 左侧面板 - 资源
+        # 左侧面板1 - 资源
         self.resource_panel = Panel(start_x, start_y, panel_width, panel_height, "资源")
-        # 动态添加标签会在render时处理
 
-        # 中间面板 - 文明状态
+        # 面板2 - 文明状态
         self.civilization_panel = Panel(
             start_x + panel_width + gap, start_y,
             panel_width, panel_height, "文明状态"
         )
-
-        # 右侧面板 - 行动
-        self.action_panel = Panel(
+        
+        # 面板3 - 环境
+        self.environment_panel = Panel(
             start_x + (panel_width + gap) * 2, start_y,
+            panel_width, panel_height, "环境信息"
+        )
+
+        # 右侧面板4 - 行动
+        self.action_panel = Panel(
+            start_x + (panel_width + gap) * 3, start_y,
             panel_width, panel_height, "行动"
         )
 
         self.load_fonts()
+
+    def on_pause_toggle(self):
+        """点击暂停按钮"""
+        if self.simulator:
+            self.simulator.toggle_pause()
+            self.pause_button.text = "继续" if self.simulator.paused else "暂停"
 
     def on_menu_clicked(self):
         """点击菜单按钮"""
@@ -104,9 +123,13 @@ class MainScreen(Screen):
         self.screen = pygame.display.get_surface()
         self.rect = self.screen.get_rect()
 
-        # 重新生成星空（窗口大小可能改变）
+        # 更新重新生成星空并布局
         self.generate_stars()
         self.setup_ui()
+        
+        # 更新暂停按钮状态
+        if self.simulator:
+            self.pause_button.text = "继续" if self.simulator.paused else "暂停"
 
     def update(self, dt: float):
         """更新界面"""
@@ -114,6 +137,7 @@ class MainScreen(Screen):
 
         # 更新按钮
         self.menu_button.update(dt)
+        self.pause_button.update(dt)
         self.starmap_button.update(dt)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -124,11 +148,17 @@ class MainScreen(Screen):
         # 处理按钮事件
         if self.menu_button.handle_event(event):
             return True
+        if self.pause_button.handle_event(event):
+            return True
         if self.starmap_button.handle_event(event):
             return True
 
-        # ESC键打开游戏菜单
         if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                if self.simulator:
+                    self.simulator.toggle_pause()
+                    self.pause_button.text = "继续" if self.simulator.paused else "暂停"
+                return True
             if event.key == pygame.K_ESCAPE:
                 self.screen_manager.switch_to(ScreenType.GAME_MENU)
                 return True
@@ -153,7 +183,7 @@ class MainScreen(Screen):
         # 渲染标题
         if 'title' in self.fonts:
             title = self.fonts['title'].render("三体文明", True, (200, 220, 255))
-            title_rect = title.get_rect(center=(width // 2, 60))
+            title_rect = title.get_rect(center=(width // 2, 45))
             screen.blit(title, title_rect)
 
         # 渲染面板
@@ -161,7 +191,15 @@ class MainScreen(Screen):
 
         # 渲染按钮
         self.menu_button.render(screen)
+        self.pause_button.render(screen)
         self.starmap_button.render(screen)
+        
+        # 渲染游戏时间和说明
+        if self.simulator and 'normal' in self.fonts:
+            time_text = f"第 {int(self.simulator.time)} 天"
+            time_surf = self.fonts['normal'].render(time_text, True, (255, 255, 200))
+            time_rect = time_surf.get_rect(center=(width // 2, 105))
+            screen.blit(time_surf, time_rect)
 
         # 渲染底部提示
         if 'tiny' in self.fonts:
@@ -179,12 +217,15 @@ class MainScreen(Screen):
 
         # 渲染资源面板
         self.resource_panel.render(screen)
-        # 在面板上添加动态内容
         self._render_resource_content(screen)
 
         # 渲染文明状态面板
         self.civilization_panel.render(screen)
         self._render_civilization_content(screen)
+        
+        # 渲染环境面板
+        self.environment_panel.render(screen)
+        self._render_environment_content(screen)
 
         # 渲染行动面板
         self.action_panel.render(screen)
@@ -280,6 +321,58 @@ class MainScreen(Screen):
             trend_surf = small_font.render(trend, True, trend_color)
             screen.blit(trend_surf, (trend_x, panel.rect.y + y_offset + 3))
 
+            y_offset += max(24, int(panel.rect.height * 0.09))
+
+    def _render_environment_content(self, screen: pygame.Surface):
+        """渲染环境面板内容"""
+        width, height = screen.get_size()
+        panel = self.environment_panel
+        scale = min(width / 1280, height / 720)
+        font_size = max(16, int(22 * scale))
+        font = get_font(font_size)
+        y_offset = max(38, int(panel.rect.height * 0.13))
+
+        if self.simulator:
+            state = self.simulator.get_state()
+            env_params = state.get("environment", {}).get("params", {})
+            temp = env_params.get("temperature", -273.15)
+            rad = env_params.get("radiation", 0.0)
+            light = env_params.get("light_intensity", 0.0)
+            stability = env_params.get("stability", 0.0)
+            
+            # 判断颜色
+            temp_color = (100, 255, 100)
+            if temp < -50: temp_color = (100, 150, 255)
+            elif temp > 60: temp_color = (255, 100, 100)
+            
+            rad_color = (100, 255, 100)
+            if rad > 10.0: rad_color = (255, 50, 50)
+            elif rad > 2.0: rad_color = (255, 200, 50)
+            
+            stab_color = (100, 255, 100) if stability > 0.5 else (255, 100, 100)
+            
+            items = [
+                ("表面温度", f"{temp:.1f} ℃", temp_color),
+                ("环境辐射", f"{rad:.2f} 辐射度", rad_color),
+                ("光照强度", f"{light:.1%}", (255, 255, 150)),
+                ("地质稳定", "稳定" if stability > 0.5 else "危险", stab_color),
+            ]
+        else:
+            items = [
+                ("表面温度", "22.5 ℃", (100, 255, 100)),
+                ("环境辐射", "0.05 辐射度", (100, 255, 100)),
+                ("光照强度", "100%", (255, 255, 150)),
+                ("地质稳定", "稳定", (100, 255, 100)),
+            ]
+
+        for name, value, color in items:
+            name_surf = font.render(name, True, (180, 200, 220))
+            screen.blit(name_surf, (panel.rect.x + 15, panel.rect.y + y_offset))
+            
+            value_x = panel.rect.x + int(panel.rect.width * 0.5)
+            value_surf = font.render(value, True, color)
+            screen.blit(value_surf, (value_x, panel.rect.y + y_offset))
+            
             y_offset += max(24, int(panel.rect.height * 0.09))
 
     def _render_action_content(self, screen: pygame.Surface):

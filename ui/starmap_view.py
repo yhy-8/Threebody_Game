@@ -80,8 +80,6 @@ class StarmapView(Screen):
 
     def on_back(self):
         """返回主界面"""
-        if self.simulator:
-            self.simulator.paused = True
         self.screen_manager.switch_to(ScreenType.MAIN_SCREEN)
 
     def on_pause_toggle(self):
@@ -124,9 +122,6 @@ class StarmapView(Screen):
     def on_exit(self):
         """退出界面"""
         super().on_exit()
-        # 暂停游戏
-        if self.simulator:
-            self.simulator.paused = True
 
     def update(self, dt: float):
         """更新界面"""

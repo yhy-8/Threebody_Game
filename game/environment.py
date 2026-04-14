@@ -183,12 +183,14 @@ class ThreeBodySimulation:
             return {
                 "light_intensity": 0.0,
                 "heat_level": 0.0,
+                "temperature": -273.15,
+                "radiation": 0.0,
                 "stability": 0.0,
             }
 
         # 计算行星到各恒星的距离和总光照/热量
         total_intensity = 0.0
-        min_dist = float('inf')
+        radiation = 0.0
 
         for star in self.stars:
             if star is planet:
@@ -196,22 +198,30 @@ class ThreeBodySimulation:
             
             # 星球间距离
             dist = np.linalg.norm(star.position - planet.position)
-            min_dist = min(min_dist, dist)
             
             # 光照和热量受距离平方反比和恒星质量影响
             # 基础光照计算：质量大的恒星光照强，距离近光照强
             # 为了游戏性，添加一些常数调整
             intensity = star.mass * 10 / (dist * dist + 100)
             total_intensity += intensity
+            
+            # 辐射：极近距离急剧攀升
+            safe_dist = max(5.0, dist)
+            rad = star.mass * 200 / (safe_dist ** 2.5)
+            radiation += rad
 
         # 计算稳定性：基于行星受到的合力差异（或速度变化）
-        # 这里用一种简单方式：行星离恒星太近或太远都不稳定，
-        # 合理距离内（如受到的引力比较平衡时）比较稳定。
         stability = self._compute_stability(planet)
+        
+        # 基础温度 -273.15℃，根据接收到的热量增加
+        # 假设热量指数 total_intensity 达到 6.0 时，增加约 300度 -> 环境约为 20~30 度
+        temperature = -273.15 + (total_intensity * 50.0)
 
         return {
             "light_intensity": min(1.0, total_intensity / 8.0),
-            "heat_level": min(1.0, total_intensity / 6.0),
+            "heat_level": total_intensity / 6.0,
+            "temperature": temperature,
+            "radiation": radiation,
             "stability": stability,
         }
 

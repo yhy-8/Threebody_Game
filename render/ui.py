@@ -323,7 +323,7 @@ def update_hud(ui_manager: UIManager, state: dict, camera=None):
     if len(ui_manager.panels) > 0 and hasattr(ui_manager.panels[0], 'elements'):
         panel = ui_manager.panels[0]
         if len(panel.elements) >= 4:
-            panel.elements[0].set_text(f"时间: {state.get('time', 0):.1f}")
+            panel.elements[0].set_text(f"时间: 第 {int(state.get('time', 0))} 天")
             env = state.get("environment", {}).get("params", {})
             panel.elements[1].set_text(f"光照: {env.get('light_intensity', 0):.2f}")
             panel.elements[2].set_text(f"热量: {env.get('heat_level', 0):.2f}")
@@ -361,7 +361,7 @@ def create_hud(state: dict, width: int, height: int, camera=None) -> UIManager:
 
     # 时间显示
     y = 45
-    time_label = Label(20, y, f"时间: {state.get('time', 0):.1f}", label_size)
+    time_label = Label(20, y, f"时间: 第 {int(state.get('time', 0))} 天", label_size)
     panel.add(time_label)
 
     # 环境参数

@@ -34,7 +34,7 @@ class GameSimulator:
         env_params = self.environment.get_environment_params()
         self.entities.update(env_params)
 
-        self.time += dt
+        self.time += dt * self.environment.time_scale
 
     def get_state(self) -> Dict[str, Any]:
         """获取完整游戏状态"""

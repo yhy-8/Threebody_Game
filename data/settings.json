@@ -1,5 +1,5 @@
 {
-  "time_scale": 5.0,
+  "time_scale": 1.0,
   "auto_save_interval": 5,
   "enable_tutorial": true,
   "show_notifications": true,
@@ -14,7 +14,7 @@
   "sfx_volume": 0.9,
   "ambient_volume": 0.6,
   "mute_when_unfocused": true,
-  "mouse_sensitivity": 1.0,
+  "mouse_sensitivity": 0.3,
   "invert_mouse_y": false,
   "enable_edge_scrolling": true,
   "edge_scroll_speed": 1.0,
