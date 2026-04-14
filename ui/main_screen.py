@@ -183,7 +183,8 @@ class MainScreen(Screen):
         # 渲染标题
         if 'title' in self.fonts:
             title = self.fonts['title'].render("三体文明", True, (200, 220, 255))
-            title_rect = title.get_rect(center=(width // 2, 45))
+            title_y = max(30, int(height * 0.06))
+            title_rect = title.get_rect(center=(width // 2, title_y))
             screen.blit(title, title_rect)
 
         # 渲染面板
@@ -198,7 +199,8 @@ class MainScreen(Screen):
         if self.simulator and 'normal' in self.fonts:
             time_text = f"第 {int(self.simulator.time)} 天"
             time_surf = self.fonts['normal'].render(time_text, True, (255, 255, 200))
-            time_rect = time_surf.get_rect(center=(width // 2, 105))
+            time_y = max(70, int(height * 0.13))
+            time_rect = time_surf.get_rect(center=(width // 2, time_y))
             screen.blit(time_surf, time_rect)
 
         # 渲染底部提示

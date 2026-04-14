@@ -178,7 +178,10 @@ class Panel(UIElement):
 
         # 标题
         if self.title:
-            font = get_font(32)
+            width, height = screen.get_size()
+            scale = min(width / 1280, height / 720)
+            title_font_size = max(20, int(32 * scale))
+            font = get_font(title_font_size)
             title_surf = font.render(self.title, True, (200, 200, 255))
             screen.blit(title_surf, (self.rect.x + 10, self.rect.y + 5))
 
@@ -319,24 +322,23 @@ def update_hud(ui_manager: UIManager, state: dict, camera=None):
     if not ui_manager.panels:
         return
 
-    # 更新顶部面板 - 时间
+    # 更新顶部面板 - 环境信息
     if len(ui_manager.panels) > 0 and hasattr(ui_manager.panels[0], 'elements'):
         panel = ui_manager.panels[0]
-        if len(panel.elements) >= 4:
+        if len(panel.elements) >= 5:
             panel.elements[0].set_text(f"时间: 第 {int(state.get('time', 0))} 天")
             env = state.get("environment", {}).get("params", {})
-            panel.elements[1].set_text(f"光照: {env.get('light_intensity', 0):.2f}")
-            panel.elements[2].set_text(f"热量: {env.get('heat_level', 0):.2f}")
-            panel.elements[3].set_text(f"稳定性: {env.get('stability', 0):.2f}")
-
-    # 更新底部面板 - 实体状态
-    if len(ui_manager.panels) > 1 and hasattr(ui_manager.panels[1], 'elements'):
-        panel2 = ui_manager.panels[1]
-        entities = state.get("entities", {})
-        if len(panel2.elements) >= 3:
-            panel2.elements[0].set_text(f"人口: {entities.get('people_count', 0)}")
-            panel2.elements[1].set_text(f"建筑: {entities.get('buildings_count', 0)}")
-            panel2.elements[2].set_text(f"效率: {entities.get('avg_efficiency', 0):.2f}")
+            
+            temp = env.get("temperature", -273.15)
+            rad = env.get("radiation", 0.0)
+            light = env.get("light_intensity", 0.0)
+            stability = env.get("stability", 0.0)
+            
+            # 判断颜色 - 辅助方法由于在这里难以轻易调用，直接改变文本或保留原有颜色即可
+            panel.elements[1].set_text(f"温度: {temp:.1f} ℃")
+            panel.elements[2].set_text(f"辐射: {rad:.2f} mSv")
+            panel.elements[3].set_text(f"光照: {light:.1%}")
+            panel.elements[4].set_text("地质: 稳定" if stability > 0.5 else "地质: 危险")
 
     # 更新罗盘
     if camera and ui_manager.compass:
@@ -354,44 +356,37 @@ def create_hud(state: dict, width: int, height: int, camera=None) -> UIManager:
     label_size = max(16, int(24 * scale))
     line_gap = max(22, int(30 * scale))
 
+    # 调整面板高度以适应5条信息
+    panel_h = max(180, int(220 * scale))
+    
     # 顶部信息面板（避开星图顶部按钮区域，按钮高约40px + 间距）
     top_margin = max(60, int(70 * scale))
-    panel = Panel(10, top_margin, panel_w, panel_h, "三体文明")
+    panel = Panel(10, top_margin, panel_w, panel_h, "环境监测")
     ui.add_panel(panel)
 
-    # 时间显示
-    y = 45
+    y = max(40, int(50 * scale))
     time_label = Label(20, y, f"时间: 第 {int(state.get('time', 0))} 天", label_size)
     panel.add(time_label)
 
-    # 环境参数
     env = state.get("environment", {}).get("params", {})
+    temp = env.get("temperature", -273.15)
+    rad = env.get("radiation", 0.0)
+    light = env.get("light_intensity", 0.0)
+    stability = env.get("stability", 0.0)
+    
     y += line_gap
-    light_label = Label(20, y, f"光照: {env.get('light_intensity', 0):.2f}", label_size)
+    temp_label = Label(20, y, f"温度: {temp:.1f} ℃", label_size)
     y += line_gap
-    heat_label = Label(20, y, f"热量: {env.get('heat_level', 0):.2f}", label_size)
+    rad_label = Label(20, y, f"辐射: {rad:.2f} mSv", label_size)
     y += line_gap
-    stability_label = Label(20, y, f"稳定性: {env.get('stability', 0):.2f}", label_size)
+    light_label = Label(20, y, f"光照: {light:.1%}", label_size)
+    y += line_gap
+    stab_label = Label(20, y, "地质: 稳定" if stability > 0.5 else "地质: 危险", label_size)
+    
+    panel.add(temp_label)
+    panel.add(rad_label)
     panel.add(light_label)
-    panel.add(heat_label)
-    panel.add(stability_label)
-
-    # 底部实体状态面板
-    entities = state.get("entities", {})
-    panel2_h = max(100, int(140 * scale))
-    panel2_w = max(180, int(280 * scale))
-    panel2 = Panel(10, height - panel2_h - 20, panel2_w, panel2_h, "文明状态")
-    ui.add_panel(panel2)
-
-    y = 45
-    people_label = Label(20, y, f"人口: {entities.get('people_count', 0)}", label_size)
-    y += line_gap
-    buildings_label = Label(20, y, f"建筑: {entities.get('buildings_count', 0)}", label_size)
-    y += line_gap
-    efficiency_label = Label(20, y, f"效率: {entities.get('avg_efficiency', 0):.2f}", label_size)
-    panel2.add(people_label)
-    panel2.add(buildings_label)
-    panel2.add(efficiency_label)
+    panel.add(stab_label)
 
     # 添加罗盘（右上角）- 根据窗口大小缩放，避开帮助按钮
     compass_size = max(60, int(80 * scale))

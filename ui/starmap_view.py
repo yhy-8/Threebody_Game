@@ -28,12 +28,18 @@ class StarmapView(Screen):
     def setup_ui(self):
         """设置UI"""
         width, height = self.screen.get_size()
-        btn_font_size = max(16, min(22, width // 58))
-        btn_h = max(32, min(40, height // 18))
+        scale = min(width / 1280, height / 720)
+        
+        btn_font_size = max(16, int(22 * scale))
+        btn_h = max(32, int(40 * scale))
+        
+        btn_w_back = max(100, int(120 * scale))
+        btn_w_pause = max(80, int(100 * scale))
+        btn_w_help = max(90, int(110 * scale))
 
         # 返回主界面按钮
         self.back_button = MenuButton(
-            20, 20, max(100, width // 11), btn_h,
+            int(20 * scale), int(20 * scale), btn_w_back, btn_h,
             "← 返回",
             callback=self.on_back,
             font_size=btn_font_size
@@ -41,7 +47,7 @@ class StarmapView(Screen):
 
         # 暂停/继续按钮
         self.pause_button = MenuButton(
-            20 + max(100, width // 11) + 20, 20, max(80, width // 13), btn_h,
+            int(20 * scale) + btn_w_back + int(20 * scale), int(20 * scale), btn_w_pause, btn_h,
             "暂停",
             callback=self.on_pause_toggle,
             font_size=btn_font_size
@@ -49,7 +55,7 @@ class StarmapView(Screen):
 
         # 帮助按钮
         self.help_button = MenuButton(
-            width - max(100, width // 12) - 10, 20, max(90, width // 12), btn_h,
+            width - btn_w_help - int(20 * scale), int(20 * scale), btn_w_help, btn_h,
             "帮助(?)",
             callback=self.on_help_toggle,
             font_size=btn_font_size
@@ -341,8 +347,9 @@ class StarmapView(Screen):
         screen.blit(overlay, (0, 0))
 
         # 帮助面板 - 根据窗口大小缩放
-        panel_width = min(600, int(width * 0.7))
-        panel_height = min(500, int(height * 0.7))
+        scale = min(width / 1280, height / 720)
+        panel_width = min(int(800 * scale), int(width * 0.8))
+        panel_height = min(int(600 * scale), int(height * 0.8))
         panel_x = (width - panel_width) // 2
         panel_y = (height - panel_height) // 2
 
@@ -351,7 +358,7 @@ class StarmapView(Screen):
         pygame.draw.rect(screen, (80, 90, 120), (panel_x, panel_y, panel_width, panel_height), 2, border_radius=12)
 
         # 标题
-        title_font_size = max(24, min(48, width // 27))
+        title_font_size = max(24, int(48 * scale))
         title_font = get_font(title_font_size)
         title = title_font.render("操作说明", True, (220, 230, 255))
         title_rect = title.get_rect(center=(width // 2, panel_y + max(30, int(panel_height * 0.08))))
@@ -375,8 +382,8 @@ class StarmapView(Screen):
             ])
         ]
 
-        section_font_size = max(16, min(22, width // 58))
-        item_font_size = max(12, min(16, width // 80))
+        section_font_size = max(16, int(24 * scale))
+        item_font_size = max(14, int(18 * scale))
         y_offset = panel_y + max(70, int(panel_height * 0.18))
         section_font = get_font(section_font_size)
         item_font = get_font(item_font_size)
@@ -384,20 +391,20 @@ class StarmapView(Screen):
         for section, items in help_items:
             # 章节标题
             section_surf = section_font.render(section, True, (150, 180, 255))
-            screen.blit(section_surf, (panel_x + 30, y_offset))
+            screen.blit(section_surf, (panel_x + int(30 * scale), y_offset))
             y_offset += max(22, int(panel_height * 0.06))
 
             # 项目
             for item in items:
                 item_surf = item_font.render(item, True, (200, 210, 230))
-                screen.blit(item_surf, (panel_x + 50, y_offset))
+                screen.blit(item_surf, (panel_x + int(50 * scale), y_offset))
                 y_offset += max(18, int(panel_height * 0.045))
 
             y_offset += max(8, int(panel_height * 0.02))
 
         # 底部提示
-        hint_font_size = max(13, min(18, width // 72))
+        hint_font_size = max(13, int(18 * scale))
         hint_font = get_font(hint_font_size)
         hint_surf = hint_font.render("点击任意位置或按任意键关闭帮助", True, (150, 160, 180))
-        hint_rect = hint_surf.get_rect(center=(width // 2, panel_y + panel_height - 30))
+        hint_rect = hint_surf.get_rect(center=(width // 2, panel_y + panel_height - int(30 * scale)))
         screen.blit(hint_surf, hint_rect)
