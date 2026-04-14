@@ -78,12 +78,15 @@ class SettingSlider:
 
         self.dragging = False
         self.hovered = False
-        self.track_rect = pygame.Rect(x, y + height // 2 - 4, width, 8)
-        self.handle_radius = 10
+        track_h = max(6, height // 6)
+        self.track_rect = pygame.Rect(x, y + height // 2 - track_h // 2, width, track_h)
+        self.handle_radius = max(7, height // 5)
 
         from render.ui import get_font
-        self.font = get_font(20)
-        self.label_font = get_font(18)
+        font_size = max(14, int(height * 0.4))
+        label_font_size = max(12, int(height * 0.36))
+        self.font = get_font(font_size)
+        self.label_font = get_font(label_font_size)
 
     def update(self, dt: float):
         """更新滑块"""
@@ -151,7 +154,7 @@ class SettingSlider:
         # 绘制值
         value_text = f"{self.value:.{self.decimals}f}{self.suffix}"
         value_surf = self.font.render(value_text, True, (200, 210, 240))
-        screen.blit(value_surf, (self.rect.right - value_surf.get_width(), self.rect.y + 15))
+        screen.blit(value_surf, (self.rect.right - value_surf.get_width(), self.rect.y + self.rect.height // 4))
 
 
 class SettingCheckbox:
@@ -167,8 +170,9 @@ class SettingCheckbox:
         self.hovered = False
 
         from render.ui import get_font
-        self.font = get_font(20)
-        self.checkbox_size = 24
+        font_size = max(14, int(height * 0.5))
+        self.font = get_font(font_size)
+        self.checkbox_size = max(18, int(height * 0.6))
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理事件"""
@@ -260,31 +264,35 @@ class SettingsScreen(Screen):
     def setup_ui(self):
         """设置UI"""
         width, height = self.screen.get_size()
+        scale = min(width / 1280, height / 720)
 
         # 创建星空背景
         self.background = StarBackground(width, height, star_count=200)
 
-        # 创建标签页按钮
-        tab_width = 140
-        tab_height = 45
-        tab_gap = 10
+        # 创建标签页按钮 - 按比例缩放
+        tab_width = max(100, int(140 * scale))
+        tab_height = max(35, int(45 * scale))
+        tab_gap = max(6, int(10 * scale))
+        tab_font_size = max(16, int(24 * scale))
         start_x = width // 2 - (tab_width * 4 + tab_gap * 3) // 2
-        tab_y = 80
+        tab_y = max(60, int(80 * scale))
 
+        self.tab_buttons = {}
         for i, tab in enumerate(SettingTab):
             btn = MenuButton(
                 start_x + i * (tab_width + tab_gap), tab_y,
                 tab_width, tab_height,
                 tab.value,
                 callback=lambda t=tab: self.on_tab_changed(t),
-                font_size=24
+                font_size=tab_font_size
             )
             self.tab_buttons[tab] = btn
 
         # 创建底部按钮
-        btn_width = 120
-        btn_height = 45
-        btn_y = height - 80
+        btn_width = max(90, int(120 * scale))
+        btn_height = max(35, int(45 * scale))
+        btn_font_size = max(18, int(26 * scale))
+        btn_y = height - max(60, int(80 * scale))
 
         self.buttons = [
             MenuButton(
@@ -292,14 +300,14 @@ class SettingsScreen(Screen):
                 btn_width, btn_height,
                 "应用",
                 callback=self.on_apply,
-                font_size=26
+                font_size=btn_font_size
             ),
             MenuButton(
                 width // 2 + 20, btn_y,
                 btn_width, btn_height,
                 "返回",
                 callback=self.on_back,
-                font_size=26
+                font_size=btn_font_size
             ),
         ]
 
@@ -312,9 +320,16 @@ class SettingsScreen(Screen):
         self.checkboxes.clear()
 
         width, height = self.screen.get_size()
-        content_x = width // 2 - 200
-        content_y = 160
-        gap = 70
+        scale = min(width / 1280, height / 720)
+
+        # 内容区域参数 - 按比例缩放
+        content_width = max(300, int(400 * scale))
+        content_x = width // 2 - content_width // 2
+        content_y = max(130, int(160 * scale))
+        slider_height = max(38, int(50 * scale))
+        checkbox_height = max(30, int(40 * scale))
+        gap = max(50, int(70 * scale))
+        small_gap = max(36, int(50 * scale))
 
         s = self.settings
 
@@ -322,13 +337,13 @@ class SettingsScreen(Screen):
             # 游戏设置
             self.sliders = [
                 SettingSlider(
-                    content_x, content_y, 400, 50,
+                    content_x, content_y, content_width, slider_height,
                     0.1, 5.0, s.time_scale,
                     "时间流逝速度", decimals=1, suffix="x",
                     on_change=lambda v: setattr(self.settings, 'time_scale', v)
                 ),
                 SettingSlider(
-                    content_x, content_y + gap, 400, 50,
+                    content_x, content_y + gap, content_width, slider_height,
                     1, 30, s.auto_save_interval,
                     "自动保存间隔", decimals=0, suffix="分钟",
                     on_change=lambda v: setattr(self.settings, 'auto_save_interval', int(v))
@@ -336,12 +351,12 @@ class SettingsScreen(Screen):
             ]
             self.checkboxes = [
                 SettingCheckbox(
-                    content_x, content_y + gap * 2, 400, 40,
+                    content_x, content_y + gap * 2, content_width, checkbox_height,
                     "启用教程提示", s.enable_tutorial,
                     on_change=lambda v: setattr(self.settings, 'enable_tutorial', v)
                 ),
                 SettingCheckbox(
-                    content_x, content_y + gap * 2 + 50, 400, 40,
+                    content_x, content_y + gap * 2 + small_gap, content_width, checkbox_height,
                     "显示通知消息", s.show_notifications,
                     on_change=lambda v: setattr(self.settings, 'show_notifications', v)
                 ),
@@ -351,29 +366,29 @@ class SettingsScreen(Screen):
             # 显示设置
             self.checkboxes = [
                 SettingCheckbox(
-                    content_x, content_y, 400, 40,
+                    content_x, content_y, content_width, checkbox_height,
                     "全屏模式", s.fullscreen,
                     on_change=lambda v: setattr(self.settings, 'fullscreen', v)
                 ),
                 SettingCheckbox(
-                    content_x, content_y + 50, 400, 40,
+                    content_x, content_y + small_gap, content_width, checkbox_height,
                     "垂直同步", s.vsync,
                     on_change=lambda v: setattr(self.settings, 'vsync', v)
                 ),
                 SettingCheckbox(
-                    content_x, content_y + 100, 400, 40,
+                    content_x, content_y + small_gap * 2, content_width, checkbox_height,
                     "粒子效果", s.particle_effects,
                     on_change=lambda v: setattr(self.settings, 'particle_effects', v)
                 ),
                 SettingCheckbox(
-                    content_x, content_y + 150, 400, 40,
+                    content_x, content_y + small_gap * 3, content_width, checkbox_height,
                     "显示FPS", s.show_fps,
                     on_change=lambda v: setattr(self.settings, 'show_fps', v)
                 ),
             ]
             self.sliders = [
                 SettingSlider(
-                    content_x, content_y + 220, 400, 50,
+                    content_x, content_y + small_gap * 4 + int(20 * scale), content_width, slider_height,
                     0, 3, s.quality_level,
                     "画质等级", decimals=0, suffix="",
                     on_change=lambda v: setattr(self.settings, 'quality_level', int(v))
@@ -382,27 +397,28 @@ class SettingsScreen(Screen):
 
         elif self.current_tab == SettingTab.AUDIO:
             # 音频设置
+            audio_gap = max(50, int(70 * scale))
             self.sliders = [
                 SettingSlider(
-                    content_x, content_y, 400, 50,
+                    content_x, content_y, content_width, slider_height,
                     0.0, 1.0, s.master_volume,
                     "主音量", decimals=2, suffix="",
                     on_change=lambda v: setattr(self.settings, 'master_volume', v)
                 ),
                 SettingSlider(
-                    content_x, content_y + 70, 400, 50,
+                    content_x, content_y + audio_gap, content_width, slider_height,
                     0.0, 1.0, s.music_volume,
                     "音乐音量", decimals=2, suffix="",
                     on_change=lambda v: setattr(self.settings, 'music_volume', v)
                 ),
                 SettingSlider(
-                content_x, content_y + 140, 400, 50,
+                    content_x, content_y + audio_gap * 2, content_width, slider_height,
                     0.0, 1.0, s.sfx_volume,
                     "音效音量", decimals=2, suffix="",
                     on_change=lambda v: setattr(self.settings, 'sfx_volume', v)
                 ),
                 SettingSlider(
-                    content_x, content_y + 210, 400, 50,
+                    content_x, content_y + audio_gap * 3, content_width, slider_height,
                     0.0, 1.0, s.ambient_volume,
                     "环境音量", decimals=2, suffix="",
                     on_change=lambda v: setattr(self.settings, 'ambient_volume', v)
@@ -410,7 +426,7 @@ class SettingsScreen(Screen):
             ]
             self.checkboxes = [
                 SettingCheckbox(
-                    content_x, content_y + 290, 400, 40,
+                    content_x, content_y + audio_gap * 4 + int(10 * scale), content_width, checkbox_height,
                     "失去焦点时静音", s.mute_when_unfocused,
                     on_change=lambda v: setattr(self.settings, 'mute_when_unfocused', v)
                 ),
@@ -420,13 +436,13 @@ class SettingsScreen(Screen):
             # 控制设置
             self.sliders = [
                 SettingSlider(
-                    content_x, content_y, 400, 50,
+                    content_x, content_y, content_width, slider_height,
                     0.1, 3.0, s.mouse_sensitivity,
                     "鼠标灵敏度", decimals=1, suffix="x",
                     on_change=lambda v: setattr(self.settings, 'mouse_sensitivity', v)
                 ),
                 SettingSlider(
-                    content_x, content_y + 70, 400, 50,
+                    content_x, content_y + gap, content_width, slider_height,
                     0.5, 2.0, s.edge_scroll_speed,
                     "边缘滚动速度", decimals=1, suffix="x",
                     on_change=lambda v: setattr(self.settings, 'edge_scroll_speed', v)
@@ -434,12 +450,12 @@ class SettingsScreen(Screen):
             ]
             self.checkboxes = [
                 SettingCheckbox(
-                    content_x, content_y + 140, 400, 40,
+                    content_x, content_y + gap * 2, content_width, checkbox_height,
                     "反转鼠标Y轴", s.invert_mouse_y,
                     on_change=lambda v: setattr(self.settings, 'invert_mouse_y', v)
                 ),
                 SettingCheckbox(
-                    content_x, content_y + 190, 400, 40,
+                    content_x, content_y + gap * 2 + small_gap, content_width, checkbox_height,
                     "启用边缘滚动", s.enable_edge_scrolling,
                     on_change=lambda v: setattr(self.settings, 'enable_edge_scrolling', v)
                 ),
@@ -560,11 +576,12 @@ class SettingsScreen(Screen):
             self.background.render(screen)
 
         width, height = screen.get_size()
+        scale = min(width / 1280, height / 720)
 
         # 渲染标题
         if 'title' in self.fonts:
             title = self.fonts['title'].render("设置", True, (220, 230, 255))
-            title_rect = title.get_rect(center=(width // 2, 40))
+            title_rect = title.get_rect(center=(width // 2, max(30, int(40 * scale))))
             screen.blit(title, title_rect)
 
         # 渲染标签页按钮
@@ -577,8 +594,11 @@ class SettingsScreen(Screen):
                                (btn.rect.x, btn.rect.bottom - 3, btn.rect.width, 3))
             btn.render(screen)
 
-        # 渲染设置内容区域背景
-        content_rect = pygame.Rect(width // 2 - 250, 140, 500, 350)
+        # 渲染设置内容区域背景 - 按比例缩放
+        content_w = max(350, int(500 * scale))
+        content_h = max(280, int(350 * scale))
+        content_y = max(120, int(140 * scale))
+        content_rect = pygame.Rect(width // 2 - content_w // 2, content_y, content_w, content_h)
         pygame.draw.rect(screen, (20, 25, 40, 180), content_rect, border_radius=12)
         pygame.draw.rect(screen, (50, 60, 90), content_rect, 2, border_radius=12)
 

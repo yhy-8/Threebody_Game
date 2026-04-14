@@ -347,37 +347,53 @@ def create_hud(state: dict, width: int, height: int, camera=None) -> UIManager:
     """创建HUD（平视显示器）"""
     ui = UIManager()
 
+    # 根据窗口大小缩放
+    scale = min(width / 1280, height / 720)
+    panel_w = max(200, int(320 * scale))
+    panel_h = max(140, int(200 * scale))
+    label_size = max(16, int(24 * scale))
+    line_gap = max(22, int(30 * scale))
+
     # 顶部信息面板
-    panel = Panel(10, 10, 320, 200, "三体文明")
+    panel = Panel(10, 10, panel_w, panel_h, "三体文明")
     ui.add_panel(panel)
 
-    # 时间显示 - 增加行间距
-    time_label = Label(20, 45, f"时间: {state.get('time', 0):.1f}")
+    # 时间显示
+    y = 45
+    time_label = Label(20, y, f"时间: {state.get('time', 0):.1f}", label_size)
     panel.add(time_label)
 
-    # 环境参数 - 增加行间距到30
+    # 环境参数
     env = state.get("environment", {}).get("params", {})
-    light_label = Label(20, 75, f"光照: {env.get('light_intensity', 0):.2f}")
-    heat_label = Label(20, 105, f"热量: {env.get('heat_level', 0):.2f}")
-    stability_label = Label(20, 135, f"稳定性: {env.get('stability', 0):.2f}")
+    y += line_gap
+    light_label = Label(20, y, f"光照: {env.get('light_intensity', 0):.2f}", label_size)
+    y += line_gap
+    heat_label = Label(20, y, f"热量: {env.get('heat_level', 0):.2f}", label_size)
+    y += line_gap
+    stability_label = Label(20, y, f"稳定性: {env.get('stability', 0):.2f}", label_size)
     panel.add(light_label)
     panel.add(heat_label)
     panel.add(stability_label)
 
     # 底部实体状态面板
     entities = state.get("entities", {})
-    panel2 = Panel(10, height - 160, 280, 140, "文明状态")
+    panel2_h = max(100, int(140 * scale))
+    panel2_w = max(180, int(280 * scale))
+    panel2 = Panel(10, height - panel2_h - 20, panel2_w, panel2_h, "文明状态")
     ui.add_panel(panel2)
 
-    people_label = Label(20, 45, f"人口: {entities.get('people_count', 0)}")
-    buildings_label = Label(20, 75, f"建筑: {entities.get('buildings_count', 0)}")
-    efficiency_label = Label(20, 105, f"效率: {entities.get('avg_efficiency', 0):.2f}")
+    y = 45
+    people_label = Label(20, y, f"人口: {entities.get('people_count', 0)}", label_size)
+    y += line_gap
+    buildings_label = Label(20, y, f"建筑: {entities.get('buildings_count', 0)}", label_size)
+    y += line_gap
+    efficiency_label = Label(20, y, f"效率: {entities.get('avg_efficiency', 0):.2f}", label_size)
     panel2.add(people_label)
     panel2.add(buildings_label)
     panel2.add(efficiency_label)
 
-    # 添加罗盘（右上角）- 考虑罗盘宽度，保持在右上角
-    compass_size = 80
+    # 添加罗盘（右上角）- 根据窗口大小缩放
+    compass_size = max(60, int(80 * scale))
     compass = Compass(width - compass_size - 10, 10, compass_size)
     if camera:
         compass.update_camera(camera)

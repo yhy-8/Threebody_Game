@@ -313,6 +313,21 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
                 for scr in screen_manager.screens.values():
                     scr.screen = screen
                     scr.rect = screen.get_rect()
+                # 更新场景渲染器的屏幕引用
+                scene.screen = screen
+                # 更新星图视图的场景渲染器和HUD
+                starmap_view = screen_manager.get_screen(ScreenType.STARMAP_VIEW)
+                if starmap_view:
+                    if starmap_view.scene:
+                        starmap_view.scene.screen = screen
+                    # 重新创建HUD以适应新的窗口尺寸
+                    if starmap_view.simulator and starmap_view.camera:
+                        starmap_view.ui_manager = create_hud(
+                            starmap_view.simulator.get_state(),
+                            event.w, event.h, starmap_view.camera
+                        )
+                # 重新创建主循SUI管理器
+                ui_manager = create_hud(state, event.w, event.h, camera)
                 # 通知当前界面重新设置UI
                 if screen_manager.current_screen:
                     screen_manager.current_screen.setup_ui()

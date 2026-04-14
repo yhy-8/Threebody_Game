@@ -38,28 +38,34 @@ class MainScreen(Screen):
         """设置UI"""
         width, height = self.screen.get_size()
 
+        # 按钮尺寸根据窗口大小缩放
+        btn_font_size = max(18, min(28, width // 50))
+
         # 左上角菜单按钮
         self.menu_button = MenuButton(
-            20, 20, 100, 40,
+            20, 20, max(80, width // 13), max(32, height // 18),
             "菜单",
             callback=self.on_menu_clicked,
-            font_size=24
+            font_size=btn_font_size
         )
 
         # 右上角星图按钮
         self.starmap_button = MenuButton(
-            width - 160, 20, 140, 50,
+            width - max(140, width // 9) - 20, 20,
+            max(120, width // 9), max(40, height // 15),
             "星图",
             callback=self.on_starmap_clicked,
-            font_size=28
+            font_size=btn_font_size + 2
         )
 
-        # 创建信息面板
-        panel_width = 280
-        panel_height = 320
-        gap = 30
-        start_x = 50
-        start_y = 100
+        # 创建信息面板 - 根据窗口大小动态计算
+        margin = max(30, int(width * 0.04))
+        available_width = width - margin * 2
+        panel_width = max(200, (available_width - margin * 2) // 3)
+        panel_height = max(200, int(height * 0.45))
+        gap = max(15, (available_width - panel_width * 3) // 2)
+        start_x = margin
+        start_y = max(80, int(height * 0.14))
 
         # 左侧面板 - 资源
         self.resource_panel = Panel(start_x, start_y, panel_width, panel_height, "资源")
@@ -186,9 +192,11 @@ class MainScreen(Screen):
 
     def _render_resource_content(self, screen: pygame.Surface):
         """渲染资源面板内容"""
+        width, height = screen.get_size()
         panel = self.resource_panel
-        font = get_font(20)
-        y_offset = 50
+        font_size = max(14, min(20, width // 64))
+        font = get_font(font_size)
+        y_offset = max(40, int(panel.rect.height * 0.15))
 
         # 尝试从模拟器获取资源数据
         if self.simulator:
@@ -210,18 +218,22 @@ class MainScreen(Screen):
                 ("人口", "500", (255, 150, 200)),
             ]
 
+        line_gap = max(25, int(panel.rect.height * 0.1))
         for name, value, color in resource_data:
             text = f"{name}: {value}"
             surf = font.render(text, True, color)
             screen.blit(surf, (panel.rect.x + 15, panel.rect.y + y_offset))
-            y_offset += 35
+            y_offset += line_gap
 
     def _render_civilization_content(self, screen: pygame.Surface):
         """渲染文明状态面板内容"""
+        width, height = screen.get_size()
         panel = self.civilization_panel
-        font = get_font(18)
-        small_font = get_font(14)
-        y_offset = 45
+        font_size = max(13, min(18, width // 72))
+        small_font_size = max(10, min(14, width // 92))
+        font = get_font(font_size)
+        small_font = get_font(small_font_size)
+        y_offset = max(38, int(panel.rect.height * 0.13))
 
         # 尝试从模拟器获取数据
         if self.simulator:
@@ -264,13 +276,15 @@ class MainScreen(Screen):
             trend_surf = small_font.render(trend, True, trend_color)
             screen.blit(trend_surf, (panel.rect.x + 220, panel.rect.y + y_offset + 3))
 
-            y_offset += 32
+            y_offset += max(24, int(panel.rect.height * 0.09))
 
     def _render_action_content(self, screen: pygame.Surface):
         """渲染行动面板内容"""
+        width, height = screen.get_size()
         panel = self.action_panel
-        font = get_font(20)
-        y_offset = 50
+        font_size = max(14, min(20, width // 64))
+        font = get_font(font_size)
+        y_offset = max(40, int(panel.rect.height * 0.15))
 
         # 根据是否有模拟器连接，显示不同的行动
         if self.simulator:
@@ -296,4 +310,4 @@ class MainScreen(Screen):
             name_surf = font.render(name, True, color)
             screen.blit(name_surf, (panel.rect.x + 15, panel.rect.y + y_offset))
 
-            y_offset += 45
+            y_offset += max(30, int(panel.rect.height * 0.12))

@@ -135,12 +135,13 @@ class InitialMenu(Screen):
         # 创建星空背景
         self.background = StarBackground(width, height, star_count=300)
 
-        # 创建按钮
-        button_width = 280
-        button_height = 60
+        # 创建按钮 - 根据窗口大小缩放
+        button_width = max(200, min(280, int(width * 0.22)))
+        button_height = max(45, min(60, int(height * 0.083)))
         button_x = width // 2 - button_width // 2
-        start_y = height // 2 + 50
-        gap = 80
+        start_y = int(height * 0.55)
+        gap = max(60, min(80, int(height * 0.11)))
+        btn_font_size = max(28, min(40, width // 32))
 
         self.buttons = [
             MenuButton(
@@ -148,21 +149,21 @@ class InitialMenu(Screen):
                 button_width, button_height,
                 "开始游戏",
                 callback=self.on_start_game,
-                font_size=40
+                font_size=btn_font_size
             ),
             MenuButton(
                 button_x, start_y + gap,
                 button_width, button_height,
                 "设置",
                 callback=self.on_settings,
-                font_size=40
+                font_size=btn_font_size
             ),
             MenuButton(
                 button_x, start_y + gap * 2,
                 button_width, button_height,
                 "退出",
                 callback=self.on_quit,
-                font_size=40
+                font_size=btn_font_size
             ),
         ]
 
@@ -238,7 +239,8 @@ class InitialMenu(Screen):
         # 渲染标题
         if 'title' in self.fonts:
             title_surf = self.fonts['title'].render("三体文明", True, (200, 220, 255))
-            title_rect = title_surf.get_rect(center=(self.rect.centerx, self.rect.height * 0.25))
+            title_y = self.rect.height * 0.20
+            title_rect = title_surf.get_rect(center=(self.rect.centerx, title_y))
 
             # 应用透明度
             if self.title_alpha < 1.0:
@@ -252,10 +254,11 @@ class InitialMenu(Screen):
 
             screen.blit(title_surf, title_rect)
 
-            # 副标题
+            # 副标题 - 基于标题实际底部位置，留出动态间距
             if 'subtitle' in self.fonts:
                 subtitle = self.fonts['subtitle'].render("Three-Body Civilization", True, (150, 170, 200))
-                sub_rect = subtitle.get_rect(center=(self.rect.centerx, self.rect.height * 0.25 + 60))
+                sub_y = title_rect.bottom + max(10, int(self.rect.height * 0.02))
+                sub_rect = subtitle.get_rect(center=(self.rect.centerx, sub_y + subtitle.get_height() // 2))
                 if self.title_alpha < 1.0:
                     subtitle.set_alpha(int(self.title_alpha * 255))
                 screen.blit(subtitle, sub_rect)

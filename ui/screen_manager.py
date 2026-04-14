@@ -38,12 +38,16 @@ class Screen:
         """加载界面所需字体"""
         from render.ui import get_font
 
+        # 根据窗口大小缩放字体
+        width, height = self.screen.get_size()
+        scale = min(width / 1280, height / 720)
+
         self.fonts = {
-            'title': get_font(72),
-            'subtitle': get_font(48),
-            'normal': get_font(28),
-            'small': get_font(20),
-            'tiny': get_font(14),
+            'title': get_font(max(36, int(72 * scale))),
+            'subtitle': get_font(max(24, int(48 * scale))),
+            'normal': get_font(max(18, int(28 * scale))),
+            'small': get_font(max(14, int(20 * scale))),
+            'tiny': get_font(max(10, int(14 * scale))),
         }
 
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):

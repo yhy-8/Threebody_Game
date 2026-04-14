@@ -41,28 +41,31 @@ class Camera:
 
     def get_forward_vector(self) -> np.ndarray:
         """获取相机朝向的前方向量（世界坐标）- 指向摄像机前方"""
-        # 摄像机初始位置在(0,0,-500)，看向原点(0,0,0)
-        # world_to_screen中，camera_z > 0 表示点在摄像机前方
-        # 所以初始前方向量应该是(0,0,-1)，朝向原点方向
-        point = np.array([0, 0, -1])  # 初始前方向量（朝向原点）
-        point = self._rotate_y(point, self.yaw)
-        point = self._rotate_x(point, self.pitch)
+        # world_to_screen 中的变换: rotate_x(rotate_y(world_point - pos, yaw), pitch)
+        # 相机空间的前方是 (0,0,1) (camera_z > 0 = 在前方)
+        # 要得到世界坐标的前方向量，需要取逆变换:
+        # world_forward = rotate_y(-yaw, rotate_x(-pitch, (0,0,1)))
+        point = np.array([0.0, 0.0, 1.0])
+        point = self._rotate_x(point, -self.pitch)
+        point = self._rotate_y(point, -self.yaw)
         return point
 
     def get_right_vector(self) -> np.ndarray:
         """获取相机右侧方向向量（世界坐标）"""
-        # 初始右方向是+X
-        point = np.array([1, 0, 0])
-        point = self._rotate_y(point, self.yaw)
-        point = self._rotate_x(point, self.pitch)
+        # 相机空间的右方是 (1,0,0)
+        point = np.array([1.0, 0.0, 0.0])
+        point = self._rotate_x(point, -self.pitch)
+        point = self._rotate_y(point, -self.yaw)
         return point
 
     def get_up_vector(self) -> np.ndarray:
         """获取相机上方方向向量（世界坐标）"""
-        # 初始上方向是+Y（世界坐标的上方）
-        point = np.array([0, 1, 0])
-        point = self._rotate_y(point, self.yaw)
-        point = self._rotate_x(point, self.pitch)
+        # 相机空间中 -Y 对应屏幕上方（因为screen_y = h/2 + y * scale）
+        # 但移动时 +Y 世界坐标 = 向上移动相机（场景下移），符合直觉
+        # 所以使用 (0,-1,0) 作为相机空间的"上"方向
+        point = np.array([0.0, -1.0, 0.0])
+        point = self._rotate_x(point, -self.pitch)
+        point = self._rotate_y(point, -self.yaw)
         return point
 
     def move(self, forward: float = 0, right: float = 0, up: float = 0):
