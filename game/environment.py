@@ -20,7 +20,7 @@ class ThreeBodySimulation:
     """三体运动模拟器"""
 
     G = 1.0  # 引力常数（简化）
-    TRAIL_LENGTH = 60  # 轨迹保留的点数
+    TRAIL_LENGTH = 200  # 轨迹保留的点数，加长以使恒星轨迹更明显
 
     def __init__(self):
         self.stars: List[Star] = []
@@ -29,44 +29,46 @@ class ThreeBodySimulation:
 
     def _initialize_stars(self):
         """初始化三颗恒星和一颗行星"""
+        # 采用层级稳定配置
+        
         # 恒星1：橙色主星（类似太阳）
         star1 = Star(
             mass=1000.0,
             position=np.array([0.0, 0.0, 0.0]),
-            velocity=np.array([0.0, 0.0, 0.0]),
+            velocity=np.array([0.0, 0.0, -0.3]),
             color=(255, 200, 100),
-            radius=100.0,
+            radius=30.0,  # 缩小半径以匹配更大距离
             is_planet=False
         )
 
         # 恒星2：蓝色
         star2 = Star(
             mass=800.0,
-            position=np.array([300.0, 0.0, 0.0]),
-            velocity=np.array([0.0, 0.0, 1.8]),
+            position=np.array([500.0, 0.0, 100.0]),
+            velocity=np.array([-0.5, 0.0, 0.8]),
             color=(100, 200, 255),
-            radius=80.0,
+            radius=25.0,
             is_planet=False
         )
 
         # 恒星3：红色
         star3 = Star(
             mass=600.0,
-            position=np.array([-200.0, 0.0, 150.0]),
-            velocity=np.array([0.0, 0.0, -1.2]),
+            position=np.array([-400.0, 0.0, -300.0]),
+            velocity=np.array([0.6, 0.0, 0.5]),
             color=(255, 100, 100),
-            radius=60.0,
+            radius=20.0,
             is_planet=False
         )
 
         # 行星：蓝色小型天体（类似地球）
-        # 行星绕恒星1运行
+        # 行星紧密绕恒星1运行
         planet = Star(
             mass=1.0,
-            position=np.array([150.0, 0.0, 0.0]),
-            velocity=np.array([0.0, 0.0, 2.5]),
+            position=np.array([80.0, 0.0, 0.0]), # 放置在恒星1外侧
+            velocity=np.array([0.0, 0.0, 3.5]),  # 给足初速度以形成轨道
             color=(100, 150, 255),
-            radius=2.0,  # 100:2 = 50:1，接近地球太阳比例
+            radius=3.0,
             is_planet=True
         )
 
@@ -106,21 +108,64 @@ class ThreeBodySimulation:
 
     def get_environment_params(self) -> dict:
         """获取环境参数（光照、热量等）"""
-        # 计算各恒星到原点的距离
-        distances = [np.linalg.norm(star.position) for star in self.stars]
+        # 寻找行星
+        planet = None
+        for star in self.stars:
+            if star.is_planet:
+                planet = star
+                break
 
-        # 简化：距离越近，光照和热量越强
-        total_intensity = sum(1000.0 / (d + 100) for d in distances)
+        if not planet:
+            return {
+                "light_intensity": 0.0,
+                "heat_level": 0.0,
+                "stability": 0.0,
+            }
+
+        # 计算行星到各恒星的距离和总光照/热量
+        total_intensity = 0.0
+        min_dist = float('inf')
+
+        for star in self.stars:
+            if star is planet:
+                continue
+            
+            # 星球间距离
+            dist = np.linalg.norm(star.position - planet.position)
+            min_dist = min(min_dist, dist)
+            
+            # 光照和热量受距离平方反比和恒星质量影响
+            # 基础光照计算：质量大的恒星光照强，距离近光照强
+            # 为了游戏性，添加一些常数调整
+            intensity = star.mass * 10 / (dist * dist + 100)
+            total_intensity += intensity
+
+        # 计算稳定性：基于行星受到的合力差异（或速度变化）
+        # 这里用一种简单方式：行星离恒星太近或太远都不稳定，
+        # 合理距离内（如受到的引力比较平衡时）比较稳定。
+        stability = self._compute_stability(planet)
 
         return {
-            "light_intensity": min(1.0, total_intensity / 3.0),
-            "heat_level": min(1.0, total_intensity / 2.5),
-            "stability": self._compute_stability(),
+            "light_intensity": min(1.0, total_intensity / 8.0),
+            "heat_level": min(1.0, total_intensity / 6.0),
+            "stability": stability,
         }
 
-    def _compute_stability(self) -> float:
-        """计算星系稳定性（基于速度方差）"""
-        velocities = np.array([star.velocity for star in self.stars])
-        speed = np.linalg.norm(velocities, axis=1)
-        # 速度差异越小越稳定
-        return 1.0 / (1.0 + np.std(speed))
+    def _compute_stability(self, planet: Star) -> float:
+        """计算星系稳定性（基于行星受到的加速度）"""
+        total_force = np.zeros(3)
+        for star in self.stars:
+            if star is planet:
+                continue
+            r = star.position - planet.position
+            dist = np.linalg.norm(r)
+            if dist > 1e-6:
+                force = self.G * planet.mass * star.mass * r / (dist ** 3)
+                total_force += force
+                
+        # 行星加速度
+        accel = np.linalg.norm(total_force) / planet.mass
+        
+        # 加速度太大（靠近恒星或被剧烈拉扯）导致不稳定
+        # 0.1 是一个设定的"正常"加速度，超过这个值稳定性就快速下降
+        return 1.0 / (1.0 + accel / 0.1)

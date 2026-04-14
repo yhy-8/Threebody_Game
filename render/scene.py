@@ -84,50 +84,53 @@ class SceneRenderer:
         is_planet = star_data.get("is_planet", False)
         trail = star_data.get("trail", [])
 
-        # 先绘制轨迹（如果存在）
-        if trail and len(trail) > 1:
-            self._draw_trail(trail, color)
-
+        # 先获取屏幕坐标
         screen_pos = self.camera.world_to_screen(
             pos[0], pos[1], pos[2],
             self.screen.get_size()
         )
 
-        if screen_pos is None:
-            return
+        # 把绘制轨迹的逻辑移到这里，在确定这颗星不是在视野后面完全不可见的情况下绘制
+        # 即使星体因为超出屏幕返回了None，轨迹还是应该绘制的，因为轨迹可能有部分在屏幕内
+        # 原本的代码这里如果是None就直接return了，可能会导致一些轨迹闪烁
+        
+        # 绘制渐变实体
+        if screen_pos is not None:
+            sx, sy = screen_pos
 
-        sx, sy = screen_pos
+            scale = self.camera.get_scale(pos[0], pos[1], pos[2])
+            screen_radius = max(1, int(radius * scale))
 
-        scale = self.camera.get_scale(pos[0], pos[1], pos[2])
-        screen_radius = max(1, int(radius * scale))
+            if screen_radius < 2:
+                # 太小只画实心圆
+                pygame.draw.circle(self.screen, color, (sx, sy), screen_radius)
+            else:
+                # 行星的渲染：蓝色渐变到暗色（有明暗面）
+                if is_planet:
+                    # 计算行星相对于恒星的光照方向（简化：以原点方向为光照）
+                    to_light = np.array(pos) / (np.linalg.norm(pos) + 1e-6)
+                    # 简化：根据位置计算明暗
+                    light_factor = 0.5 + 0.5 * (pos[2] / (abs(pos[0]) + abs(pos[2]) + 1))
 
-        if screen_radius < 2:
-            # 太小只画实心圆
-            pygame.draw.circle(self.screen, color, (sx, sy), screen_radius)
-            return
+                    for r in range(screen_radius, 0, -2):
+                        factor = 1 - (r / screen_radius) ** 2
+                        # 行星暗面更暗
+                        bright = tuple(int(c * (0.2 + 0.8 * factor * light_factor)) for c in color)
+                        bright = tuple(min(255, max(0, b)) for b in bright)
+                        pygame.draw.circle(self.screen, bright, (sx, sy), r)
+                else:
+                    # 恒星：发光效果（中心亮，边缘暗）
+                    for r in range(screen_radius, 0, -2):
+                        factor = 1 - (r / screen_radius) ** 2
+                        bright = tuple(min(255, int(c * (0.3 + 0.7 * factor))) for c in color)
+                        pygame.draw.circle(self.screen, bright, (sx, sy), r)
+                        
+        # **最后**绘制轨迹，确保恒星巨大半径不会遮挡其本身的轨迹
+        if trail and len(trail) > 1:
+            self._draw_trail(trail, color, is_planet)
 
-        # 行星的渲染：蓝色渐变到暗色（有明暗面）
-        if is_planet:
-            # 计算行星相对于恒星的光照方向（简化：以原点方向为光照）
-            to_light = np.array(pos) / (np.linalg.norm(pos) + 1e-6)
-            # 简化：根据位置计算明暗
-            light_factor = 0.5 + 0.5 * (pos[2] / (abs(pos[0]) + abs(pos[2]) + 1))
-
-            for r in range(screen_radius, 0, -2):
-                factor = 1 - (r / screen_radius) ** 2
-                # 行星暗面更暗
-                bright = tuple(int(c * (0.2 + 0.8 * factor * light_factor)) for c in color)
-                bright = tuple(min(255, max(0, b)) for b in bright)
-                pygame.draw.circle(self.screen, bright, (sx, sy), r)
-        else:
-            # 恒星：发光效果（中心亮，边缘暗）
-            for r in range(screen_radius, 0, -2):
-                factor = 1 - (r / screen_radius) ** 2
-                bright = tuple(min(255, int(c * (0.3 + 0.7 * factor))) for c in color)
-                pygame.draw.circle(self.screen, bright, (sx, sy), r)
-
-    def _draw_trail(self, trail: list, base_color: Tuple[int, int, int]):
-        """绘制渐变消失的轨迹"""
+    def _draw_trail(self, trail: list, base_color: Tuple[int, int, int], is_planet: bool = False):
+        """绘制渐变消失的轨迹（带发光效果）"""
         screen_size = self.screen.get_size()
         points = []
 
@@ -140,18 +143,31 @@ class SceneRenderer:
         if len(points) < 2:
             return
 
-        # 绘制渐变轨迹线
+        total = len(points)
+        
+        # 根据是否是行星调整粗细和发光强度
+        glow_max_width = 4 if is_planet else 12
+        main_max_width = 2 if is_planet else 6
+        glow_alpha_factor = 0.15 if is_planet else 0.35
+        main_alpha_min = 0.3 if is_planet else 0.5
+        main_alpha_range = 0.7 if is_planet else 0.5
+
+        # 第一遍：绘制发光底层（更宽、更暗的线条模拟光晕）
         for i in range(len(points) - 1):
-            # 渐变因子：越新的点越不透明
-            alpha = int(255 * (i / len(points)))
-            # 颜色逐渐变淡
-            faded_color = tuple(int(c * (0.2 + 0.8 * i / len(points))) for c in base_color)
-
-            # 根据深度调整线条粗细
+            t = i / total  # 0(旧) -> 1(新)
+            # 光晕颜色：基础色 * 低亮度
+            glow_color = tuple(max(0, min(255, int(c * (0.05 + glow_alpha_factor * t)))) for c in base_color)
             p1, p2 = points[i], points[i + 1]
-            width = max(1, int(3 * (i / len(points))))
+            glow_width = max(3, int(glow_max_width * t))
+            pygame.draw.line(self.screen, glow_color, p1, p2, glow_width)
 
-            # 绘制线段
+        # 第二遍：绘制主轨迹线（更亮、更窄）
+        for i in range(len(points) - 1):
+            t = i / total  # 0(旧) -> 1(新)
+            # 主线颜色
+            faded_color = tuple(max(0, min(255, int(c * (main_alpha_min + main_alpha_range * t)))) for c in base_color)
+            p1, p2 = points[i], points[i + 1]
+            width = max(1, int(main_max_width * t))
             pygame.draw.line(self.screen, faded_color, p1, p2, width)
 
     def _draw_orbit_hint(self):

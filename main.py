@@ -301,6 +301,14 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
         # 更新界面管理器
         screen_manager.update(dt)
 
+        # 应用全局设置
+        current_settings = screen_manager.global_state.get('settings', {})
+        if simulator and not simulator.game_over:
+            # 应用时间流逝速度设置
+            time_scale = current_settings.get('time_scale', 1.0)
+            if hasattr(simulator, 'set_time_scale'):
+                simulator.set_time_scale(time_scale)
+
         # 检查模拟器是否被重置（新游戏时替换了模拟器实例）
         current_simulator = screen_manager.global_state.get('simulator')
         if current_simulator is not simulator:

@@ -1,5 +1,5 @@
 {
-  "time_scale": 4.9,
+  "time_scale": 5.0,
   "auto_save_interval": 5,
   "enable_tutorial": true,
   "show_notifications": true,
@@ -8,7 +8,7 @@
   "vsync": true,
   "quality_level": 2,
   "particle_effects": true,
-  "show_fps": false,
+  "show_fps": true,
   "master_volume": 0.8,
   "music_volume": 0.7,
   "sfx_volume": 0.9,

@@ -17,6 +17,13 @@ class Camera:
         self.rotation = list(rotation)  # [yaw, pitch]
         self.fov = fov
         self.speed = 5
+        
+        # 增加设置支持
+        self.sensitivity = 1.0
+        self.invert_y = False
+        
+        # 引入最小投影深度限制以防止除以零或无穷大溢出导致的卡顿
+        self.min_z = 1.0
 
     @property
     def yaw(self) -> float:
@@ -36,8 +43,9 @@ class Camera:
 
     def rotate(self, dx: float, dy: float):
         """鼠标拖拽旋转视角"""
-        self.yaw += dx * 0.005
-        self.pitch += dy * 0.005
+        dy_sign = -1 if self.invert_y else 1
+        self.yaw += dx * 0.005 * self.sensitivity
+        self.pitch += dy * 0.005 * dy_sign * self.sensitivity
 
     def get_forward_vector(self) -> np.ndarray:
         """获取相机朝向的前方向量（世界坐标）- 指向摄像机前方"""
@@ -109,14 +117,18 @@ class Camera:
 
         # 3. 透视投影 - 使用摄像机空间中的实际深度
         camera_z = point[2]
-        if camera_z <= 0:
-            return None  # 点在摄像机后方或处于摄像机位置
-
+        if camera_z < self.min_z:
+            return None  # 点在摄像机后方或距离过近
+            
         scale = self.fov / camera_z
-
+        
         # 4. 映射到屏幕
         screen_x = int(screen_size[0] / 2 + point[0] * scale)
         screen_y = int(screen_size[1] / 2 + point[1] * scale)
+        
+        # 增加超出合理范围（非常大导致溢出的）点排除
+        if abs(screen_x) > screen_size[0] + 2000 or abs(screen_y) > screen_size[1] + 2000:
+            return None
 
         return (screen_x, screen_y)
 
@@ -149,7 +161,7 @@ class Camera:
     def get_scale(self, x: float, y: float, z: float) -> float:
         """获取指定世界坐标点的缩放比例"""
         camera_z = self.get_camera_z(x, y, z)
-        if camera_z <= 0:
+        if camera_z < self.min_z:
             return 0
         return self.fov / camera_z
 

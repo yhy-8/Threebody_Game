@@ -354,8 +354,9 @@ def create_hud(state: dict, width: int, height: int, camera=None) -> UIManager:
     label_size = max(16, int(24 * scale))
     line_gap = max(22, int(30 * scale))
 
-    # 顶部信息面板
-    panel = Panel(10, 10, panel_w, panel_h, "三体文明")
+    # 顶部信息面板（避开星图顶部按钮区域，按钮高约40px + 间距）
+    top_margin = max(60, int(70 * scale))
+    panel = Panel(10, top_margin, panel_w, panel_h, "三体文明")
     ui.add_panel(panel)
 
     # 时间显示
@@ -392,9 +393,9 @@ def create_hud(state: dict, width: int, height: int, camera=None) -> UIManager:
     panel2.add(buildings_label)
     panel2.add(efficiency_label)
 
-    # 添加罗盘（右上角）- 根据窗口大小缩放
+    # 添加罗盘（右上角）- 根据窗口大小缩放，避开帮助按钮
     compass_size = max(60, int(80 * scale))
-    compass = Compass(width - compass_size - 10, 10, compass_size)
+    compass = Compass(width - compass_size - 10, top_margin, compass_size)
     if camera:
         compass.update_camera(camera)
     ui.set_compass(compass)

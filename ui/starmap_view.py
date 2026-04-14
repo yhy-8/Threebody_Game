@@ -152,6 +152,12 @@ class StarmapView(Screen):
             if self.ui_manager:
                 state = self.simulator.get_state()
                 update_hud(self.ui_manager, state, self.camera)
+                
+        # 应用相机设置
+        if self.camera:
+            settings = self.screen_manager.global_state.get('settings', {})
+            self.camera.sensitivity = settings.get('mouse_sensitivity', 1.0)
+            self.camera.invert_y = settings.get('invert_mouse_y', False)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理事件"""

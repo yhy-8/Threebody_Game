@@ -251,6 +251,8 @@ class SettingsScreen(Screen):
                     self.settings = GameSettings.from_dict(data)
             except Exception as e:
                 print(f"加载设置失败: {e}")
+        # 并步到全局状态
+        self.screen_manager.global_state['settings'] = self.settings.to_dict()
 
     def save_settings(self):
         """保存设置到文件"""
@@ -260,6 +262,8 @@ class SettingsScreen(Screen):
                 json.dump(self.settings.to_dict(), f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f"保存设置失败: {e}")
+        # 同步到全局状态
+        self.screen_manager.global_state['settings'] = self.settings.to_dict()
 
     def setup_ui(self):
         """设置UI"""
