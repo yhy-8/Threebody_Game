@@ -74,6 +74,12 @@ class SaveSlot:
         pygame.draw.rect(screen, bg_color, self.rect, border_radius=8)
         pygame.draw.rect(screen, border_color, self.rect, 2, border_radius=8)
 
+        # 比例化内部布局
+        pad_x = max(10, int(self.rect.width * 0.05))
+        line1_y = self.rect.y + int(self.rect.height * 0.12)
+        line2_y = self.rect.y + int(self.rect.height * 0.42)
+        line3_y = self.rect.y + int(self.rect.height * 0.68)
+
         # 绘制存档信息
         slot_text = f"存档 {self.slot_id}"
         if self.has_save:
@@ -85,16 +91,16 @@ class SaveSlot:
             time_surf = small_font.render(time_text, True, (150, 160, 190))
             day_surf = small_font.render(day_text, True, (180, 190, 220))
 
-            screen.blit(slot_surf, (self.rect.x + 15, self.rect.y + 10))
-            screen.blit(time_surf, (self.rect.x + 15, self.rect.y + 35))
-            screen.blit(day_surf, (self.rect.x + 15, self.rect.y + 55))
+            screen.blit(slot_surf, (self.rect.x + pad_x, line1_y))
+            screen.blit(time_surf, (self.rect.x + pad_x, line2_y))
+            screen.blit(day_surf, (self.rect.x + pad_x, line3_y))
         else:
             # 空槽位
             slot_surf = font.render(slot_text, True, (150, 160, 180))
             empty_surf = small_font.render("空槽位", True, (120, 130, 150))
 
-            screen.blit(slot_surf, (self.rect.x + 15, self.rect.y + 15))
-            screen.blit(empty_surf, (self.rect.x + 15, self.rect.y + 45))
+            screen.blit(slot_surf, (self.rect.x + pad_x, line1_y))
+            screen.blit(empty_surf, (self.rect.x + pad_x, line2_y))
 
 
 class StartGameMenu(Screen):
@@ -171,20 +177,27 @@ class StartGameMenu(Screen):
     def create_save_slots(self):
         """创建存档槽位显示"""
         width, height = self.screen.get_size()
+        scale = min(width / 1280, height / 720)
 
-        slot_width = 280
-        slot_height = 90
-        gap = 15
+        slot_width = max(250, int(320 * scale))
+        slot_height = max(80, int(110 * scale))
+        gap = max(12, int(18 * scale))
 
-        # 计算位置（居中偏右，给左边留出标题空间）
-        start_x = width // 2 - slot_width // 2 + 150
-        start_y = height // 2 - (slot_height * 3 + gap * 2) // 2
+        # 2列3布局，居中显示
+        cols = 2
+        total_w = slot_width * cols + gap * (cols - 1)
+        start_x = (width - total_w) // 2
+        # 顶部留出标题和提示文字的空间
+        header_space = max(120, int(height * 0.18))
+        rows = 3
+        total_h = slot_height * rows + gap * (rows - 1)
+        start_y = header_space + (height - header_space - total_h) // 2 - max(20, int(height * 0.03))
 
         self.save_slots = []
         for i in range(6):
-            row = i // 2
-            col = i % 2
-            x = start_x + col * (slot_width + 20)
+            row = i // cols
+            col = i % cols
+            x = start_x + col * (slot_width + gap)
             y = start_y + row * (slot_height + gap)
 
             slot = SaveSlot(x, y, slot_width, slot_height, i + 1)
@@ -201,6 +214,16 @@ class StartGameMenu(Screen):
         # 重置游戏状态
         self.screen_manager.global_state['game_started'] = True
         self.screen_manager.global_state['current_save_slot'] = None
+
+        # 重置模拟器 - 创建全新的游戏实例
+        from game.simulator import GameSimulator
+        simulator = self.screen_manager.global_state.get('simulator')
+        if simulator:
+            simulator.reset()
+        else:
+            # 如果没有模拟器实例，创建一个新的
+            simulator = GameSimulator()
+            self.screen_manager.global_state['simulator'] = simulator
 
         # 切换到游戏主界面
         from .screen_manager import ScreenType
@@ -251,11 +274,31 @@ class StartGameMenu(Screen):
 
     def load_game(self, slot_id: int):
         """加载指定存档"""
-        print(f"加载存档 {slot_id}")
+        import json
+
+        save_path = f"data/saves/save_{slot_id}.json"
+        try:
+            with open(save_path, 'r', encoding='utf-8') as f:
+                save_data = json.load(f)
+        except Exception as e:
+            print(f"加载存档失败: {e}")
+            return
 
         # 设置游戏状态
         self.screen_manager.global_state['game_started'] = True
         self.screen_manager.global_state['current_save_slot'] = slot_id
+
+        # 恢复模拟器状态
+        simulator = self.screen_manager.global_state.get('simulator')
+        if simulator:
+            game_state = save_data.get('game_state', {})
+            if game_state:
+                simulator.from_dict(game_state)
+            else:
+                # 旧格式的存档没有 game_state，重置模拟器
+                simulator.reset()
+        
+        print(f"存档 {slot_id} 加载成功")
 
         # 切换到游戏主界面
         from .screen_manager import ScreenType
@@ -364,22 +407,28 @@ class StartGameMenu(Screen):
 
         else:
             # 渲染存档选择界面
-            # 标题
+            scale = min(width / 1280, height / 720)
+
+            # 标题 - 使用比例Y坐标避免重叠
             if 'subtitle' in self.fonts:
                 title = self.fonts['subtitle'].render("选择存档", True, (220, 230, 255))
-                title_rect = title.get_rect(center=(width // 2, 60))
+                title_y = max(40, int(height * 0.06))
+                title_rect = title.get_rect(center=(width // 2, title_y))
                 screen.blit(title, title_rect)
 
             # 提示文字
             if 'small' in self.fonts:
                 hint = self.fonts['small'].render("点击存档槽位加载游戏", True, (150, 160, 180))
-                hint_rect = hint.get_rect(center=(width // 2, 100))
+                hint_y = max(80, int(height * 0.12))
+                hint_rect = hint.get_rect(center=(width // 2, hint_y))
                 screen.blit(hint, hint_rect)
 
-            # 渲染存档槽位
+            # 渲染存档槽位 - 使用缩放后的字体
             from render.ui import get_font
-            font = get_font(22)
-            small_font = get_font(16)
+            slot_font_size = max(18, int(24 * scale))
+            slot_small_font_size = max(14, int(18 * scale))
+            font = get_font(slot_font_size)
+            small_font = get_font(slot_small_font_size)
 
             for slot in self.save_slots:
                 slot.render(screen, font, small_font)

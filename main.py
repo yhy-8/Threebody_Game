@@ -240,6 +240,9 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
     # 创建游戏模拟器
     simulator = GameSimulator()
 
+    # 将模拟器存入全局状态，以便各界面可以访问（用于重置、保存等）
+    screen_manager.global_state['simulator'] = simulator
+
     # 设置初始暂停状态
     sim_config = config.get("simulation", {})
     if sim_config.get("initial_paused", False):
@@ -298,8 +301,21 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
         # 更新界面管理器
         screen_manager.update(dt)
 
+        # 检查模拟器是否被重置（新游戏时替换了模拟器实例）
+        current_simulator = screen_manager.global_state.get('simulator')
+        if current_simulator is not simulator:
+            simulator = current_simulator
+            # 更新所有引用了旧模拟器的屏幕
+            starmap_view_screen = screen_manager.get_screen(ScreenType.STARMAP_VIEW)
+            if starmap_view_screen:
+                starmap_view_screen.simulator = simulator
+                starmap_view_screen.game_over = False
+            main_screen_instance = screen_manager.get_screen(ScreenType.MAIN_SCREEN)
+            if main_screen_instance:
+                main_screen_instance.simulator = simulator
+
         # 更新模拟器（游戏逻辑）
-        if simulator and not simulator.paused:
+        if simulator and not simulator.paused and not simulator.game_over:
             simulator.update(dt)
 
         # 处理事件

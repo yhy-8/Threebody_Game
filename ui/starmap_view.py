@@ -22,6 +22,7 @@ class StarmapView(Screen):
         self.simulator = None  # 游戏模拟器，由外部注入
         self.game_over = False
         self.showing_help = False
+        self.restart_button: Optional[MenuButton] = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -102,6 +103,12 @@ class StarmapView(Screen):
         self.screen = pygame.display.get_surface()
         self.rect = self.screen.get_rect()
 
+        # 同步游戏结束状态 - 如果模拟器已重置则清除game_over
+        if self.simulator:
+            self.game_over = self.simulator.game_over
+        else:
+            self.game_over = False
+
         # 如果是从主界面或其他界面进入，可能需要初始化
         if self.camera is None:
             # 等待外部注入simulator后初始化
@@ -132,16 +139,14 @@ class StarmapView(Screen):
 
         # 更新3D场景
         if self.simulator and not self.game_over:
-            # 更新模拟器
-            if not self.simulator.paused:
-                self.simulator.update(dt)
-
             # 碰撞检测
             if self.camera and self.scene:
                 state = self.simulator.get_state()
                 stars = state.get("environment", {}).get("stars", [])
                 if self.camera.check_collision(stars):
                     self.game_over = True
+                    self.simulator.game_over = True  # 同步到模拟器
+                    self._create_game_over_button()
 
             # 更新UI
             if self.ui_manager:
@@ -151,6 +156,16 @@ class StarmapView(Screen):
     def handle_event(self, event: pygame.event.Event) -> bool:
         """处理事件"""
         if not self.active:
+            return False
+
+        # 如果游戏结束，处理重启按钮
+        if self.game_over:
+            if self.restart_button and self.restart_button.handle_event(event):
+                return True
+            # 游戏结束时不处理其他3D交互
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.on_back()
+                return True
             return False
 
         # 如果显示帮助，点击任意位置关闭
@@ -255,6 +270,38 @@ class StarmapView(Screen):
         if self.showing_help:
             self._render_help(screen)
 
+    def _create_game_over_button(self):
+        """创建游戏结束界面的按钮"""
+        width, height = self.screen.get_size()
+        btn_w = max(180, width // 6)
+        btn_h = max(45, height // 14)
+        btn_font = max(22, min(32, width // 40))
+
+        self.restart_button = MenuButton(
+            width // 2 - btn_w // 2, height // 2 + 80,
+            btn_w, btn_h,
+            "开始新游戏",
+            callback=self._on_restart,
+            font_size=btn_font
+        )
+
+    def _on_restart(self):
+        """重启游戏 - 从游戏结束界面"""
+        # 重置模拟器
+        simulator = self.screen_manager.global_state.get('simulator')
+        if simulator:
+            simulator.reset()
+        self.game_over = False
+        self.restart_button = None
+
+        # 重置摄像机位置
+        if self.camera:
+            self.camera.position = np.array([0.0, 0.0, -500.0])
+            self.camera.rotation = [0, 0]
+
+        # 返回开始游戏菜单
+        self.screen_manager.clear_stack_and_switch(ScreenType.START_GAME_MENU)
+
     def _render_game_over(self, screen: pygame.Surface):
         """渲染游戏结束画面"""
         width, height = screen.get_size()
@@ -273,9 +320,14 @@ class StarmapView(Screen):
 
         # 提示文字
         if 'normal' in self.fonts:
-            hint = self.fonts['normal'].render("你已撞击星球", True, (255, 200, 200))
+            hint = self.fonts['normal'].render("星球发生碰撞，文明毁灭", True, (255, 200, 200))
             hint_rect = hint.get_rect(center=(width // 2, height // 2 + 30))
             screen.blit(hint, hint_rect)
+
+        # 渲染重启按钮
+        if self.restart_button:
+            self.restart_button.update(0.016)
+            self.restart_button.render(screen)
 
     def _render_help(self, screen: pygame.Surface):
         """渲染帮助界面"""

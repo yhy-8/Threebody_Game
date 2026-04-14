@@ -194,7 +194,8 @@ class MainScreen(Screen):
         """渲染资源面板内容"""
         width, height = screen.get_size()
         panel = self.resource_panel
-        font_size = max(14, min(20, width // 64))
+        scale = min(width / 1280, height / 720)
+        font_size = max(18, int(24 * scale))
         font = get_font(font_size)
         y_offset = max(40, int(panel.rect.height * 0.15))
 
@@ -229,8 +230,9 @@ class MainScreen(Screen):
         """渲染文明状态面板内容"""
         width, height = screen.get_size()
         panel = self.civilization_panel
-        font_size = max(13, min(18, width // 72))
-        small_font_size = max(10, min(14, width // 92))
+        scale = min(width / 1280, height / 720)
+        font_size = max(16, int(22 * scale))
+        small_font_size = max(13, int(17 * scale))
         font = get_font(font_size)
         small_font = get_font(small_font_size)
         y_offset = max(38, int(panel.rect.height * 0.13))
@@ -267,14 +269,16 @@ class MainScreen(Screen):
             name_surf = font.render(name, True, (180, 200, 220))
             screen.blit(name_surf, (panel.rect.x + 15, panel.rect.y + y_offset))
 
-            # 数值
+            # 数值 - 位置相对面板宽度
+            value_x = panel.rect.x + int(panel.rect.width * 0.5)
             value_surf = font.render(value, True, (200, 220, 255))
-            screen.blit(value_surf, (panel.rect.x + 150, panel.rect.y + y_offset))
+            screen.blit(value_surf, (value_x, panel.rect.y + y_offset))
 
             # 趋势
             trend_color = (100, 255, 100) if "+" in trend else (255, 100, 100)
+            trend_x = panel.rect.x + int(panel.rect.width * 0.75)
             trend_surf = small_font.render(trend, True, trend_color)
-            screen.blit(trend_surf, (panel.rect.x + 220, panel.rect.y + y_offset + 3))
+            screen.blit(trend_surf, (trend_x, panel.rect.y + y_offset + 3))
 
             y_offset += max(24, int(panel.rect.height * 0.09))
 
@@ -282,7 +286,8 @@ class MainScreen(Screen):
         """渲染行动面板内容"""
         width, height = screen.get_size()
         panel = self.action_panel
-        font_size = max(14, min(20, width // 64))
+        scale = min(width / 1280, height / 720)
+        font_size = max(18, int(24 * scale))
         font = get_font(font_size)
         y_offset = max(40, int(panel.rect.height * 0.15))
 
