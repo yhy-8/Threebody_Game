@@ -28,45 +28,73 @@ class ThreeBodySimulation:
         self._initialize_stars()
 
     def _initialize_stars(self):
-        """初始化三颗恒星和一颗行星"""
-        # 采用层级稳定配置
+        import random
+        import math
+        """初始化三颗恒星和一颗行星 (采用随机层级稳定配置)"""
         
-        # 恒星1：橙色主星（类似太阳）
+        # 内层双星：随机生成质量，并让它们互相绕转（质心在原点附近）
+        m1 = random.uniform(800.0, 1200.0)
+        m2 = random.uniform(600.0, 1000.0)
+        
+        # 随机分配一个双星间距
+        binary_dist = random.uniform(150.0, 250.0)
+        
+        # 估算相对速度 v = sqrt(G(m1+m2)/r)
+        v_rel = math.sqrt(self.G * (m1 + m2) / binary_dist)
+        
+        # 为了让它们绕质心转，根据质量分配距离和速度
+        r1 = binary_dist * (m2 / (m1 + m2))
+        r2 = binary_dist * (m1 / (m1 + m2))
+        
+        v1 = v_rel * (m2 / (m1 + m2))
+        v2 = v_rel * (m1 / (m1 + m2))
+        
+        # 随机给双星轨道一个初始旋转相位
+        angle = random.uniform(0, 2 * math.pi)
+        
         star1 = Star(
-            mass=1000.0,
-            position=np.array([0.0, 0.0, 0.0]),
-            velocity=np.array([0.0, 0.0, -0.3]),
-            color=(255, 200, 100),
-            radius=30.0,  # 缩小半径以匹配更大距离
+            mass=m1,
+            position=np.array([r1 * math.cos(angle), 0.0, r1 * math.sin(angle)]),
+            velocity=np.array([-v1 * math.sin(angle), 0.0, v1 * math.cos(angle)]),
+            color=(255, random.randint(180, 220), 100),
+            radius=random.uniform(25.0, 35.0),
             is_planet=False
         )
 
-        # 恒星2：蓝色
         star2 = Star(
-            mass=800.0,
-            position=np.array([500.0, 0.0, 100.0]),
-            velocity=np.array([-0.5, 0.0, 0.8]),
-            color=(100, 200, 255),
-            radius=25.0,
+            mass=m2,
+            position=np.array([-r2 * math.cos(angle), 0.0, -r2 * math.sin(angle)]),
+            velocity=np.array([v2 * math.sin(angle), 0.0, -v2 * math.cos(angle)]),
+            color=(100, random.randint(180, 220), 255),
+            radius=random.uniform(20.0, 30.0),
             is_planet=False
         )
 
-        # 恒星3：红色
+        # 外层第三恒星，绕双星质心旋转，距离远一点
+        m3 = random.uniform(400.0, 800.0)
+        outer_dist = random.uniform(600.0, 900.0)
+        v_outer = math.sqrt(self.G * (m1 + m2 + m3) / outer_dist)
+        outer_angle = random.uniform(0, 2 * math.pi)
+        
         star3 = Star(
-            mass=600.0,
-            position=np.array([-400.0, 0.0, -300.0]),
-            velocity=np.array([0.6, 0.0, 0.5]),
-            color=(255, 100, 100),
-            radius=20.0,
+            mass=m3,
+            position=np.array([outer_dist * math.cos(outer_angle), random.uniform(-50, 50), outer_dist * math.sin(outer_angle)]),
+            velocity=np.array([-v_outer * math.sin(outer_angle), random.uniform(-0.1, 0.1), v_outer * math.cos(outer_angle)]),
+            color=(255, random.randint(80, 120), random.randint(80, 120)),
+            radius=random.uniform(18.0, 25.0),
             is_planet=False
         )
 
-        # 行星：蓝色小型天体（类似地球）
-        # 行星紧密绕恒星1运行
+        # 行星，在内层双星的引力影响范围外，围绕内侧双星运转
+        planet_dist = outer_dist * random.uniform(0.35, 0.55)
+        p_angle = random.uniform(0, 2 * math.pi)
+        # 略微调整行星速度，以产生一个非完美的圆轨道
+        v_planet = math.sqrt(self.G * (m1 + m2) / planet_dist) * random.uniform(0.8, 1.2)
+        
         planet = Star(
             mass=1.0,
-            position=np.array([80.0, 0.0, 0.0]), # 放置在恒星1外侧
-            velocity=np.array([0.0, 0.0, 3.5]),  # 给足初速度以形成轨道
+            position=np.array([planet_dist * math.cos(p_angle), 0.0, planet_dist * math.sin(p_angle)]),
+            velocity=np.array([-v_planet * math.sin(p_angle), 0.0, v_planet * math.cos(p_angle)]),
             color=(100, 150, 255),
             radius=3.0,
             is_planet=True
@@ -74,37 +102,73 @@ class ThreeBodySimulation:
 
         self.stars = [star1, star2, star3, planet]
 
-    def compute_forces(self) -> List[np.ndarray]:
-        """计算每颗恒星受到的引力"""
+    def compute_forces_for_state(self, positions: List[np.ndarray]) -> List[np.ndarray]:
+        """为给定位置列表计算每颗恒星受到的引力"""
         forces = [np.zeros(3) for _ in self.stars]
-
-        for i, star_i in enumerate(self.stars):
-            for j, star_j in enumerate(self.stars):
+        for i in range(len(self.stars)):
+            for j in range(len(self.stars)):
                 if i != j:
-                    r = star_j.position - star_i.position
+                    r = positions[j] - positions[i]
                     dist = np.linalg.norm(r)
                     if dist > 1e-6:
-                        force = self.G * star_i.mass * star_j.mass * r / (dist ** 3)
+                        force = self.G * self.stars[i].mass * self.stars[j].mass * r / (dist ** 3)
                         forces[i] += force
-
         return forces
 
     def update(self, dt: float):
-        """更新三体运动（使用半隐式欧拉法）"""
+        """更新三体运动（使用RK4方法 + 随机微扰）"""
         dt = dt * self.time_scale
-        forces = self.compute_forces()
+        import random
 
-        # 更新速度和位置
-        for star, force in zip(self.stars, forces):
+        if dt <= 0:
+            return
+
+        positions = [star.position.copy() for star in self.stars]
+        velocities = [star.velocity.copy() for star in self.stars]
+        masses = [star.mass for star in self.stars]
+        
+        # RK4 Step 1
+        forces1 = self.compute_forces_for_state(positions)
+        a1 = [f / m for f, m in zip(forces1, masses)]
+        
+        # RK4 Step 2
+        pos2 = [p + v * (dt / 2) for p, v in zip(positions, velocities)]
+        v2_temp = [v + a * (dt / 2) for v, a in zip(velocities, a1)]
+        forces2 = self.compute_forces_for_state(pos2)
+        a2 = [f / m for f, m in zip(forces2, masses)]
+        
+        # RK4 Step 3
+        pos3 = [p + v * (dt / 2) for p, v in zip(positions, v2_temp)]
+        v3_temp = [v + a * (dt / 2) for v, a in zip(velocities, a2)]
+        forces3 = self.compute_forces_for_state(pos3)
+        a3 = [f / m for f, m in zip(forces3, masses)]
+        
+        # RK4 Step 4
+        pos4 = [p + v * dt for p, v in zip(positions, v3_temp)]
+        forces4 = self.compute_forces_for_state(pos4)
+        a4 = [f / m for f, m in zip(forces4, masses)]
+        
+        # 综合更新与微小随机演化
+        for i, star in enumerate(self.stars):
             # 记录当前位置到轨迹
             star.trail.append(star.position.copy())
-            # 限制轨迹长度
             if len(star.trail) > self.TRAIL_LENGTH:
                 star.trail.pop(0)
-
-            acceleration = force / star.mass
-            star.velocity += acceleration * dt
-            star.position += star.velocity * dt
+                
+            # 计算加权平均的加速度和速度 (RK4 Integration)
+            avg_a = (a1[i] + 2*a2[i] + 2*a3[i] + a4[i]) / 6.0
+            avg_v = (velocities[i] + 2*v2_temp[i] + 2*v3_temp[i] + (velocities[i] + a3[i] * dt)) / 6.0
+            
+            # 微小随机扰动（量子涨落/宇宙背景微扰）
+            # 即使相同的宏观初始坐标，随时间演变也会走向不同解
+            perturbation_a = np.array([
+                random.uniform(-1e-5, 1e-5),
+                random.uniform(-1e-5, 1e-5),
+                random.uniform(-1e-5, 1e-5)
+            ])
+            
+            star.velocity += (avg_a + perturbation_a) * dt
+            star.position += avg_v * dt
 
     def get_environment_params(self) -> dict:
         """获取环境参数（光照、热量等）"""

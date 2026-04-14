@@ -166,14 +166,13 @@ class Camera:
         return self.fov / camera_z
 
     def check_collision(self, stars: list) -> bool:
-        """检测星球之间是否发生碰撞（行星撞入恒星）"""
+        """检测星球之间是否发生碰撞（所有的星体间）"""
         for i, star_a in enumerate(stars):
             for j, star_b in enumerate(stars):
                 if i >= j:
                     continue
-                # 只检测涉及行星的碰撞（行星撞恒星 或 恒星撞行星）
-                if not star_a.get("is_planet", False) and not star_b.get("is_planet", False):
-                    continue
+                
+                # 获取位置并检查距离
                 pos_a = np.array(star_a["position"])
                 pos_b = np.array(star_b["position"])
                 dist = np.linalg.norm(pos_a - pos_b)
