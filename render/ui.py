@@ -201,14 +201,18 @@ class Compass(UIElement):
     """罗盘/视角指示器 - 宇宙版"""
 
     def __init__(self, x: int, y: int, size: int = 140):
-        super().__init__(x, y, size, size + 50)
+        super().__init__(x, y, size, size + 70)
         self.size = size
         self.font = get_font(16)
         self.font_small = get_font(13)
+        self._locked = False
+        self._orbit_distance = 0.0
 
-    def update_camera(self, camera):
+    def update_camera(self, camera, locked: bool = False, orbit_distance: float = 0.0):
         """更新摄像机数据"""
         self.camera = camera
+        self._locked = locked
+        self._orbit_distance = orbit_distance
 
     def render(self, screen: pygame.Surface):
         if not self.visible:
@@ -219,13 +223,15 @@ class Compass(UIElement):
         radius = self.size // 2 - 8
 
         # 半透明背景
-        s = pygame.Surface((self.size, self.size + 50), pygame.SRCALPHA)
+        s = pygame.Surface((self.size, self.size + 70), pygame.SRCALPHA)
         s.fill((0, 0, 0, 120))
         screen.blit(s, (self.rect.x, self.rect.y))
 
-        # 外圈 - 深蓝渐变边框
-        pygame.draw.circle(screen, (40, 60, 90), (cx, cy), radius, 3)
-        pygame.draw.circle(screen, (80, 120, 180), (cx, cy), radius - 3, 1)
+        # 外圈 - 锁定时变为金色
+        ring_color = (180, 150, 50) if self._locked else (40, 60, 90)
+        inner_color = (220, 180, 80) if self._locked else (80, 120, 180)
+        pygame.draw.circle(screen, ring_color, (cx, cy), radius, 3)
+        pygame.draw.circle(screen, inner_color, (cx, cy), radius - 3, 1)
 
         # 绘制方向
         if hasattr(self, 'camera'):
@@ -246,10 +252,11 @@ class Compass(UIElement):
             end_x = cx + int(math.sin(yaw) * arrow_len)
             end_y = cy - int(math.cos(yaw) * arrow_len * math.cos(pitch))
 
-            # 箭头连线
-            pygame.draw.line(screen, (255, 120, 80), (cx, cy), (end_x, end_y), 3)
-            # 箭头头部
-            pygame.draw.circle(screen, (255, 150, 100), (end_x, end_y), 5)
+            # 箭头连线 - 锁定时金色
+            arrow_color = (255, 200, 80) if self._locked else (255, 120, 80)
+            arrow_head = (255, 220, 100) if self._locked else (255, 150, 100)
+            pygame.draw.line(screen, arrow_color, (cx, cy), (end_x, end_y), 3)
+            pygame.draw.circle(screen, arrow_head, (end_x, end_y), 5)
 
             # 相对方向标签 (F=前, B=后, L=左, R=右)
             rel_directions = [
@@ -271,21 +278,34 @@ class Compass(UIElement):
             # 底部信息面板
             info_y = self.rect.y + self.size + 5
 
-            # 角度信息
-            angle_text = f"YAW:{int(yaw_deg):03d}°  PITCH:{int(pitch_deg):02d}°"
-            text_surf = self.font_small.render(angle_text, True, (180, 200, 220))
-            screen.blit(text_surf, (self.rect.x + 10, info_y))
+            # 锁定状态指示器
+            if self._locked:
+                lock_surf = self.font_small.render("🔒 LOCKED", True, (255, 200, 80))
+                screen.blit(lock_surf, (self.rect.x + 10, info_y))
+                info_y += 16
+
+                # 轨道距离
+                dist_text = f"DIST:{int(self._orbit_distance):d}"
+                dist_surf = self.font_small.render(dist_text, True, (255, 220, 130))
+                screen.blit(dist_surf, (self.rect.x + 10, info_y))
+                info_y += 16
+            else:
+                # 角度信息
+                angle_text = f"YAW:{int(yaw_deg):03d}°  PITCH:{int(pitch_deg):02d}°"
+                text_surf = self.font_small.render(angle_text, True, (180, 200, 220))
+                screen.blit(text_surf, (self.rect.x + 10, info_y))
+                info_y += 18
 
             # 位置信息
             pos_text = f"POS:{int(pos[0]):+5d} {int(pos[1]):+5d} {int(pos[2]):+5d}"
             pos_surf = self.font_small.render(pos_text, True, (140, 180, 200))
-            screen.blit(pos_surf, (self.rect.x + 10, info_y + 18))
+            screen.blit(pos_surf, (self.rect.x + 10, info_y))
 
             # 深度指示
             depth = abs(pos[2])
             depth_text = f"DEPTH:{int(depth):d}"
             depth_surf = self.font_small.render(depth_text, True, (120, 160, 180))
-            screen.blit(depth_surf, (self.rect.x + 10, info_y + 36))
+            screen.blit(depth_surf, (self.rect.x + 10, info_y + 18))
 
 
 class UIManager:
@@ -317,7 +337,8 @@ class UIManager:
             element.render(screen)
 
 
-def update_hud(ui_manager: UIManager, state: dict, camera=None):
+def update_hud(ui_manager: UIManager, state: dict, camera=None,
+               locked: bool = False, orbit_distance: float = 0.0):
     """更新HUD数据而不重新创建UI元素"""
     if not ui_manager.panels:
         return
@@ -342,7 +363,7 @@ def update_hud(ui_manager: UIManager, state: dict, camera=None):
 
     # 更新罗盘
     if camera and ui_manager.compass:
-        ui_manager.compass.update_camera(camera)
+        ui_manager.compass.update_camera(camera, locked=locked, orbit_distance=orbit_distance)
 
 
 def create_hud(state: dict, width: int, height: int, camera=None) -> UIManager:

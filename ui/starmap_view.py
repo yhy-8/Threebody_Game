@@ -23,6 +23,10 @@ class StarmapView(Screen):
         self.game_over = False
         self.showing_help = False
         self.restart_button: Optional[MenuButton] = None
+
+        # ── 行星锁定状态 ──
+        self.planet_locked = False
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -35,6 +39,7 @@ class StarmapView(Screen):
         
         btn_w_back = max(100, int(120 * scale))
         btn_w_pause = max(80, int(100 * scale))
+        btn_w_lock = max(110, int(140 * scale))
         btn_w_help = max(90, int(110 * scale))
 
         # 返回主界面按钮
@@ -46,10 +51,21 @@ class StarmapView(Screen):
         )
 
         # 暂停/继续按钮
+        pause_x = int(20 * scale) + btn_w_back + int(20 * scale)
         self.pause_button = MenuButton(
-            int(20 * scale) + btn_w_back + int(20 * scale), int(20 * scale), btn_w_pause, btn_h,
+            pause_x, int(20 * scale), btn_w_pause, btn_h,
             "暂停",
             callback=self.on_pause_toggle,
+            font_size=btn_font_size
+        )
+
+        # 锁定行星按钮（暂停按钮右侧）
+        lock_x = pause_x + btn_w_pause + int(20 * scale)
+        lock_text = "🔓 解锁" if self.planet_locked else "🔒 锁定行星"
+        self.lock_button = MenuButton(
+            lock_x, int(20 * scale), btn_w_lock, btn_h,
+            lock_text,
+            callback=self.on_lock_toggle,
             font_size=btn_font_size
         )
 
@@ -95,6 +111,34 @@ class StarmapView(Screen):
             # 更新按钮文字
             self.pause_button.text = "继续" if self.simulator.paused else "暂停"
 
+    def on_lock_toggle(self):
+        """切换行星锁定状态"""
+        if not self.camera or not self.simulator:
+            return
+
+        if self.planet_locked:
+            # 解锁 —— 恢复自由视角
+            self.planet_locked = False
+            self.camera.set_lock_target(None)
+            self.lock_button.text = "🔒 锁定行星"
+        else:
+            # 锁定 —— 找到行星并锁定
+            planet_pos = self._get_planet_position()
+            if planet_pos is not None:
+                self.planet_locked = True
+                self.camera.set_lock_target(planet_pos)
+                self.lock_button.text = "🔓 解锁"
+
+    def _get_planet_position(self) -> Optional[np.ndarray]:
+        """从模拟器获取行星位置"""
+        if not self.simulator:
+            return None
+        state = self.simulator.get_state()
+        for star in state.get("environment", {}).get("stars", []):
+            if star.get("is_planet", False):
+                return np.array(star["position"], dtype=float)
+        return None
+
     def on_help_toggle(self):
         """显示/隐藏帮助"""
         self.showing_help = not self.showing_help
@@ -136,6 +180,7 @@ class StarmapView(Screen):
         # 更新按钮
         self.back_button.update(dt)
         self.pause_button.update(dt)
+        self.lock_button.update(dt)
         self.help_button.update(dt)
 
         # 更新3D场景
@@ -149,10 +194,18 @@ class StarmapView(Screen):
                     self.simulator.game_over = True  # 同步到模拟器
                     self._create_game_over_button()
 
+            # ── 锁定模式：每帧跟踪行星最新位置 ──
+            if self.planet_locked and self.camera:
+                planet_pos = self._get_planet_position()
+                if planet_pos is not None:
+                    self.camera.update_orbit(planet_pos)
+
             # 更新UI
             if self.ui_manager:
                 state = self.simulator.get_state()
-                update_hud(self.ui_manager, state, self.camera)
+                update_hud(self.ui_manager, state, self.camera,
+                           locked=self.planet_locked,
+                           orbit_distance=self.camera.orbit_distance if self.camera else 0)
                 
         # 应用相机设置
         if self.camera:
@@ -186,6 +239,8 @@ class StarmapView(Screen):
             return True
         if self.pause_button.handle_event(event):
             return True
+        if self.lock_button.handle_event(event):
+            return True
         if self.help_button.handle_event(event):
             return True
 
@@ -196,10 +251,17 @@ class StarmapView(Screen):
         return False
 
     def handle_3d_input(self, event: pygame.event.Event) -> bool:
-        """处理3D场景输入"""
+        """处理3D场景输入 —— 根据锁定状态分发"""
         if not self.camera:
             return False
 
+        if self.planet_locked:
+            return self._handle_locked_input(event)
+        else:
+            return self._handle_free_input(event)
+
+    def _handle_free_input(self, event: pygame.event.Event) -> bool:
+        """自由视角模式的输入处理（原有逻辑）"""
         # 鼠标拖拽旋转视角
         if event.type == pygame.MOUSEMOTION and pygame.mouse.get_pressed()[0]:
             self.camera.rotate(event.rel[0], event.rel[1])
@@ -221,24 +283,65 @@ class StarmapView(Screen):
 
         return False
 
+    def _handle_locked_input(self, event: pygame.event.Event) -> bool:
+        """锁定行星模式的输入处理"""
+        # 鼠标拖拽 → 环绕行星旋转
+        if event.type == pygame.MOUSEMOTION and pygame.mouse.get_pressed()[0]:
+            self.camera.orbit_rotate(event.rel[0], event.rel[1])
+            return True
+
+        # 滚轮 → 拉近/拉远
+        if event.type == pygame.MOUSEWHEEL:
+            self.camera.orbit_zoom(event.y)
+            return True
+
+        # 键盘控制
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                if self.simulator:
+                    self.simulator.toggle_pause()
+                    self.pause_button.text = "继续" if self.simulator.paused else "暂停"
+                return True
+
+        return False
+
     def handle_continuous_input(self, keys):
         """处理持续按键（每帧调用）"""
         if not self.camera:
             return
 
-        # WASD移动
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            self.camera.move(forward=self.camera.speed)
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            self.camera.move(forward=-self.camera.speed)
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            self.camera.move(right=-self.camera.speed)
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            self.camera.move(right=self.camera.speed)
-        if keys[pygame.K_q]:
-            self.camera.move(up=self.camera.speed)
-        if keys[pygame.K_e]:
-            self.camera.move(up=-self.camera.speed)
+        if self.planet_locked:
+            # ── 锁定模式 ──
+            # W/S: 拉近/拉远
+            if keys[pygame.K_w] or keys[pygame.K_UP]:
+                self.camera.orbit_zoom(1.0)
+            if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                self.camera.orbit_zoom(-1.0)
+            # A/D: 水平环绕
+            if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                self.camera.orbit_rotate(-3, 0)
+            if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                self.camera.orbit_rotate(3, 0)
+            # Q/E: 垂直俯仰
+            if keys[pygame.K_q]:
+                self.camera.orbit_rotate(0, -3)
+            if keys[pygame.K_e]:
+                self.camera.orbit_rotate(0, 3)
+        else:
+            # ── 自由模式 ──
+            # WASD移动
+            if keys[pygame.K_w] or keys[pygame.K_UP]:
+                self.camera.move(forward=self.camera.speed)
+            if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                self.camera.move(forward=-self.camera.speed)
+            if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                self.camera.move(right=-self.camera.speed)
+            if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                self.camera.move(right=self.camera.speed)
+            if keys[pygame.K_q]:
+                self.camera.move(up=self.camera.speed)
+            if keys[pygame.K_e]:
+                self.camera.move(up=-self.camera.speed)
 
     def render(self, screen: pygame.Surface):
         """渲染界面"""
@@ -266,6 +369,8 @@ class StarmapView(Screen):
             self.back_button.render(screen)
         if hasattr(self, 'pause_button'):
             self.pause_button.render(screen)
+        if hasattr(self, 'lock_button'):
+            self.lock_button.render(screen)
         if hasattr(self, 'help_button'):
             self.help_button.render(screen)
 
@@ -300,6 +405,11 @@ class StarmapView(Screen):
             simulator.reset()
         self.game_over = False
         self.restart_button = None
+
+        # 解锁行星视角
+        self.planet_locked = False
+        if self.camera:
+            self.camera.set_lock_target(None)
 
         # 重置摄像机位置
         if self.camera:
@@ -337,7 +447,7 @@ class StarmapView(Screen):
             self.restart_button.render(screen)
 
     def _render_help(self, screen: pygame.Surface):
-        """渲染帮助界面"""
+        """渲染帮助界面 —— 根据锁定状态显示不同操作说明"""
         width, height = screen.get_size()
 
         # 半透明黑色遮罩
@@ -360,27 +470,53 @@ class StarmapView(Screen):
         # 标题
         title_font_size = max(24, int(48 * scale))
         title_font = get_font(title_font_size)
-        title = title_font.render("操作说明", True, (220, 230, 255))
+
+        if self.planet_locked:
+            title_text = "操作说明 — 🔒 行星锁定模式"
+            title_color = (255, 200, 120)
+        else:
+            title_text = "操作说明 — 自由视角模式"
+            title_color = (220, 230, 255)
+
+        title = title_font.render(title_text, True, title_color)
         title_rect = title.get_rect(center=(width // 2, panel_y + max(30, int(panel_height * 0.08))))
         screen.blit(title, title_rect)
 
-        # 帮助内容
-        help_items = [
-            ("移动控制", [
-                "W/S - 向前/向后移动",
-                "A/D - 向左/向右移动",
-                "Q/E - 向上/向下移动"
-            ]),
-            ("视角控制", [
-                "鼠标拖拽 - 旋转视角",
-                "滚轮 - 缩放视角",
-            ]),
-            ("其他操作", [
-                "空格 - 暂停/继续",
-                "ESC - 返回主界面",
-                "点击'菜单'按钮 - 打开游戏菜单"
-            ])
-        ]
+        # 帮助内容 —— 根据锁定状态切换
+        if self.planet_locked:
+            help_items = [
+                ("距离控制", [
+                    "W/S - 拉近/拉远行星",
+                    "滚轮 - 拉近/拉远行星",
+                ]),
+                ("环绕控制", [
+                    "鼠标拖拽 - 围绕行星旋转观察",
+                    "A/D - 水平方向环绕行星",
+                    "Q/E - 垂直方向调整俯仰",
+                ]),
+                ("其他操作", [
+                    "空格 - 暂停/继续",
+                    "ESC - 返回主界面",
+                    "点击'🔓 解锁'按钮 - 恢复自由视角"
+                ])
+            ]
+        else:
+            help_items = [
+                ("移动控制", [
+                    "W/S - 向前/向后移动",
+                    "A/D - 向左/向右移动",
+                    "Q/E - 向上/向下移动"
+                ]),
+                ("视角控制", [
+                    "鼠标拖拽 - 旋转视角",
+                    "滚轮 - 缩放视角",
+                ]),
+                ("其他操作", [
+                    "空格 - 暂停/继续",
+                    "ESC - 返回主界面",
+                    "点击'🔒 锁定行星'按钮 - 锁定行星视角"
+                ])
+            ]
 
         section_font_size = max(16, int(24 * scale))
         item_font_size = max(14, int(18 * scale))
