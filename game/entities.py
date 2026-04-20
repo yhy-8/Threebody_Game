@@ -81,7 +81,6 @@ class EntityManager:
         self.people: List[Person] = []
         self.buildings: List[Building] = []
         self.resources: dict = {}
-        self.population = 1250
         self.global_efficiency = 1.0
         self._init_defaults()
 
@@ -89,6 +88,7 @@ class EntityManager:
         self.add_resource(Resource("minerals", 1000, 10000, 1.0))
         self.add_resource(Resource("energy", 500, 5000, 0.5))
         self.add_resource(Resource("food", 800, 8000, 0.8))
+        self.add_resource(Resource("population", 1250, 1000000, 1.0))
 
     def add_person(self, person: Person):
         self.people.append(person)
@@ -98,6 +98,27 @@ class EntityManager:
 
     def add_resource(self, resource: Resource):
         self.resources[resource.name] = resource
+
+    def get_resource(self, name: str) -> float:
+        """获取资源数量"""
+        res = self.resources.get(name)
+        return res.amount if res else 0.0
+
+    def consume_resource(self, name: str, amount: float) -> bool:
+        """消耗指定资源"""
+        res = self.resources.get(name)
+        if res:
+            return res.consume(amount)
+        return False
+
+    def produce_resource(self, name: str, amount: float):
+        """增加指定资源"""
+        res = self.resources.get(name)
+        if res:
+            res.add(amount)
+            
+    def get_building_count(self) -> int:
+        return len(self.buildings)
 
     def update(self, env_params: dict):
         """更新所有实体状态"""
@@ -144,7 +165,6 @@ class EntityManager:
     def get_state(self) -> dict:
         """获取实体状态摘要"""
         return {
-            "people_count": self.population,
             "buildings_count": len(self.buildings),
             "resources": {name: res.amount for name, res in self.resources.items()},
             "avg_efficiency": self.global_efficiency

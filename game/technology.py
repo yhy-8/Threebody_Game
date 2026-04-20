@@ -68,7 +68,7 @@ class TechTree:
             return node.unlocked
         return False
 
-    def can_unlock(self, node_id: str, entities_state: dict) -> Tuple[bool, str]:
+    def can_unlock(self, node_id: str, entities) -> Tuple[bool, str]:
         """判定目标科技是否满足解锁条件，返回(布尔值，不满足条件时的原因)"""
         node = self.nodes.get(node_id)
         if not node:
@@ -84,14 +84,13 @@ class TechTree:
                 return False, "前置科技尚未研发完成"
 
         # 检查人口等资源（实体状态）要求
-        # current population
-        current_pop = entities_state.get("people_count", 0)
-        required_pop = node.requirements.get("population", 0)
-        if current_pop < required_pop:
-            return False, f"人口不足（需求：{required_pop}，当前：{current_pop}）"
+        res_name_map = {"population": "人口", "energy": "能源", "food": "食物", "minerals": "矿物"}
+        for req_res, req_amt in node.requirements.items():
+            current_amt = entities.get_resource(req_res)
+            if current_amt < req_amt:
+                display_name = res_name_map.get(req_res, req_res)
+                return False, f"{display_name}不足（需求：{req_amt}，当前：{int(current_amt)}）"
             
-        # 其他要求目前根据需要扩展
-        
         return True, ""
 
     def unlock_tech(self, node_id: str):

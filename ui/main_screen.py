@@ -84,34 +84,28 @@ class MainScreen(Screen):
             font_size=btn_font_size + 2
         )
 
-        # 创建信息面板 - 4个面板
+        # 创建信息面板 - 3个面板
         margin = max(30, int(width * 0.04))
         available_width = width - margin * 2
-        panel_width = max(160, (available_width - margin * 3) // 4)
+        panel_width = max(200, (available_width - margin * 2) // 3)
         panel_height = max(200, int(height * 0.45))
-        gap = max(10, (available_width - panel_width * 4) // 3)
+        gap = max(15, (available_width - panel_width * 3) // 2)
         start_x = margin
         start_y = max(80, int(height * 0.18))
 
         # 左侧面板1 - 资源
-        self.resource_panel = Panel(start_x, start_y, panel_width, panel_height, "资源")
+        self.resource_panel = Panel(start_x, start_y, panel_width, panel_height, "资源总览")
 
         # 面板2 - 文明状态
         self.civilization_panel = Panel(
             start_x + panel_width + gap, start_y,
-            panel_width, panel_height, "文明状态"
+            panel_width, panel_height, "文明与状态"
         )
         
         # 面板3 - 环境
         self.environment_panel = Panel(
             start_x + (panel_width + gap) * 2, start_y,
-            panel_width, panel_height, "环境信息"
-        )
-
-        # 右侧面板4 - 行动
-        self.action_panel = Panel(
-            start_x + (panel_width + gap) * 3, start_y,
-            panel_width, panel_height, "行动"
+            panel_width, panel_height, "环境监控"
         )
 
         self.load_fonts()
@@ -254,9 +248,6 @@ class MainScreen(Screen):
 
     def _render_panels(self, screen: pygame.Surface):
         """渲染信息面板"""
-        # 获取游戏状态（这里使用模拟数据，实际应从game对象获取）
-        # TODO: 从实际游戏状态获取数据
-
         # 渲染资源面板
         self.resource_panel.render(screen)
         self._render_resource_content(screen)
@@ -268,10 +259,6 @@ class MainScreen(Screen):
         # 渲染环境面板
         self.environment_panel.render(screen)
         self._render_environment_content(screen)
-
-        # 渲染行动面板
-        self.action_panel.render(screen)
-        self._render_action_content(screen)
 
     def _render_resource_content(self, screen: pygame.Surface):
         """渲染资源面板内容"""
@@ -291,7 +278,7 @@ class MainScreen(Screen):
                 ("能源", str(int(resources.get("energy", 1200))), (255, 200, 100)),
                 ("矿物", str(int(resources.get("minerals", 850))), (150, 200, 255)),
                 ("食物", str(int(resources.get("food", 2300))), (100, 255, 150)),
-                ("人口", str(int(resources.get("population", 500))), (255, 150, 200)),
+                ("人口", str(int(resources.get("population", 1250))), (255, 150, 200)),
             ]
         else:
             # 使用默认数据
@@ -299,7 +286,7 @@ class MainScreen(Screen):
                 ("能源", "1200", (255, 200, 100)),
                 ("矿物", "850", (150, 200, 255)),
                 ("食物", "2300", (100, 255, 150)),
-                ("人口", "500", (255, 150, 200)),
+                ("人口", "1250", (255, 150, 200)),
             ]
 
         line_gap = max(25, int(panel.rect.height * 0.1))
@@ -325,26 +312,27 @@ class MainScreen(Screen):
             state = self.simulator.get_state()
             entities = state.get("entities", {})
             env_params = state.get("environment", {}).get("params", {})
+            policy = state.get("policy", {}).get("current_state", "normal")
+            tech_count = len(state.get("technology", {}).get("unlocked", []))
 
-            people_count = entities.get('people_count', 1250)
             buildings_count = entities.get('buildings_count', 45)
             avg_efficiency = entities.get('avg_efficiency', 0.85)
 
             items = [
-                ("人口总数", f"{people_count:,}", "+15/天"),
-                ("建筑数量", f"{buildings_count}", "+2/天"),
-                ("平均效率", f"{avg_efficiency:.0%}", "+0.5%/天"),
-                ("科技等级", "3级", "1200/2000"),
-                ("社会稳定", f"{env_params.get('stability', 0.92):.0%}", "+0.2%/天"),
+                ("设施数量", f"{buildings_count} 座", "+2/天"),
+                ("工业效率", f"{avg_efficiency:.0%}", "+0.5%/天"),
+                ("已解科技", f"{tech_count} 项", "研发中"),
+                ("社会安定", f"{env_params.get('stability', 0.92):.0%}", "+0.2%/天"),
+                ("当前政策", policy.upper(), ""),
             ]
         else:
             # 使用默认数据
             items = [
-                ("人口总数", "1,250", "+15/天"),
-                ("建筑数量", "45", "+2/天"),
-                ("平均效率", "85%", "+0.5%/天"),
-                ("科技等级", f"{len(self.simulator.tech_tree.get_state()['unlocked'])}项", "已解锁"),
-                ("社会状态", f"{self.simulator.policy_manager.current_state.value.upper()}", ""),
+                ("设施数量", "45 座", "+2/天"),
+                ("工业效率", "85%", "+0.5%/天"),
+                ("已解科技", "0 项", ""),
+                ("社会安定", "92%", "+0.2%/天"),
+                ("当前政策", "NORMAL", ""),
             ]
 
         for name, value, trend in items:
@@ -417,37 +405,4 @@ class MainScreen(Screen):
             
             y_offset += max(24, int(panel.rect.height * 0.09))
 
-    def _render_action_content(self, screen: pygame.Surface):
-        """渲染行动面板内容"""
-        width, height = screen.get_size()
-        panel = self.action_panel
-        scale = min(width / 1280, height / 720)
-        font_size = max(18, int(24 * scale))
-        font = get_font(font_size)
-        y_offset = max(40, int(panel.rect.height * 0.15))
 
-        # 根据是否有模拟器连接，显示不同的行动
-        if self.simulator:
-            actions = [
-                ("▶ 查看星图", "切换到3D星图视图", (100, 150, 255)),
-                ("▶ 建造建筑", "在星球表面建造设施", (100, 255, 150)),
-                ("▶ 分配人员", "调整人员工作岗位", (255, 200, 100)),
-                ("▶ 科技研究", "研发新技术", (200, 150, 255)),
-                ("▶ 外交关系", "管理与其他文明的关系", (255, 150, 200)),
-            ]
-        else:
-            # 离线模式，显示基础操作
-            actions = [
-                ("▶ 查看星图", "切换到3D星图视图", (100, 150, 255)),
-                ("▶ 建造建筑", "在星球表面建造设施", (100, 255, 150)),
-                ("▶ 分配人员", "调整人员工作岗位", (255, 200, 100)),
-                ("▶ 科技研究", "研发新技术", (200, 150, 255)),
-                ("▶ 外交关系", "管理与其他文明的关系", (255, 150, 200)),
-            ]
-
-        for name, desc, color in actions:
-            # 行动名称
-            name_surf = font.render(name, True, color)
-            screen.blit(name_surf, (panel.rect.x + 15, panel.rect.y + y_offset))
-
-            y_offset += max(30, int(panel.rect.height * 0.12))

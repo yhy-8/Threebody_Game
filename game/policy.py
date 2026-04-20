@@ -21,7 +21,7 @@ class PolicyManager:
         """切换当前的政策状态"""
         self.current_state = state
 
-    def enact_policy(self, policy_name: str, entities_state: dict) -> Tuple[bool, str]:
+    def enact_policy(self, policy_name: str, entities) -> Tuple[bool, str]:
         """尝试颁布/执行某一项政策或切换状态"""
         
         if policy_name == "dehydrate":
@@ -38,12 +38,13 @@ class PolicyManager:
             return True, "文明浸泡复苏完成，恢复常规运作"
             
         elif policy_name == "boom":
-            # 大生育计划需要足够粮食等，这里简单阻挡一下
-            resources = entities_state.get("resources", {})
-            food = resources.get("food", 0)
-            if food < 500:
-                return False, "食物不足，无法开启大生育计划(需求:500)"
+            # 大生育计划需要消耗粮食
+            food_needed = 500
+            current_food = entities.get_resource("food")
+            if current_food < food_needed:
+                return False, f"食物不足，无法开启大生育计划(需求:{food_needed}，当前:{int(current_food)})"
                 
+            entities.consume_resource("food", food_needed)
             self.set_state(PolicyState.BOOMING)
             return True, "大生育计划已开启，人口增长率上升"
 
