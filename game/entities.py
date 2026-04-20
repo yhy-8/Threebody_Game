@@ -81,6 +81,14 @@ class EntityManager:
         self.people: List[Person] = []
         self.buildings: List[Building] = []
         self.resources: dict = {}
+        self.population = 1250
+        self.global_efficiency = 1.0
+        self._init_defaults()
+
+    def _init_defaults(self):
+        self.add_resource(Resource("minerals", 1000, 10000, 1.0))
+        self.add_resource(Resource("energy", 500, 5000, 0.5))
+        self.add_resource(Resource("food", 800, 8000, 0.8))
 
     def add_person(self, person: Person):
         self.people.append(person)
@@ -96,6 +104,15 @@ class EntityManager:
         # 更新人物
         for person in self.people:
             person.update(env_params)
+
+        # 宏观环境对文明整体的影响
+        heat = env_params.get("heat_level", 0.5)
+        if heat > 0.8:
+            self.global_efficiency = max(0.5, self.global_efficiency - 0.01)
+        elif heat < 0.2:
+            self.global_efficiency = max(0.3, self.global_efficiency - 0.02)
+        else:
+            self.global_efficiency = min(1.0, self.global_efficiency + 0.01)
 
         # 自然恢复资源
         for resource in self.resources.values():
@@ -127,8 +144,8 @@ class EntityManager:
     def get_state(self) -> dict:
         """获取实体状态摘要"""
         return {
-            "people_count": len(self.people),
+            "people_count": self.population,
             "buildings_count": len(self.buildings),
             "resources": {name: res.amount for name, res in self.resources.items()},
-            "avg_efficiency": sum(p.efficiency for p in self.people) / max(1, len(self.people))
+            "avg_efficiency": self.global_efficiency
         }

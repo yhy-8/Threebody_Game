@@ -57,6 +57,24 @@ class MainScreen(Screen):
             font_size=btn_font_size
         )
 
+        # 科技树按钮
+        tech_x = 20 + max(80, width // 13) * 2 + 40
+        self.tech_button = MenuButton(
+            tech_x, 20, max(100, width // 11), max(32, height // 18),
+            "科技树",
+            callback=self.on_tech_clicked,
+            font_size=btn_font_size
+        )
+
+        # 政策按钮
+        policy_x = tech_x + max(100, width // 11) + 20
+        self.policy_button = MenuButton(
+            policy_x, 20, max(100, width // 11), max(32, height // 18),
+            "政策系统",
+            callback=self.on_policy_clicked,
+            font_size=btn_font_size
+        )
+
         # 右上角星图按钮
         self.starmap_button = MenuButton(
             width - max(140, width // 9) - 20, 20,
@@ -111,8 +129,18 @@ class MainScreen(Screen):
 
     def on_starmap_clicked(self):
         """点击星图按钮"""
+        if self.simulator and not self.simulator.tech_tree.is_unlocked("telescope"):
+            return
         # 切换到3D星图界面
         self.screen_manager.switch_to(ScreenType.STARMAP_VIEW)
+
+    def on_tech_clicked(self):
+        """点击科技树按钮"""
+        self.screen_manager.switch_to(ScreenType.TECH_TREE)
+
+    def on_policy_clicked(self):
+        """点击政策按钮"""
+        self.screen_manager.switch_to(ScreenType.POLICY_SYSTEM)
 
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
@@ -130,6 +158,10 @@ class MainScreen(Screen):
         # 更新暂停按钮状态
         if self.simulator:
             self.pause_button.text = "继续" if self.simulator.paused else "暂停"
+            if not self.simulator.tech_tree.is_unlocked("telescope"):
+                self.starmap_button.text = "[锁定]星图"
+            else:
+                self.starmap_button.text = "星图"
 
     def update(self, dt: float):
         """更新界面"""
@@ -138,6 +170,8 @@ class MainScreen(Screen):
         # 更新按钮
         self.menu_button.update(dt)
         self.pause_button.update(dt)
+        self.tech_button.update(dt)
+        self.policy_button.update(dt)
         self.starmap_button.update(dt)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -149,6 +183,10 @@ class MainScreen(Screen):
         if self.menu_button.handle_event(event):
             return True
         if self.pause_button.handle_event(event):
+            return True
+        if self.tech_button.handle_event(event):
+            return True
+        if self.policy_button.handle_event(event):
             return True
         if self.starmap_button.handle_event(event):
             return True
@@ -193,6 +231,8 @@ class MainScreen(Screen):
         # 渲染按钮
         self.menu_button.render(screen)
         self.pause_button.render(screen)
+        self.tech_button.render(screen)
+        self.policy_button.render(screen)
         self.starmap_button.render(screen)
         
         # 渲染游戏时间和说明
@@ -303,8 +343,8 @@ class MainScreen(Screen):
                 ("人口总数", "1,250", "+15/天"),
                 ("建筑数量", "45", "+2/天"),
                 ("平均效率", "85%", "+0.5%/天"),
-                ("科技等级", "3级", "1200/2000"),
-                ("社会稳定", "92%", "+0.2%/天"),
+                ("科技等级", f"{len(self.simulator.tech_tree.get_state()['unlocked'])}项", "已解锁"),
+                ("社会状态", f"{self.simulator.policy_manager.current_state.value.upper()}", ""),
             ]
 
         for name, value, trend in items:

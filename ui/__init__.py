@@ -15,6 +15,8 @@ from .settings_screen import SettingsScreen
 from .game_menu import GameMenu
 from .main_screen import MainScreen
 from .starmap_view import StarmapView
+from .tech_tree_screen import TechTreeScreen
+from .policy_screen import PolicyScreen
 
 __all__ = [
     'ScreenManager',
@@ -25,4 +27,6 @@ __all__ = [
     'GameMenu',
     'MainScreen',
     'StarmapView',
+    'TechTreeScreen',
+    'PolicyScreen',
 ]

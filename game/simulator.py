@@ -2,6 +2,8 @@
 from typing import Dict, Any
 from .environment import ThreeBodySimulation
 from .entities import EntityManager
+from .technology import TechTree
+from .policy import PolicyManager
 
 
 class GameSimulator:
@@ -10,6 +12,8 @@ class GameSimulator:
     def __init__(self):
         self.environment = ThreeBodySimulation()
         self.entities = EntityManager()
+        self.tech_tree = TechTree()
+        self.policy_manager = PolicyManager()
         self.time = 0.0
         self.paused = False
         self.game_over = False  # 游戏是否结束
@@ -18,6 +22,8 @@ class GameSimulator:
         """重置游戏状态 - 用于开始新游戏"""
         self.environment = ThreeBodySimulation()
         self.entities = EntityManager()
+        self.tech_tree = TechTree()
+        self.policy_manager = PolicyManager()
         self.time = 0.0
         self.paused = False
         self.game_over = False
@@ -57,7 +63,9 @@ class GameSimulator:
                 ],
                 "params": self.environment.get_environment_params()
             },
-            "entities": self.entities.get_state()
+            "entities": self.entities.get_state(),
+            "technology": self.tech_tree.get_state(),
+            "policy": self.policy_manager.get_state()
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -78,6 +86,8 @@ class GameSimulator:
                 for star in self.environment.stars
             ],
             "entities": self.entities.get_state(),
+            "technology": self.tech_tree.get_state(),
+            "policy": self.policy_manager.get_state(),
             "time_scale": self.environment.time_scale,
         }
 
@@ -105,6 +115,12 @@ class GameSimulator:
                     is_planet=sd.get("is_planet", False),
                 )
                 self.environment.stars.append(star)
+
+        # 恢复科技和政策状态
+        if "technology" in data:
+            self.tech_tree.load_state(data["technology"].get("unlocked", []))
+        if "policy" in data:
+            self.policy_manager.load_state(data["policy"])
 
     def toggle_pause(self):
         """切换暂停状态"""
