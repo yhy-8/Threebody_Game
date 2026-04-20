@@ -319,19 +319,19 @@ class MainScreen(Screen):
             avg_efficiency = entities.get('avg_efficiency', 0.85)
 
             items = [
-                ("设施数量", f"{buildings_count} 座", "+2/天"),
-                ("工业效率", f"{avg_efficiency:.0%}", "+0.5%/天"),
-                ("已解科技", f"{tech_count} 项", "研发中"),
-                ("社会安定", f"{env_params.get('stability', 0.92):.0%}", "+0.2%/天"),
+                ("设施数量", f"{buildings_count} 座", ""),
+                ("工业效率", f"{avg_efficiency:.0%}", ""),
+                ("已解科技", f"{tech_count} 项", ""),
+                ("社会安定", f"{env_params.get('stability', 0.92):.0%}", ""),
                 ("当前政策", policy.upper(), ""),
             ]
         else:
             # 使用默认数据
             items = [
-                ("设施数量", "45 座", "+2/天"),
-                ("工业效率", "85%", "+0.5%/天"),
+                ("设施数量", "45 座", ""),
+                ("工业效率", "85%", ""),
                 ("已解科技", "0 项", ""),
-                ("社会安定", "92%", "+0.2%/天"),
+                ("社会安定", "92%", ""),
                 ("当前政策", "NORMAL", ""),
             ]
 

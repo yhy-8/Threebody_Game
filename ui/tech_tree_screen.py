@@ -82,10 +82,8 @@ class TechTreeScreen(Screen):
         if not self.simulator:
             return
         tech_tree = self.simulator.tech_tree
-        state = self.simulator.get_state()
-        entities_state = state.get("entities", {})
         
-        can_unlock, reason = tech_tree.can_unlock(node_id, entities_state)
+        can_unlock, reason = tech_tree.can_unlock(node_id, self.simulator.entities)
         
         if can_unlock:
             tech_tree.unlock_tech(node_id)

@@ -77,10 +77,8 @@ class PolicyScreen(Screen):
             return
             
         policy_manager = self.simulator.policy_manager
-        state = self.simulator.get_state()
-        entities_state = state.get("entities", {})
         
-        success, reason = policy_manager.enact_policy(policy_id, entities_state)
+        success, reason = policy_manager.enact_policy(policy_id, self.simulator.entities)
         self.message = reason
         self.message_timer = 3.0
 
