@@ -1,0 +1,47 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  # 允许手动在 Actions 页面触发打包
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    # 运行在 Windows 环境上打包，保证能原生适配 Win11
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build with PyInstaller
+      run: |
+        # 使用 PyInstaller 打包。
+        # --noconfirm: 在替换输出目录时不进行确认
+        # --onefile: 打包为独立的一个可执行文件(单个 exe 文件)
+        # --windowed: 隐藏命令行窗口
+        # --name: 指定输出项目的名字
+        # --add-data "config.yaml;.": 将配置文件作为外部资源包含在运行包的根目录下
+        # 注意 windows 环境的分隔符是分号 `;`
+        pyinstaller --noconfirm --onefile --windowed --name "Threebody_Game" --add-data "config.yaml;." --add-data "data;data" --add-data "docs;docs" main.py
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Threebody_Game_Win11
+        # PyInstaller 使用 onefile 时，产物是 dist 目录下的单个 exe 文件
+        path: dist/Threebody_Game.exe
