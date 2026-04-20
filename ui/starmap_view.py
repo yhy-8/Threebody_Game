@@ -61,7 +61,7 @@ class StarmapView(Screen):
 
         # 锁定行星按钮（暂停按钮右侧）
         lock_x = pause_x + btn_w_pause + int(20 * scale)
-        lock_text = "🔓 解锁" if self.planet_locked else "🔒 锁定行星"
+        lock_text = "[解锁]" if self.planet_locked else "锁定行星"
         self.lock_button = MenuButton(
             lock_x, int(20 * scale), btn_w_lock, btn_h,
             lock_text,
@@ -120,14 +120,14 @@ class StarmapView(Screen):
             # 解锁 —— 恢复自由视角
             self.planet_locked = False
             self.camera.set_lock_target(None)
-            self.lock_button.text = "🔒 锁定行星"
+            self.lock_button.text = "锁定行星"
         else:
             # 锁定 —— 找到行星并锁定
             planet_pos = self._get_planet_position()
             if planet_pos is not None:
                 self.planet_locked = True
                 self.camera.set_lock_target(planet_pos)
-                self.lock_button.text = "🔓 解锁"
+                self.lock_button.text = "[解锁]"
 
     def _get_planet_position(self) -> Optional[np.ndarray]:
         """从模拟器获取行星位置"""
@@ -472,7 +472,7 @@ class StarmapView(Screen):
         title_font = get_font(title_font_size)
 
         if self.planet_locked:
-            title_text = "操作说明 — 🔒 行星锁定模式"
+            title_text = "操作说明 — 行星锁定模式"
             title_color = (255, 200, 120)
         else:
             title_text = "操作说明 — 自由视角模式"
@@ -497,7 +497,7 @@ class StarmapView(Screen):
                 ("其他操作", [
                     "空格 - 暂停/继续",
                     "ESC - 返回主界面",
-                    "点击'🔓 解锁'按钮 - 恢复自由视角"
+                    "点击'解锁'按钮 - 恢复自由视角"
                 ])
             ]
         else:
@@ -514,7 +514,7 @@ class StarmapView(Screen):
                 ("其他操作", [
                     "空格 - 暂停/继续",
                     "ESC - 返回主界面",
-                    "点击'🔒 锁定行星'按钮 - 锁定行星视角"
+                    "点击'锁定行星'按钮 - 锁定行星视角"
                 ])
             ]
 

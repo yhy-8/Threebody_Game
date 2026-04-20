@@ -280,7 +280,7 @@ class Compass(UIElement):
 
             # 锁定状态指示器
             if self._locked:
-                lock_surf = self.font_small.render("🔒 LOCKED", True, (255, 200, 80))
+                lock_surf = self.font_small.render("[LOCKED]", True, (255, 200, 80))
                 screen.blit(lock_surf, (self.rect.x + 10, info_y))
                 info_y += 16
 
