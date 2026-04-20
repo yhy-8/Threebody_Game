@@ -158,11 +158,14 @@ class Camera:
 
         self.position = self.locked_target + offset
 
-        # 让相机朝向目标：计算需要的 yaw / pitch
+        # 让相机朝向目标：根据 world_to_screen 的旋转约定
+        # (先 rotate_y(yaw) 再 rotate_x(pitch))，推导出：
+        # 正确的 yaw = atan2(-to_target_x, to_target_z)
+        # 正确的 pitch = atan2(to_target_y, horiz_dist)
         to_target = self.locked_target - self.position  # 指向目标的向量
         horiz_dist = math.sqrt(to_target[0] ** 2 + to_target[2] ** 2)
-        self.rotation[0] = math.atan2(to_target[0], to_target[2])  # yaw
-        self.rotation[1] = -math.atan2(to_target[1], horiz_dist) if horiz_dist > 1e-6 else 0.0
+        self.rotation[0] = math.atan2(-to_target[0], to_target[2])    # yaw
+        self.rotation[1] = math.atan2(to_target[1], horiz_dist) if horiz_dist > 1e-6 else 0.0  # pitch
 
     def world_to_screen(
         self,
