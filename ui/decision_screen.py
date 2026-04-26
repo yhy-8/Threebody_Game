@@ -51,10 +51,10 @@ class DecisionScreen(Screen):
             font_size=btn_font_size
         )
 
-        # 标签切换按钮
-        tab_y = int(20 * scale)
-        tab_w = max(140, int(180 * scale))
-        tab_x_start = int(width * 0.35)
+        # 标签切换按钮（第二行，避免与标题重叠）
+        tab_y = int(20 * scale) + btn_h + int(15 * scale)
+        tab_w = max(120, int(150 * scale))
+        tab_x_start = int(20 * scale)
 
         self.tab_construction_btn = MenuButton(
             tab_x_start, tab_y, tab_w, btn_h,
@@ -63,7 +63,7 @@ class DecisionScreen(Screen):
             font_size=btn_font_size
         )
         self.tab_policy_btn = MenuButton(
-            tab_x_start + tab_w + 10, tab_y, tab_w, btn_h,
+            tab_x_start + tab_w + int(15 * scale), tab_y, tab_w, btn_h,
             "文明政策",
             callback=lambda: self.switch_tab(self.TAB_POLICY),
             font_size=btn_font_size
@@ -94,9 +94,9 @@ class DecisionScreen(Screen):
         else:
             decisions = dm.get_policy_decisions()
 
-        start_y = max(120, int(height * 0.18))
-        gap = max(55, int(65 * scale))
-        btn_w = max(160, int(200 * scale))
+        start_y = max(160, int(height * 0.22))
+        gap = max(75, int(90 * scale))
+        btn_w = max(120, int(150 * scale))
         btn_h = max(36, int(42 * scale))
 
         for idx, decision in enumerate(decisions):
@@ -281,10 +281,10 @@ class DecisionScreen(Screen):
         width, height = screen.get_size()
         scale = min(width / 1280, height / 720)
 
-        # 标题
+        # 标题（右上角，避免与按钮重叠）
         if 'title' in self.fonts:
             title_surf = self.fonts['title'].render("决策", True, (255, 200, 150))
-            title_rect = title_surf.get_rect(center=(width // 2, max(35, int(45 * scale))))
+            title_rect = title_surf.get_rect(topright=(width - int(30 * scale), int(20 * scale)))
             screen.blit(title_surf, title_rect)
 
         # 绘制标签指示器（当前选中的标签高亮）
@@ -297,12 +297,13 @@ class DecisionScreen(Screen):
                              (self.tab_policy_btn.rect.left, self.tab_policy_btn.rect.bottom + 2),
                              (self.tab_policy_btn.rect.right, self.tab_policy_btn.rect.bottom + 2), 3)
 
-        # 当前状态
+        # 当前状态（标签按钮下方）
         if self.simulator and 'small' in self.fonts:
             dm = self.simulator.decision_manager
             state_text = f"文明状态: {dm.current_state.value.upper()}"
             state_surf = self.fonts['small'].render(state_text, True, (200, 200, 220))
-            screen.blit(state_surf, (int(width * 0.05), max(70, int(85 * scale))))
+            state_y = self.tab_construction_btn.rect.bottom + int(15 * scale)
+            screen.blit(state_surf, (int(20 * scale), state_y))
 
         self.back_button.render(screen)
         self.tab_construction_btn.render(screen)
@@ -338,8 +339,8 @@ class DecisionScreen(Screen):
         desc_font = get_font(max(12, int(15 * scale)))
         cost_font = get_font(max(11, int(14 * scale)))
 
-        start_y = max(120, int(height * 0.18))
-        gap = max(55, int(65 * scale))
+        start_y = max(160, int(height * 0.22))
+        gap = max(75, int(90 * scale))
         x_left = int(width * 0.05)
 
         res_names = {"minerals": "矿物", "energy": "能源", "food": "食物"}

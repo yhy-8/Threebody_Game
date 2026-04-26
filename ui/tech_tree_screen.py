@@ -13,13 +13,13 @@ from game.technology import TechNode, RESEARCH_TYPES, RESEARCH_NAMES, RESEARCH_C
 class TechTreeScreen(Screen):
     """科技树专属子界面 —— 树形依赖可视化"""
 
-    # 节点尺寸和间距
-    NODE_W = 160
-    NODE_H = 60
-    TIER_GAP_X = 220   # 层级间横向间距
-    NODE_GAP_Y = 90    # 同层节点纵向间距
-    MARGIN_LEFT = 120
-    MARGIN_TOP = 140
+    # 节点基准尺寸（1280x720下）— 会在 setup_ui() 中按窗口缩放
+    _BASE_NODE_W = 150
+    _BASE_NODE_H = 52
+    _BASE_TIER_GAP_X = 210
+    _BASE_NODE_GAP_Y = 80
+    _BASE_MARGIN_LEFT = 130
+    _BASE_MARGIN_TOP = 100
 
     # 节点颜色
     COLOR_LOCKED = (60, 60, 80)           # 未满足前置
@@ -57,6 +57,14 @@ class TechTreeScreen(Screen):
         """设置UI"""
         width, height = self.screen.get_size()
         scale = min(width / 1280, height / 720)
+
+        # 按窗口大小缩放节点布局
+        self.NODE_W = int(self._BASE_NODE_W * scale)
+        self.NODE_H = int(self._BASE_NODE_H * scale)
+        self.TIER_GAP_X = int(self._BASE_TIER_GAP_X * scale)
+        self.NODE_GAP_Y = int(self._BASE_NODE_GAP_Y * scale)
+        self.MARGIN_LEFT = int(self._BASE_MARGIN_LEFT * scale)
+        self.MARGIN_TOP = int(self._BASE_MARGIN_TOP * scale)
 
         btn_font_size = max(16, int(22 * scale))
         btn_h = max(32, int(40 * scale))

@@ -37,60 +37,67 @@ class MainScreen(Screen):
     def setup_ui(self):
         """设置UI"""
         width, height = self.screen.get_size()
+        scale = min(width / 1280, height / 720)
 
         # 按钮尺寸根据窗口大小缩放
-        btn_font_size = max(18, min(28, width // 50))
+        btn_font_size = max(16, int(22 * scale))
+        btn_w = max(70, int(90 * scale))   # 统一小按钮宽度
+        btn_h = max(30, int(38 * scale))
+        gap = int(10 * scale)
 
         # 左上角菜单按钮
+        x = int(15 * scale)
         self.menu_button = MenuButton(
-            20, 20, max(80, width // 13), max(32, height // 18),
+            x, int(15 * scale), btn_w, btn_h,
             "菜单",
             callback=self.on_menu_clicked,
             font_size=btn_font_size
         )
+        x += btn_w + gap
 
-        # 暂停/继续按钮 (新加)
+        # 暂停/继续按钮
         self.pause_button = MenuButton(
-            20 + max(80, width // 13) + 20, 20, max(80, width // 13), max(32, height // 18),
+            x, int(15 * scale), btn_w, btn_h,
             "暂停",
             callback=self.on_pause_toggle,
             font_size=btn_font_size
         )
+        x += btn_w + gap
 
         # 科技树按钮
-        tech_x = 20 + max(80, width // 13) * 2 + 40
         self.tech_button = MenuButton(
-            tech_x, 20, max(100, width // 11), max(32, height // 18),
+            x, int(15 * scale), btn_w, btn_h,
             "科技树",
             callback=self.on_tech_clicked,
             font_size=btn_font_size
         )
+        x += btn_w + gap
 
         # 决策按钮
-        decision_x = tech_x + max(100, width // 11) + 20
         self.decision_button = MenuButton(
-            decision_x, 20, max(100, width // 11), max(32, height // 18),
+            x, int(15 * scale), btn_w, btn_h,
             "决策",
             callback=self.on_decision_clicked,
             font_size=btn_font_size
         )
+        x += btn_w + gap
 
         # 区域浏览按钮
-        zone_x = decision_x + max(100, width // 11) + 20
         self.zone_button = MenuButton(
-            zone_x, 20, max(100, width // 11), max(32, height // 18),
+            x, int(15 * scale), btn_w, btn_h,
             "区域",
             callback=self.on_zone_clicked,
             font_size=btn_font_size
         )
 
         # 右上角星图按钮
+        starmap_w = max(90, int(110 * scale))
         self.starmap_button = MenuButton(
-            width - max(140, width // 9) - 20, 20,
-            max(120, width // 9), max(40, height // 15),
+            width - starmap_w - int(15 * scale), int(15 * scale),
+            starmap_w, btn_h,
             "星图",
             callback=self.on_starmap_clicked,
-            font_size=btn_font_size + 2
+            font_size=btn_font_size
         )
 
         # 创建信息面板 - 3个面板
@@ -228,10 +235,10 @@ class MainScreen(Screen):
             color = (brightness, brightness, brightness)
             pygame.draw.circle(screen, color, (x, y), size)
 
-        # 渲染标题
+        # 渲染标题（在按钮行下方）
         if 'title' in self.fonts:
             title = self.fonts['title'].render("三体文明", True, (200, 220, 255))
-            title_y = max(30, int(height * 0.06))
+            title_y = max(60, int(height * 0.08))
             title_rect = title.get_rect(center=(width // 2, title_y))
             screen.blit(title, title_rect)
 
@@ -250,7 +257,7 @@ class MainScreen(Screen):
         if self.simulator and 'normal' in self.fonts:
             time_text = f"第 {int(self.simulator.time)} 天"
             time_surf = self.fonts['normal'].render(time_text, True, (255, 255, 200))
-            time_y = max(70, int(height * 0.13))
+            time_y = max(90, int(height * 0.14))
             time_rect = time_surf.get_rect(center=(width // 2, time_y))
             screen.blit(time_surf, time_rect)
 
