@@ -5,7 +5,11 @@
 - StartGameMenu: 开始游戏菜单
 - SettingsScreen: 设置界面
 - GameMenu: 游戏内菜单
-- 以及基础UI组件
+- MainScreen: 2D主游戏界面
+- StarmapView: 3D星图界面
+- TechTreeScreen: 科技树界面
+- DecisionScreen: 决策界面（建筑建造与政策）
+- ZoneViewScreen: 区域浏览界面
 """
 
 from .screen_manager import ScreenManager, Screen
@@ -16,7 +20,8 @@ from .game_menu import GameMenu
 from .main_screen import MainScreen
 from .starmap_view import StarmapView
 from .tech_tree_screen import TechTreeScreen
-from .policy_screen import PolicyScreen
+from .decision_screen import DecisionScreen
+from .zone_view_screen import ZoneViewScreen
 
 __all__ = [
     'ScreenManager',
@@ -28,5 +33,6 @@ __all__ = [
     'MainScreen',
     'StarmapView',
     'TechTreeScreen',
-    'PolicyScreen',
+    'DecisionScreen',
+    'ZoneViewScreen',
 ]

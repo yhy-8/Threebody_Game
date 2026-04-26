@@ -358,7 +358,8 @@ class StarmapView(Screen):
 
             # 渲染游戏状态
             state = self.simulator.get_state()
-            self.scene.render(state)
+            zone_data = state.get("planet_zones", None)
+            self.scene.render(state, zone_data=zone_data)
 
         # 渲染UI
         if self.ui_manager:

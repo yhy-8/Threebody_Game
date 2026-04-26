@@ -13,7 +13,7 @@ from render.scene import SceneRenderer
 from render.ui import create_hud, update_hud, Button, UIManager, get_font, Panel, Label
 
 # UI模块 - 新的界面管理系统
-from ui import ScreenManager, InitialMenu, StartGameMenu, SettingsScreen, GameMenu, MainScreen, StarmapView, TechTreeScreen, PolicyScreen
+from ui import ScreenManager, InitialMenu, StartGameMenu, SettingsScreen, GameMenu, MainScreen, StarmapView, TechTreeScreen, DecisionScreen, ZoneViewScreen
 from ui.screen_manager import ScreenType
 
 
@@ -232,9 +232,13 @@ def init_screen_manager(screen: pygame.Surface) -> ScreenManager:
     tech_tree_screen = TechTreeScreen(manager, screen)
     manager.register_screen(ScreenType.TECH_TREE, tech_tree_screen)
 
-    # 注册政策系统界面
-    policy_screen = PolicyScreen(manager, screen)
-    manager.register_screen(ScreenType.POLICY_SYSTEM, policy_screen)
+    # 注册决策界面（原政策系统）
+    decision_screen = DecisionScreen(manager, screen)
+    manager.register_screen(ScreenType.DECISION, decision_screen)
+
+    # 注册区域浏览界面
+    zone_view_screen = ZoneViewScreen(manager, screen)
+    manager.register_screen(ScreenType.ZONE_VIEW, zone_view_screen)
 
     return manager
 

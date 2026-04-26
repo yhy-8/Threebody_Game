@@ -15,7 +15,8 @@ class ScreenType(Enum):
     STARMAP_VIEW = auto()      # 3D星图界面
     SAVE_LOAD_DIALOG = auto()  # 存档对话框
     TECH_TREE = auto()         # 科技树界面
-    POLICY_SYSTEM = auto()     # 政策系统界面
+    DECISION = auto()          # 决策界面（原政策系统）
+    ZONE_VIEW = auto()         # 区域浏览界面
 
 
 class Screen:

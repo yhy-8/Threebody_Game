@@ -1,8 +1,9 @@
 """3D场景渲染"""
 import pygame
 import random
+import math
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from .camera import Camera
 
 
@@ -64,20 +65,25 @@ class SceneRenderer:
         """清空屏幕"""
         self.screen.fill(color)
 
-    def render(self, game_state: dict):
-        """渲染游戏场景"""
+    def render(self, game_state: dict, zone_data: Optional[dict] = None):
+        """渲染游戏场景
+
+        Args:
+            game_state: 游戏状态字典
+            zone_data: 行星区域数据（包含 rotation_angle 和 zones_summary）
+        """
         # 1. 绘制星空背景（传入camera实现视差）
         self.star_field.render(self.screen, self.camera)
 
-        # 2. 绘制恒星
+        # 2. 绘制恒星和行星
         for star_data in game_state.get("environment", {}).get("stars", []):
-            self._draw_star(star_data)
+            self._draw_star(star_data, zone_data)
 
         # 3. 绘制轨道（可选）
         self._draw_orbit_hint()
 
-    def _draw_star(self, star_data: dict):
-        """绘制恒星或行星（使用球体感渐变）"""
+    def _draw_star(self, star_data: dict, zone_data: Optional[dict] = None):
+        """绘制恒星或行星（使用球体感渐变，行星显示区域网格）"""
         pos = star_data["position"]
         color = star_data["color"]
         radius = star_data["radius"]
@@ -118,6 +124,15 @@ class SceneRenderer:
                         bright = tuple(int(c * (0.2 + 0.8 * factor * light_factor)) for c in color)
                         bright = tuple(min(255, max(0, b)) for b in bright)
                         pygame.draw.circle(self.screen, bright, (sx, sy), r)
+
+                    # 绘制区域网格线（经纬线）
+                    if screen_radius >= 8:
+                        rotation_angle = 0.0
+                        if zone_data:
+                            rotation_angle = zone_data.get("rotation_angle", 0.0)
+                        self._draw_planet_grid(
+                            screen_pos, screen_radius, pos, rotation_angle
+                        )
                 else:
                     # 恒星：发光效果（中心亮，边缘暗）
                     for r in range(screen_radius, 0, -2):
@@ -226,3 +241,96 @@ class SceneRenderer:
         hint = font_small.render("你已撞击星球", True, (255, 200, 200))
         hint_rect = hint.get_rect(center=(screen_size[0] // 2, screen_size[1] // 2 + 30))
         screen.blit(hint, hint_rect)
+
+    def _draw_planet_grid(self, screen_center: Tuple[int, int],
+                          screen_radius: int, world_pos: list,
+                          rotation_angle: float = 0.0):
+        """在行星球体上绘制经纬网格线
+
+        使用投影将球面上的经纬线映射到2D屏幕空间，
+        实现行星区域的可视化和自转效果。
+
+        Args:
+            screen_center: 行星屏幕中心坐标
+            screen_radius: 行星屏幕半径
+            world_pos: 行星世界坐标
+            rotation_angle: 当前自转角度(度)
+        """
+        if screen_radius < 6:
+            return
+
+        cx, cy = screen_center
+        R = screen_radius
+        rot_rad = math.radians(rotation_angle)
+
+        line_color = (60, 80, 120)
+        thin_color = (40, 55, 85)
+
+        # 纬线（6条分割线 = 7个纬度带边界，去掉两极）
+        lat_steps = 6
+        for i in range(1, lat_steps):
+            lat = -90 + i * (180.0 / lat_steps)
+            lat_rad = math.radians(lat)
+
+            # 纬线是一个水平椭圆
+            # y 偏移 = R * sin(lat)
+            # 椭圆宽度 = R * cos(lat)
+            y_offset = -R * math.sin(lat_rad)  # 屏幕Y轴正方向向下
+            half_width = R * math.cos(lat_rad)
+
+            if half_width < 2:
+                continue
+
+            # 绘制纬线的可见部分（一个椭圆弧）
+            rect = pygame.Rect(
+                int(cx - half_width),
+                int(cy + y_offset - half_width * 0.1),
+                int(half_width * 2),
+                max(2, int(half_width * 0.2))
+            )
+            color = line_color if i == lat_steps // 2 else thin_color  # 赤道加亮
+            try:
+                pygame.draw.ellipse(self.screen, color, rect, 1)
+            except (ValueError, pygame.error):
+                pass
+
+        # 经线（12条分割线，每30度一条）
+        lon_steps = 12
+        segments = 24  # 每条经线的分段数
+        for j in range(lon_steps):
+            lon = j * (360.0 / lon_steps) + rotation_angle
+            lon_rad = math.radians(lon)
+
+            points = []
+            for k in range(segments + 1):
+                lat = -90 + k * (180.0 / segments)
+                lat_rad = math.radians(lat)
+
+                # 球面坐标 -> 简化的2D投影
+                # x方向 = cos(lat) * sin(lon)
+                # y方向 = sin(lat)
+                # z方向 = cos(lat) * cos(lon)（深度，用于判断可见性）
+                x3d = math.cos(lat_rad) * math.sin(lon_rad)
+                y3d = math.sin(lat_rad)
+                z3d = math.cos(lat_rad) * math.cos(lon_rad)
+
+                # 只绘制面向观察者的部分（z > 0 表示面朝相机，简化处理）
+                if z3d < -0.05:
+                    if points and len(points) > 1:
+                        try:
+                            pygame.draw.lines(self.screen, thin_color, False, points, 1)
+                        except (ValueError, pygame.error):
+                            pass
+                    points = []
+                    continue
+
+                sx = int(cx + x3d * R)
+                sy = int(cy - y3d * R)  # 屏幕Y轴向下
+                points.append((sx, sy))
+
+            if len(points) > 1:
+                color = line_color if j % 3 == 0 else thin_color  # 每90度加亮
+                try:
+                    pygame.draw.lines(self.screen, color, False, points, 1)
+                except (ValueError, pygame.error):
+                    pass

@@ -66,12 +66,21 @@ class MainScreen(Screen):
             font_size=btn_font_size
         )
 
-        # 政策按钮
-        policy_x = tech_x + max(100, width // 11) + 20
-        self.policy_button = MenuButton(
-            policy_x, 20, max(100, width // 11), max(32, height // 18),
-            "政策系统",
-            callback=self.on_policy_clicked,
+        # 决策按钮
+        decision_x = tech_x + max(100, width // 11) + 20
+        self.decision_button = MenuButton(
+            decision_x, 20, max(100, width // 11), max(32, height // 18),
+            "决策",
+            callback=self.on_decision_clicked,
+            font_size=btn_font_size
+        )
+
+        # 区域浏览按钮
+        zone_x = decision_x + max(100, width // 11) + 20
+        self.zone_button = MenuButton(
+            zone_x, 20, max(100, width // 11), max(32, height // 18),
+            "区域",
+            callback=self.on_zone_clicked,
             font_size=btn_font_size
         )
 
@@ -132,9 +141,13 @@ class MainScreen(Screen):
         """点击科技树按钮"""
         self.screen_manager.switch_to(ScreenType.TECH_TREE)
 
-    def on_policy_clicked(self):
-        """点击政策按钮"""
-        self.screen_manager.switch_to(ScreenType.POLICY_SYSTEM)
+    def on_decision_clicked(self):
+        """点击决策按钮"""
+        self.screen_manager.switch_to(ScreenType.DECISION)
+
+    def on_zone_clicked(self):
+        """点击区域浏览按钮"""
+        self.screen_manager.switch_to(ScreenType.ZONE_VIEW)
 
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
@@ -165,7 +178,8 @@ class MainScreen(Screen):
         self.menu_button.update(dt)
         self.pause_button.update(dt)
         self.tech_button.update(dt)
-        self.policy_button.update(dt)
+        self.decision_button.update(dt)
+        self.zone_button.update(dt)
         self.starmap_button.update(dt)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -180,7 +194,9 @@ class MainScreen(Screen):
             return True
         if self.tech_button.handle_event(event):
             return True
-        if self.policy_button.handle_event(event):
+        if self.decision_button.handle_event(event):
+            return True
+        if self.zone_button.handle_event(event):
             return True
         if self.starmap_button.handle_event(event):
             return True
@@ -226,7 +242,8 @@ class MainScreen(Screen):
         self.menu_button.render(screen)
         self.pause_button.render(screen)
         self.tech_button.render(screen)
-        self.policy_button.render(screen)
+        self.decision_button.render(screen)
+        self.zone_button.render(screen)
         self.starmap_button.render(screen)
         
         # 渲染游戏时间和说明
@@ -312,7 +329,7 @@ class MainScreen(Screen):
             state = self.simulator.get_state()
             entities = state.get("entities", {})
             env_params = state.get("environment", {}).get("params", {})
-            policy = state.get("policy", {}).get("current_state", "normal")
+            policy = state.get("decision", {}).get("current_state", "normal")
             tech_count = len(state.get("technology", {}).get("unlocked", []))
 
             buildings_count = entities.get('buildings_count', 45)
@@ -382,8 +399,8 @@ class MainScreen(Screen):
             stab_color = (100, 255, 100) if stability > 0.5 else (255, 100, 100)
             
             items = [
-                ("表面温度", f"{temp:.1f} ℃", temp_color),
-                ("环境辐射", f"{rad:.2f} 辐射度", rad_color),
+                ("表面温度", f"{temp:.1f} ℃  (全球均值)", temp_color),
+                ("环境辐射", f"{rad:.2f}  (全球均值)", rad_color),
                 ("光照强度", f"{light:.1%}", (255, 255, 150)),
                 ("地质稳定", "稳定" if stability > 0.5 else "危险", stab_color),
             ]
