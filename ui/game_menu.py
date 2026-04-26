@@ -102,11 +102,16 @@ class GameMenu(Screen):
     def on_resume(self):
         """继续游戏"""
         self.save_state = self.SAVE_NONE
+        # 恢复模拟器暂停状态
+        simulator = self.screen_manager.global_state.get('simulator')
+        if simulator and hasattr(self, 'was_paused'):
+            simulator.paused = self.was_paused
         self.screen_manager.go_back()
 
     def on_settings(self):
         """打开设置"""
         self.save_state = self.SAVE_NONE
+        # 设置界面打开时，保持暂停状态即可
         self.screen_manager.switch_to(ScreenType.SETTINGS)
 
     def on_save(self):
@@ -159,6 +164,13 @@ class GameMenu(Screen):
         self.save_state = self.SAVE_NONE
         self.save_message = ""
         self.save_message_timer = 0.0
+        
+        # 打开菜单时暂停游戏
+        simulator = self.screen_manager.global_state.get('simulator')
+        if simulator:
+            self.was_paused = simulator.paused
+            simulator.paused = True
+            
         self.screen = pygame.display.get_surface()
         self.rect = self.screen.get_rect()
         self.setup_ui()
@@ -300,16 +312,16 @@ class GameMenu(Screen):
 
         # 最近存档列表
         if self.save_list:
-            list_y = panel_y + panel_h - int(10 * scale)
+            list_y = self.manual_save_btn.rect.bottom + max(15, int(20 * scale))
             list_font = get_font(max(11, int(13 * scale)))
             header = list_font.render("最近存档:", True, (100, 120, 150))
-            screen.blit(header, (panel_x + 15, list_y))
+            screen.blit(header, (panel_x + 30, list_y))
             list_y += list_font.get_height() + 3
 
             for i, save in enumerate(self.save_list[:3]):
                 text = f"• {save.save_name}  ({save.save_time})"
                 surf = list_font.render(text, True, (120, 130, 160))
-                screen.blit(surf, (panel_x + 15, list_y + i * (list_font.get_height() + 2)))
+                screen.blit(surf, (panel_x + 30, list_y + i * (list_font.get_height() + 2)))
 
     def _render_save_message(self, screen, width, height, scale):
         """渲染保存提示"""
