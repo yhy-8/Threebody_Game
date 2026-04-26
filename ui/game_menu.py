@@ -66,38 +66,33 @@ class GameMenu(Screen):
         # ── 保存面板组件 ──
         panel_w = max(450, int(550 * scale))
         panel_x = (width - panel_w) // 2
-        panel_y = int(height * 0.15)
+        panel_y = int(height * 0.18)
 
-        # 文本输入框（复用 start_game_menu 中的 TextInput）
+        # 文本输入框
         from .start_game_menu import TextInput
-        input_w = max(280, int(350 * scale))
+        input_w = max(280, int(360 * scale))
         input_h = max(38, int(46 * scale))
         input_x = (width - input_w) // 2
         self.save_name_input = TextInput(
-            input_x, panel_y + int(160 * scale), input_w, input_h,
+            input_x, panel_y + int(100 * scale), input_w, input_h,
             placeholder="输入存档名称...",
             font_size=max(16, int(20 * scale)),
             max_length=24,
         )
 
-        small_btn_w = max(120, int(150 * scale))
+        small_btn_w = max(100, int(130 * scale))
         small_btn_h = max(34, int(42 * scale))
         small_fs = max(16, int(22 * scale))
 
-        self.quick_save_btn = MenuButton(
-            (width - small_btn_w) // 2, panel_y + int(90 * scale),
-            small_btn_w, small_btn_h,
-            "快速存档", callback=self.on_quick_save, font_size=small_fs,
-        )
-
+        # 保存按钮（输入框下方居中）
+        save_row_y = panel_y + int(100 * scale) + input_h + int(15 * scale)
         self.manual_save_btn = MenuButton(
-            input_x + input_w + int(10 * scale), panel_y + int(160 * scale),
-            small_btn_w, max(input_h, small_btn_h),
-            "保存", callback=self.on_manual_save, font_size=small_fs,
+            width // 2 - small_btn_w - int(10 * scale), save_row_y,
+            small_btn_w, small_btn_h,
+            "保存", callback=self.on_save_game, font_size=small_fs,
         )
-
         self.save_close_btn = MenuButton(
-            width // 2 - small_btn_w // 2, panel_y + int(230 * scale),
+            width // 2 + int(10 * scale), save_row_y,
             small_btn_w, small_btn_h,
             "关闭", callback=self.on_close_save_panel, font_size=small_fs,
         )
@@ -125,22 +120,8 @@ class GameMenu(Screen):
             self.save_name_input.text = f"{simulator.universe_name}_Day{day}"
         self.save_name_input.active = True
 
-    def on_quick_save(self):
-        """快速存档"""
-        simulator = self.screen_manager.global_state.get('simulator')
-        if not simulator:
-            self.save_message = "没有游戏数据"
-            self.save_message_timer = 2.0
-            return
-
-        success, msg = self.save_manager.quick_save(simulator)
-        self.save_message = msg
-        self.save_message_timer = 2.5
-        if success:
-            self.save_list = self.save_manager.scan_saves()
-
-    def on_manual_save(self):
-        """手动存档"""
+    def on_save_game(self):
+        """保存游戏（统一入口）"""
         name = self.save_name_input.text.strip()
         if not name:
             self.save_message = "请输入存档名称"
@@ -220,8 +201,6 @@ class GameMenu(Screen):
     def _handle_save_panel_event(self, event) -> bool:
         if self.save_name_input and self.save_name_input.handle_event(event):
             return True
-        if self.quick_save_btn and self.quick_save_btn.handle_event(event):
-            return True
         if self.manual_save_btn and self.manual_save_btn.handle_event(event):
             return True
         if self.save_close_btn and self.save_close_btn.handle_event(event):
@@ -232,7 +211,7 @@ class GameMenu(Screen):
                 self.on_close_save_panel()
                 return True
             if event.key == pygame.K_RETURN:
-                self.on_manual_save()
+                self.on_save_game()
                 return True
 
         return True  # 拦截所有事件
@@ -279,10 +258,10 @@ class GameMenu(Screen):
         screen.blit(dark, (0, 0))
 
         # 面板背景
-        panel_w = max(500, int(600 * scale))
-        panel_h = max(320, int(380 * scale))
+        panel_w = max(450, int(520 * scale))
+        panel_h = max(260, int(300 * scale))
         panel_x = (width - panel_w) // 2
-        panel_y = int(height * 0.15)
+        panel_y = int(height * 0.18)
 
         pygame.draw.rect(screen, (25, 30, 50),
                          (panel_x, panel_y, panel_w, panel_h), border_radius=12)
@@ -290,54 +269,47 @@ class GameMenu(Screen):
                          (panel_x, panel_y, panel_w, panel_h), 2, border_radius=12)
 
         # 标题
-        title_font = get_font(max(22, int(30 * scale)))
+        title_font = get_font(max(20, int(26 * scale)))
         title = title_font.render("保存游戏", True, (220, 230, 255))
-        title_rect = title.get_rect(center=(width // 2, panel_y + int(30 * scale)))
+        title_rect = title.get_rect(center=(width // 2, panel_y + int(28 * scale)))
         screen.blit(title, title_rect)
 
-        # 当前宇宙名
+        # 当前宇宙信息
         simulator = self.screen_manager.global_state.get('simulator')
         if simulator:
-            info_font = get_font(max(14, int(17 * scale)))
+            info_font = get_font(max(13, int(16 * scale)))
             info = info_font.render(
                 f"宇宙: {simulator.universe_name}  |  第{max(1, int(simulator.time))}天",
                 True, (150, 170, 200))
-            info_rect = info.get_rect(center=(width // 2, panel_y + int(60 * scale)))
+            info_rect = info.get_rect(center=(width // 2, panel_y + int(55 * scale)))
             screen.blit(info, info_rect)
 
-        # 快速存档按钮
-        self.quick_save_btn.update(0.016)
-        self.quick_save_btn.render(screen)
+        # 存档名称提示
+        label_font = get_font(max(13, int(15 * scale)))
+        label = label_font.render("存档名称:", True, (140, 150, 180))
+        screen.blit(label, (self.save_name_input.rect.x, self.save_name_input.rect.y - int(20 * scale)))
 
-        # 分隔线
-        sep_y = panel_y + int(130 * scale)
-        pygame.draw.line(screen, (50, 60, 90),
-                         (panel_x + 30, sep_y), (panel_x + panel_w - 30, sep_y), 1)
-
-        label_font = get_font(max(13, int(16 * scale)))
-        label = label_font.render("或手动输入存档名称:", True, (140, 150, 180))
-        screen.blit(label, (panel_x + 30, sep_y + int(8 * scale)))
-
-        # 输入框 + 保存按钮
+        # 输入框
         self.save_name_input.render(screen)
+
+        # 保存 + 关闭按钮
         self.manual_save_btn.update(0.016)
         self.manual_save_btn.render(screen)
-
-        # 关闭按钮
         self.save_close_btn.update(0.016)
         self.save_close_btn.render(screen)
 
         # 最近存档列表
         if self.save_list:
-            list_y = panel_y + int(280 * scale)
+            list_y = panel_y + panel_h - int(10 * scale)
             list_font = get_font(max(11, int(13 * scale)))
             header = list_font.render("最近存档:", True, (100, 120, 150))
-            screen.blit(header, (panel_x + 30, list_y - int(18 * scale)))
+            screen.blit(header, (panel_x + 15, list_y))
+            list_y += list_font.get_height() + 3
 
             for i, save in enumerate(self.save_list[:3]):
                 text = f"• {save.save_name}  ({save.save_time})"
                 surf = list_font.render(text, True, (120, 130, 160))
-                screen.blit(surf, (panel_x + 30, list_y + i * (list_font.get_height() + 3)))
+                screen.blit(surf, (panel_x + 15, list_y + i * (list_font.get_height() + 2)))
 
     def _render_save_message(self, screen, width, height, scale):
         """渲染保存提示"""
