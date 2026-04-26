@@ -235,9 +235,12 @@ class MainScreen(Screen):
             color = (brightness, brightness, brightness)
             pygame.draw.circle(screen, color, (x, y), size)
 
-        # 渲染标题（在按钮行下方）
+        # 渲染标题（在按钮行下方）— 显示宇宙名称
         if 'title' in self.fonts:
-            title = self.fonts['title'].render("三体文明", True, (200, 220, 255))
+            display_name = "三体文明"
+            if self.simulator and hasattr(self.simulator, 'universe_name'):
+                display_name = self.simulator.universe_name
+            title = self.fonts['title'].render(display_name, True, (200, 220, 255))
             title_y = max(60, int(height * 0.08))
             title_rect = title.get_rect(center=(width // 2, title_y))
             screen.blit(title, title_rect)

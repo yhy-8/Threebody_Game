@@ -20,9 +20,10 @@ class GameSimulator:
         self.time = 0.0
         self.paused = False
         self.game_over = False  # 游戏是否结束
+        self.universe_name = "未命名宇宙"  # 宇宙名称（新建游戏时设置）
 
     def reset(self):
-        """重置游戏状态 - 用于开始新游戏"""
+        """重置游戏状态 - 用于开始新游戏（不重置 universe_name，由外部设置）"""
         self.environment = ThreeBodySimulation()
         self.entities = EntityManager()
         self.tech_tree = TechTree()
@@ -152,6 +153,7 @@ class GameSimulator:
             "time": self.time,
             "paused": self.paused,
             "game_over": self.game_over,
+            "universe_name": self.universe_name,
             "stars": [
                 {
                     "mass": star.mass,
@@ -178,6 +180,7 @@ class GameSimulator:
         self.time = data.get("time", 0.0)
         self.paused = data.get("paused", False)
         self.game_over = data.get("game_over", False)
+        self.universe_name = data.get("universe_name", "未命名宇宙")
         self.environment.time_scale = data.get("time_scale", 1.0)
 
         # 恢复星球状态
