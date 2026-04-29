@@ -60,6 +60,21 @@ def _default_decisions() -> Dict[str, Decision]:
         effects={"algae_fuel": "最多+15/天(满5人)"},
     )
 
+    decisions["build_algae_food_synth"] = Decision(
+        id="build_algae_food_synth",
+        name="建造藻类食物合成器",
+        description="将原生藻类合成为基础可食用维生物质，解决早期食物短缺危机。",
+        category="construction",
+        resource_cost={"iron": 25},
+        tech_requirement="",
+        requires_zone=True,
+        building_type="algae_food_synth",
+        worker_capacity=5,
+        per_worker_output={"food": 2.5},
+        consumption={},
+        effects={"food": "最多+12.5/天(满5人)"},
+    )
+
     decisions["build_iron_mine"] = Decision(
         id="build_iron_mine",
         name="建造铁矿场",

@@ -276,10 +276,11 @@ class StartGameMenu(Screen):
 
         from game.simulator import GameSimulator
         simulator = self.screen_manager.global_state.get('simulator')
+        config = self.screen_manager.global_state.get('config', {})
         if simulator:
-            simulator.reset()
+            simulator.reset(config)
         else:
-            simulator = GameSimulator()
+            simulator = GameSimulator(config)
             self.screen_manager.global_state['simulator'] = simulator
 
         simulator.universe_name = universe_name
@@ -326,8 +327,9 @@ class StartGameMenu(Screen):
 
         from game.simulator import GameSimulator
         simulator = self.screen_manager.global_state.get('simulator')
+        config = self.screen_manager.global_state.get('config', {})
         if not simulator:
-            simulator = GameSimulator()
+            simulator = GameSimulator(config)
             self.screen_manager.global_state['simulator'] = simulator
 
         success, msg = self.save_manager.load_game(filepath, simulator)

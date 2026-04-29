@@ -11,9 +11,9 @@ import numpy as np
 class GameSimulator:
     """游戏模拟器 - 协调环境、实体、区域、科技和决策更新"""
 
-    def __init__(self):
+    def __init__(self, config: dict = None):
         self.environment = ThreeBodySimulation()
-        self.entities = EntityManager()
+        self.entities = EntityManager(config)
         self.tech_tree = TechTree()
         self.decision_manager = DecisionManager()
         self.planet_zones = PlanetZoneManager()
@@ -22,10 +22,10 @@ class GameSimulator:
         self.game_over = False  # 游戏是否结束
         self.universe_name = "未命名宇宙"  # 宇宙名称（新建游戏时设置）
 
-    def reset(self):
+    def reset(self, config: dict = None):
         """重置游戏状态 - 用于开始新游戏（不重置 universe_name，由外部设置）"""
         self.environment = ThreeBodySimulation()
-        self.entities = EntityManager()
+        self.entities = EntityManager(config)
         self.tech_tree = TechTree()
         self.decision_manager = DecisionManager()
         self.planet_zones = PlanetZoneManager()

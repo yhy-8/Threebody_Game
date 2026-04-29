@@ -272,25 +272,43 @@ class Building:
 class EntityManager:
     """实体管理器 — 管理建筑、资源和人口"""
 
-    def __init__(self):
+    def __init__(self, config: dict = None):
         self.buildings: List[Building] = []
         self.resources: dict = {}
-        self.population: PopulationManager = PopulationManager(100)
+        
+        initial_pop = 100
+        if config and "initial_entities" in config:
+            initial_pop = config["initial_entities"].get("population", 100)
+            
+        self.population: PopulationManager = PopulationManager(initial_pop)
         self.global_efficiency = 1.0
-        self._init_defaults()
+        self._init_defaults(config)
 
-    def _init_defaults(self):
-        """初始化默认资源 — 不含自然恢复"""
-        # 矿物
-        self.add_resource(Resource("iron", amount=200, max_storage=5000))
-        self.add_resource(Resource("copper", amount=30, max_storage=3000))
-        self.add_resource(Resource("rare_mineral", amount=0, max_storage=1000))
-        # 能源
-        self.add_resource(Resource("algae_fuel", amount=100, max_storage=3000))
-        self.add_resource(Resource("fossil_fuel", amount=0, max_storage=3000))
-        self.add_resource(Resource("electricity", amount=0, max_storage=500))
-        # 食物
-        self.add_resource(Resource("food", amount=300, max_storage=8000))
+    def _init_defaults(self, config: dict = None):
+        """初始化默认资源"""
+        default_res = {
+            "iron": 200, "copper": 30, "rare_mineral": 0,
+            "algae_fuel": 100, "fossil_fuel": 0, "electricity": 0,
+            "food": 300
+        }
+        max_storage_map = {
+            "iron": 5000, "copper": 3000, "rare_mineral": 1000,
+            "algae_fuel": 3000, "fossil_fuel": 3000, "electricity": 500,
+            "food": 8000
+        }
+        
+        if config and "initial_entities" in config and "resources" in config["initial_entities"]:
+            res_list = config["initial_entities"]["resources"]
+            if isinstance(res_list, list):
+                for res_item in res_list:
+                    name = res_item.get("name")
+                    if name in default_res:
+                        default_res[name] = res_item.get("amount", default_res[name])
+                        if "max_storage" in res_item:
+                            max_storage_map[name] = res_item["max_storage"]
+
+        for k, v in default_res.items():
+            self.add_resource(Resource(k, amount=v, max_storage=max_storage_map.get(k, 1000)))
 
     def add_building(self, building: Building):
         self.buildings.append(building)

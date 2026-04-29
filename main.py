@@ -250,10 +250,11 @@ def run_game_loop(config: dict, screen_manager: ScreenManager, screen: pygame.Su
     clock = pygame.time.Clock()
 
     # 创建游戏模拟器
-    simulator = GameSimulator()
+    simulator = GameSimulator(config)
 
     # 将模拟器存入全局状态，以便各界面可以访问（用于重置、保存等）
     screen_manager.global_state['simulator'] = simulator
+    screen_manager.global_state['config'] = config
 
     # 设置初始暂停状态
     sim_config = config.get("simulation", {})
