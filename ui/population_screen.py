@@ -181,6 +181,7 @@ class PopulationScreen(Screen):
         x_left = width // 2 - int(250 * scale)
         col_x = width // 2 + int(100 * scale)
         btn_w = max(40, int(40 * scale))
+        btn_h = max(30, int(35 * scale))
 
         idx = 0
         for sub_btn, add_btn, job_id in self.job_buttons:
