@@ -73,19 +73,7 @@ class Resource:
         return False
 
 
-# ── 岗位类型 ──────────────────────────────────────────────────────
-JOB_TYPES = {
-    "mining_iron": "铁矿工",
-    "mining_copper": "铜矿工",
-    "mining_rare": "稀有矿工",
-    "farming": "农民",
-    "algae_collect": "藻类采集",
-    "fossil_mining": "化石燃料工",
-    "power_worker": "发电工",
-    "researcher": "研究员",
-    "breeding": "生育",
-}
-
+# 移除全局抽象的 JOB_TYPES，人员直接分配给具体建筑
 
 class PopulationManager:
     """人口管理器 — 管理人口总数与岗位分配
@@ -95,10 +83,8 @@ class PopulationManager:
 
     def __init__(self, initial_population: int = 100):
         self.total: int = initial_population
-        # 岗位分配: { "mining_iron": 5, ... }
-        self.assignments: Dict[str, int] = {}
-        # 各岗位对应的区域 { "mining_iron": {zone_id: count, ...}, ... }
-        self.zone_assignments: Dict[str, Dict[int, int]] = {}
+        self.breeders: int = 0  # 专门从事生育的人口
+
         # 人口增长基础参数
         self.base_growth_per_breeder: float = 0.05  # 每个生育人口每天增长 0.05 人
         self.natural_growth_rate: float = 0.001  # 闲置人口微量自然增长（每人每天）
@@ -109,69 +95,9 @@ class PopulationManager:
         # 人口累积（用于非整数增长）
         self._growth_accumulator: float = 0.0
 
-    def get_idle(self) -> int:
+    def get_idle(self, total_building_workers: int) -> int:
         """获取未分配人口"""
-        assigned = sum(self.assignments.values())
-        return max(0, self.total - assigned)
-
-    def get_assigned(self, job: str) -> int:
-        """获取某岗位的分配人数"""
-        return self.assignments.get(job, 0)
-
-    def get_total_assigned(self) -> int:
-        """获取已分配总人数"""
-        return sum(self.assignments.values())
-
-    def assign(self, job: str, count: int, zone_id: int = -1) -> Tuple[bool, str]:
-        """分配人口到岗位
-        
-        Args:
-            job: 岗位类型
-            count: 分配人数
-            zone_id: 工作区域（-1 表示不绑定区域）
-        """
-        if job not in JOB_TYPES:
-            return False, f"未知岗位类型: {job}"
-        if count <= 0:
-            return False, "分配人数必须大于0"
-        idle = self.get_idle()
-        if count > idle:
-            return False, f"闲置人口不足（可用: {idle}，需求: {count}）"
-
-        self.assignments[job] = self.assignments.get(job, 0) + count
-
-        # 区域关联
-        if zone_id >= 0:
-            if job not in self.zone_assignments:
-                self.zone_assignments[job] = {}
-            self.zone_assignments[job][zone_id] = self.zone_assignments[job].get(zone_id, 0) + count
-
-        return True, f"已分配 {count} 人到 {JOB_TYPES[job]}"
-
-    def unassign(self, job: str, count: int, zone_id: int = -1) -> Tuple[bool, str]:
-        """从岗位撤回人口"""
-        current = self.assignments.get(job, 0)
-        if count > current:
-            return False, f"当前该岗位只有 {current} 人"
-
-        self.assignments[job] = current - count
-        if self.assignments[job] <= 0:
-            del self.assignments[job]
-
-        # 更新区域关联
-        if zone_id >= 0 and job in self.zone_assignments:
-            zone_count = self.zone_assignments[job].get(zone_id, 0)
-            self.zone_assignments[job][zone_id] = max(0, zone_count - count)
-            if self.zone_assignments[job][zone_id] <= 0:
-                del self.zone_assignments[job][zone_id]
-            if not self.zone_assignments[job]:
-                del self.zone_assignments[job]
-
-        return True, f"已从 {JOB_TYPES[job]} 撤回 {count} 人"
-
-    def get_workers_at_zone(self, job: str, zone_id: int) -> int:
-        """获取某岗位在某区域的工人数"""
-        return self.zone_assignments.get(job, {}).get(zone_id, 0)
+        return max(0, self.total - self.breeders - total_building_workers)
 
     def update(self, dt_days: float, food_available: float) -> Dict[str, float]:
         """更新人口增长
@@ -194,11 +120,11 @@ class PopulationManager:
             self.total = max(1, int(self.total - starvation))
 
         # 生育人口增长
-        breeders = self.get_assigned("breeding")
-        growth = breeders * self.base_growth_per_breeder * dt_days * food_satisfaction
+        growth = self.breeders * self.base_growth_per_breeder * dt_days * food_satisfaction
 
-        # 闲置人口微量自然增长
-        idle = self.get_idle()
+        # 闲置人口微量自然增长 (假设为总人口的一定比例，但不作为主要动力)
+        # 现在不需要专门计算闲置了，简单点：
+        idle = max(0, self.total - self.breeders)
         growth += idle * self.natural_growth_rate * dt_days * food_satisfaction
 
         # 累积并转换为整数增长
@@ -217,11 +143,7 @@ class PopulationManager:
         """序列化"""
         return {
             "total": self.total,
-            "assignments": dict(self.assignments),
-            "zone_assignments": {
-                job: dict(zones)
-                for job, zones in self.zone_assignments.items()
-            },
+            "breeders": self.breeders,
             "automation_multiplier": self.automation_multiplier,
             "growth_accumulator": self._growth_accumulator,
         }
@@ -229,12 +151,11 @@ class PopulationManager:
     def load_state(self, data: dict):
         """反序列化"""
         self.total = data.get("total", 100)
-        self.assignments = data.get("assignments", {})
-        # zone_assignments 的 key 是 zone_id (int)，JSON 序列化会变成字符串
-        raw_za = data.get("zone_assignments", {})
-        self.zone_assignments = {}
-        for job, zones in raw_za.items():
-            self.zone_assignments[job] = {int(k): v for k, v in zones.items()}
+        self.breeders = data.get("breeders", 0)
+        # 向后兼容：将原来 assignments 里的 breeding 转化过来
+        if "assignments" in data:
+            self.breeders += data["assignments"].get("breeding", 0)
+            
         self.automation_multiplier = data.get("automation_multiplier", 1.0)
         self._growth_accumulator = data.get("growth_accumulator", 0.0)
 
@@ -425,6 +346,69 @@ class EntityManager:
         """获取指定类型的所有活跃建筑"""
         return [b for b in self.buildings
                 if b.building_type == building_type and b.active and not b.destroyed]
+
+    def get_building(self, building_id: int) -> Optional[Building]:
+        """获取建筑"""
+        for b in self.buildings:
+            if b.id == building_id:
+                return b
+        return None
+
+    # ── 人口分配管理 ──
+    
+    def get_total_building_workers(self) -> int:
+        """获取分配在所有建筑中的总工人数"""
+        return sum(b.assigned_workers for b in self.buildings if b.active and not b.destroyed)
+
+    def get_idle_population(self) -> int:
+        """获取当前闲置人口"""
+        return self.population.get_idle(self.get_total_building_workers())
+
+    def assign_worker_to_building(self, building_id: int, count: int) -> Tuple[bool, str]:
+        """向特定建筑分配工人"""
+        b = self.get_building(building_id)
+        if not b:
+            return False, "建筑不存在"
+        if not b.active or b.destroyed:
+            return False, "建筑已停用或损毁"
+        
+        idle = self.get_idle_population()
+        if count > idle:
+            return False, f"闲置人口不足（需要 {count}，仅剩 {idle}）"
+            
+        space = b.worker_capacity - b.assigned_workers
+        if count > space:
+            return False, f"建筑容量不足（仅剩 {space} 个空余岗位）"
+            
+        b.assigned_workers += count
+        return True, f"已分配 {count} 人到 {b.name}"
+
+    def unassign_worker_from_building(self, building_id: int, count: int) -> Tuple[bool, str]:
+        """从特定建筑撤回工人"""
+        b = self.get_building(building_id)
+        if not b:
+            return False, "建筑不存在"
+            
+        if count > b.assigned_workers:
+            return False, f"当前建筑只有 {b.assigned_workers} 人"
+            
+        b.assigned_workers -= count
+        return True, f"已从 {b.name} 撤回 {count} 人"
+
+    def assign_breeders(self, count: int) -> Tuple[bool, str]:
+        """分配生育人员"""
+        idle = self.get_idle_population()
+        if count > idle:
+            return False, f"闲置人口不足（需要 {count}，仅剩 {idle}）"
+        self.population.breeders += count
+        return True, f"已分配 {count} 人生育"
+
+    def unassign_breeders(self, count: int) -> Tuple[bool, str]:
+        """撤回生育人员"""
+        if count > self.population.breeders:
+            return False, f"当前只有 {self.population.breeders} 人在生育"
+        self.population.breeders -= count
+        return True, f"已撤回 {count} 名生育人员"
 
     def get_electricity_balance(self) -> Tuple[float, float]:
         """获取电力收支: (总发电量/天, 总耗电量/天)

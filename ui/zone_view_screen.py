@@ -31,6 +31,8 @@ class ZoneViewScreen(Screen):
         self.display_mode = self.MODE_TEMPERATURE
         self.message = ""
         self.message_timer = 0.0
+        self.dynamic_buttons = []
+        self.breeder_buttons = []
 
         self.setup_ui()
 
@@ -74,6 +76,73 @@ class ZoneViewScreen(Screen):
         """切换显示模式"""
         self.display_mode = mode
 
+
+    def _refresh_dynamic_buttons(self):
+        self.dynamic_buttons.clear()
+        self.breeder_buttons.clear()
+        if not self.simulator:
+            return
+            
+        width, height = self.screen.get_size()
+        scale = self.scale
+        panel_x = int(width * 0.58)
+        panel_w = width - panel_x - int(15 * scale)
+        
+        # ── 生育按钮 ──
+        y = self._header_h + 5
+        font = get_font(max(14, int(17 * scale)))
+        y += font.get_height() + 6
+        small_font = get_font(max(12, int(14 * scale)))
+        y += (small_font.get_height() + 3) * 6 # 5 lines + 1 extra
+        
+        btn_w = max(20, int(25 * scale))
+        btn_h = max(20, int(25 * scale))
+        
+        btn_y = y - (small_font.get_height() + 3) # approximately on the last overview line
+        
+        def make_breeder_cb(amount):
+            def cb():
+                if amount > 0:
+                    ok, msg = self.simulator.entities.assign_breeders(amount)
+                else:
+                    ok, msg = self.simulator.entities.unassign_breeders(-amount)
+                self.message = msg
+                self.message_timer = 2.0
+            return cb
+            
+        self.breeder_buttons.append(MenuButton(panel_x + panel_w - btn_w * 2 - 10, btn_y, btn_w, btn_h, "-", callback=make_breeder_cb(-1), font_size=max(14, int(18*scale))))
+        self.breeder_buttons.append(MenuButton(panel_x + panel_w - btn_w, btn_y, btn_w, btn_h, "+", callback=make_breeder_cb(1), font_size=max(14, int(18*scale))))
+        
+        if self.selected_zone_id < 0:
+            return
+            
+        # ── 建筑按钮 ──
+        y += 20 # after separator
+        title_font = get_font(max(16, int(20 * scale)))
+        y += title_font.get_height() + 6
+        font = get_font(max(13, int(16 * scale)))
+        y += (font.get_height() + 2) * 8 # 8 lines
+        y += 6
+        y += font.get_height() + 4 # header
+        
+        buildings = self.simulator.entities.get_buildings_in_zone(self.selected_zone_id)
+        for b in buildings[:6]:
+            btn_y = y
+            def make_b_cb(bid, amount):
+                def cb():
+                    if amount > 0:
+                        ok, msg = self.simulator.entities.assign_worker_to_building(bid, amount)
+                    else:
+                        ok, msg = self.simulator.entities.unassign_worker_from_building(bid, -amount)
+                    self.message = msg
+                    self.message_timer = 2.0
+                return cb
+            
+            if b.worker_capacity > 0 and b.active and not b.destroyed:
+                self.dynamic_buttons.append(MenuButton(panel_x + panel_w - btn_w * 2 - 10, btn_y, btn_w, btn_h, "-", callback=make_b_cb(b.id, -1), font_size=max(14, int(18*scale))))
+                self.dynamic_buttons.append(MenuButton(panel_x + panel_w - btn_w, btn_y, btn_w, btn_h, "+", callback=make_b_cb(b.id, 1), font_size=max(14, int(18*scale))))
+            y += small_font.get_height() + 2
+
     def on_back(self):
         """返回主界面"""
         self.screen_manager.switch_to(ScreenType.MAIN_SCREEN)
@@ -85,6 +154,7 @@ class ZoneViewScreen(Screen):
         self.rect = self.screen.get_rect()
         self.simulator = self.screen_manager.global_state.get('simulator')
         self.selected_zone_id = -1
+        self._refresh_dynamic_buttons()
         self.setup_ui()
 
     def update(self, dt: float):
@@ -93,6 +163,9 @@ class ZoneViewScreen(Screen):
         if self.message_timer > 0:
             self.message_timer -= dt
         self.back_button.update(dt)
+        for btn in self.dynamic_buttons: btn.update(dt)
+        for btn in self.breeder_buttons: btn.update(dt)
+
         for btn in self.mode_buttons:
             btn.update(dt)
 
@@ -102,6 +175,11 @@ class ZoneViewScreen(Screen):
 
         if self.back_button.handle_event(event):
             return True
+        for btn in self.dynamic_buttons:
+            if btn.handle_event(event): return True
+        for btn in self.breeder_buttons:
+            if btn.handle_event(event): return True
+
         for btn in self.mode_buttons:
             if btn.handle_event(event):
                 return True
@@ -119,6 +197,7 @@ class ZoneViewScreen(Screen):
             zone_id = self._get_zone_at_mouse(event.pos)
             if zone_id >= 0:
                 self.selected_zone_id = zone_id
+                self._refresh_dynamic_buttons()
                 return True
 
         return False
@@ -235,15 +314,20 @@ class ZoneViewScreen(Screen):
             (f"自转角度: {zones.rotation_angle:.1f}°", (180, 200, 255)),
             (f"全球平均温度: {avg['temperature']:.1f}℃", self._temp_color(avg['temperature'])),
             (f"全球平均辐射: {avg['radiation']:.2f}", self._rad_color(avg['radiation'])),
-            (f"受光面: {len(zones.get_illuminated_zones())}/{zones.TOTAL_ZONES} 区域",
-             (255, 255, 150)),
-            (f"显示模式: {self.MODE_NAMES[self.display_mode]}", (150, 180, 220)),
+            (f"总人口: {self.simulator.entities.population.total} | 闲置: {self.simulator.entities.get_idle_population()}", (200, 255, 200)),
+            (f"生育分配: {self.simulator.entities.population.breeders} 人", (255, 150, 200)),
         ]
 
         for text, color in overview_items:
             surf = small_font.render(text, True, color)
             screen.blit(surf, (panel_x + 10, y))
             y += small_font.get_height() + 3
+
+
+        for btn in self.breeder_buttons:
+            btn.render(screen)
+        for btn in self.dynamic_buttons:
+            btn.render(screen)
 
         # ── 分隔线 ──
         y += 10
@@ -315,7 +399,8 @@ class ZoneViewScreen(Screen):
                     status = f"耐久:{b.durability:.0f}/{b.max_durability:.0f}"
                     color = (150, 255, 150)
 
-                b_text = f"• {b.name} [{status}]"
+                workers = f"({b.assigned_workers}/{b.worker_capacity})" if b.worker_capacity > 0 else ""
+                b_text = f"• {b.name} [{status}] {workers}"
                 b_surf = small_font.render(b_text, True, color)
                 screen.blit(b_surf, (x, y))
                 y += small_font.get_height() + 2

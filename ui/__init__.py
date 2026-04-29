@@ -22,7 +22,6 @@ from .starmap_view import StarmapView
 from .tech_tree_screen import TechTreeScreen
 from .decision_screen import DecisionScreen
 from .zone_view_screen import ZoneViewScreen
-from .population_screen import PopulationScreen
 
 __all__ = [
     'ScreenManager',
@@ -36,5 +35,4 @@ __all__ = [
     'TechTreeScreen',
     'DecisionScreen',
     'ZoneViewScreen',
-    'PopulationScreen',
 ]

@@ -82,22 +82,14 @@ class MainScreen(Screen):
         )
         x += btn_w + gap
 
-        # 区域浏览按钮
+        # 区域/建筑浏览按钮
         self.zone_button = MenuButton(
-            x, int(15 * scale), btn_w, btn_h,
-            "区域",
+            x, int(15 * scale), btn_w * 2, btn_h,
+            "区域 / 建筑",
             callback=self.on_zone_clicked,
             font_size=btn_font_size
         )
-        x += btn_w + gap
-
-        # 人口管理按钮
-        self.pop_button = MenuButton(
-            x, int(15 * scale), btn_w, btn_h,
-            "人口",
-            callback=self.on_pop_clicked,
-            font_size=btn_font_size
-        )
+        x += btn_w * 2 + gap
 
         # 右上角星图按钮
         starmap_w = max(90, int(110 * scale))
@@ -165,10 +157,6 @@ class MainScreen(Screen):
         """点击区域浏览按钮"""
         self.screen_manager.switch_to(ScreenType.ZONE_VIEW)
 
-    def on_pop_clicked(self):
-        """点击人口管理按钮"""
-        self.screen_manager.switch_to(ScreenType.POPULATION)
-
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
@@ -200,7 +188,6 @@ class MainScreen(Screen):
         self.tech_button.update(dt)
         self.decision_button.update(dt)
         self.zone_button.update(dt)
-        self.pop_button.update(dt)
         self.starmap_button.update(dt)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -218,8 +205,6 @@ class MainScreen(Screen):
         if self.decision_button.handle_event(event):
             return True
         if self.zone_button.handle_event(event):
-            return True
-        if self.pop_button.handle_event(event):
             return True
         if self.starmap_button.handle_event(event):
             return True
@@ -275,7 +260,6 @@ class MainScreen(Screen):
         self.tech_button.render(screen)
         self.decision_button.render(screen)
         self.zone_button.render(screen)
-        self.pop_button.render(screen)
         self.starmap_button.render(screen)
         
         # 渲染游戏时间和说明
