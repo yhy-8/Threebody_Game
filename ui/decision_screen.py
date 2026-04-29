@@ -6,6 +6,7 @@ from typing import Optional, List, Tuple
 from .screen_manager import Screen, ScreenType
 from .initial_menu import MenuButton
 from render.ui import get_font
+from game.entities import RESOURCE_DISPLAY_NAMES
 
 
 class DecisionScreen(Screen):
@@ -593,13 +594,12 @@ class DecisionScreen(Screen):
             y += small_font.get_height() + 8
 
             # 资源消耗
-            res_names = {"minerals": "矿物", "energy": "能源", "food": "食物"}
             cost_header = small_font.render("资源消耗:", True, (200, 180, 100))
             screen.blit(cost_header, (panel_x + 5, y))
             y += small_font.get_height() + 3
 
             for res, cost in decision.resource_cost.items():
-                display = res_names.get(res, res)
+                display = RESOURCE_DISPLAY_NAMES.get(res, res)
                 cost_surf = small_font.render(f"  {display}: {int(cost)}", True, (220, 200, 120))
                 screen.blit(cost_surf, (panel_x + 5, y))
                 y += small_font.get_height() + 2
@@ -686,8 +686,6 @@ class DecisionScreen(Screen):
         gap = max(75, int(90 * scale))
         x_left = int(width * 0.05)
 
-        res_names = {"minerals": "矿物", "energy": "能源", "food": "食物"}
-
         for idx, decision in enumerate(decisions):
             y = start_y + idx * gap - self.scroll_offset
 
@@ -709,7 +707,7 @@ class DecisionScreen(Screen):
             # 资源消耗
             cost_parts = []
             for res, cost in decision.resource_cost.items():
-                display = res_names.get(res, res)
+                display = RESOURCE_DISPLAY_NAMES.get(res, res)
                 cost_parts.append(f"{display}:{int(cost)}")
             if cost_parts:
                 cost_text = "消耗: " + " | ".join(cost_parts)

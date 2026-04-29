@@ -1,0 +1,30 @@
+    def load_state(self, data: dict):
+        """恢复实体状态"""
+        self.buildings.clear()
+        self.global_efficiency = data.get("avg_efficiency", 1.0)
+        
+        # 恢复资源
+        for name, amount in data.get("resources", {}).items():
+            if name in self.resources:
+                self.resources[name].amount = amount
+                
+        # 恢复人口
+        if "population" in data:
+            self.population.load_state(data["population"])
+            
+        # 恢复建筑
+        for b_data in data.get("buildings", []):
+            b = Building(
+                id=b_data.get("id", 0),
+                name=b_data.get("name", ""),
+                building_type=b_data.get("type", ""),
+                zone_id=b_data.get("zone_id", -1),
+                durability=b_data.get("durability", 100.0),
+                max_durability=b_data.get("max_durability", 100.0),
+                active=b_data.get("active", True),
+                destroyed=b_data.get("destroyed", False),
+                worker_capacity=b_data.get("worker_capacity", 0),
+                assigned_workers=b_data.get("assigned_workers", 0)
+            )
+            # 根据建筑类型恢复 per_worker_output 和 consumption（这里简化处理，通常这些应该从静态表里读取，但由于目前决策系统负责生成这些数据，我们其实需要保存这些数据。为了简单，我们在保存时不丢失它们，或者重新加载时重建）
+            # 由于目前 get_state 没保存 per_worker_output，需要修改 get_state。

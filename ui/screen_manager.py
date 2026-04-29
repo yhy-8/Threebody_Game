@@ -17,6 +17,7 @@ class ScreenType(Enum):
     TECH_TREE = auto()         # 科技树界面
     DECISION = auto()          # 决策界面（原政策系统）
     ZONE_VIEW = auto()         # 区域浏览界面
+    POPULATION = auto()        # 人口管理界面
 
 
 class Screen:

@@ -2,6 +2,8 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from .entities import RESOURCE_DISPLAY_NAMES
+
 
 @dataclass
 class TechNode:
@@ -82,7 +84,7 @@ class TechTree:
             description="基础光学设备，能初步观测星空。",
             effect_description="解锁星图功能，可观测三体恒星运动。",
             research_cost={RESEARCH_BASIC: 80},
-            resource_cost={"minerals": 50},
+            resource_cost={"iron": 50},
             requirements={"population": 50},
             tier=0, column=0, category="basic",
         ))
@@ -92,7 +94,7 @@ class TechTree:
             description="基础的地下掩体设计，提供临时保护。",
             effect_description="允许建造庇护所，降低极端环境下人口损失。",
             research_cost={RESEARCH_BASIC: 60},
-            resource_cost={"minerals": 80},
+            resource_cost={"iron": 80},
             requirements={"population": 30},
             tier=0, column=1, category="basic",
         ))
@@ -100,9 +102,9 @@ class TechTree:
             id="basic_metallurgy",
             name="基础冶金",
             description="掌握金属冶炼的基本工艺。",
-            effect_description="解锁实验室和发电站的建造。",
+            effect_description="解锁铜矿和稀有矿物的开采，以及实验室建造。",
             research_cost={RESEARCH_BASIC: 100},
-            resource_cost={"minerals": 100},
+            resource_cost={"iron": 100},
             requirements={"population": 60},
             tier=0, column=2, category="basic",
         ))
@@ -112,7 +114,7 @@ class TechTree:
             description="系统化的农作物种植技术。",
             effect_description="解锁农场建造，提高食物产出。",
             research_cost={RESEARCH_BASIC: 50},
-            resource_cost={"minerals": 30},
+            resource_cost={"iron": 30},
             requirements={"population": 20},
             tier=0, column=3, category="basic",
         ))
@@ -124,7 +126,7 @@ class TechTree:
             description="强大的计算能力，能进行复杂数值分析。",
             effect_description="解锁轨道预测功能。",
             research_cost={RESEARCH_BASIC: 200, RESEARCH_APPLIED: 50},
-            resource_cost={"minerals": 200, "energy": 100},
+            resource_cost={"iron": 150, "copper": 50},
             requirements={"population": 200},
             prerequisites=["telescope"],
             tier=1, column=0, category="applied",
@@ -135,7 +137,7 @@ class TechTree:
             description="系统化的星空观测设施。",
             effect_description="增强星图精度，显示恒星质量和轨道参数。",
             research_cost={RESEARCH_BASIC: 150},
-            resource_cost={"minerals": 150, "energy": 50},
+            resource_cost={"iron": 100, "copper": 50},
             requirements={"population": 100},
             prerequisites=["telescope"],
             tier=1, column=1, category="basic",
@@ -146,7 +148,7 @@ class TechTree:
             description="深入地下的大型避难工程。",
             effect_description="建筑防护等级+2，极端环境下保护更多人口。",
             research_cost={RESEARCH_BASIC: 120, RESEARCH_APPLIED: 30},
-            resource_cost={"minerals": 500, "energy": 200},
+            resource_cost={"iron": 400, "copper": 100},
             requirements={"population": 150},
             prerequisites=["survival_shelter"],
             tier=1, column=2, category="applied",
@@ -157,45 +159,68 @@ class TechTree:
             description="系统化的科学研究设施。",
             effect_description="解锁实验室建造，产出应用科研点。",
             research_cost={RESEARCH_BASIC: 180},
-            resource_cost={"minerals": 300, "energy": 150},
+            resource_cost={"iron": 200, "copper": 80},
             requirements={"population": 120},
             prerequisites=["basic_metallurgy"],
             tier=1, column=3, category="applied",
         ))
         self.add_node(TechNode(
-            id="power_plant",
-            name="发电站",
-            description="大规模电力生产设施。",
-            effect_description="解锁发电站建造，提供稳定电力。",
-            research_cost={RESEARCH_BASIC: 140},
-            resource_cost={"minerals": 250, "energy": 50},
-            requirements={"population": 100},
+            id="basic_electrification",
+            name="基础电气化",
+            description="掌握电力的产生和使用。",
+            effect_description="解锁藻类发电站，开始使用电力网络。",
+            research_cost={RESEARCH_BASIC: 100},
+            resource_cost={"iron": 150, "copper": 50},
+            requirements={"population": 80},
             prerequisites=["basic_metallurgy"],
             tier=1, column=4, category="basic",
         ))
+        self.add_node(TechNode(
+            id="fossil_fuel_extraction",
+            name="化石燃料开采",
+            description="从地底提取高能量的化石燃料。",
+            effect_description="解锁化石燃料矿井。",
+            research_cost={RESEARCH_BASIC: 120},
+            resource_cost={"iron": 120, "copper": 30},
+            requirements={"population": 100},
+            prerequisites=["basic_metallurgy"],
+            tier=1, column=5, category="basic",
+        ))
+
 
         # ═══════════════════ Tier 2：中级科技 ═══════════════════════
+        self.add_node(TechNode(
+            id="power_plant",
+            name="火力发电站",
+            description="大规模化石燃料电力生产设施。",
+            effect_description="解锁火力发电站建造，提供稳定的大量电力。",
+            research_cost={RESEARCH_APPLIED: 140},
+            resource_cost={"iron": 200, "copper": 100},
+            requirements={"population": 150},
+            prerequisites=["basic_electrification", "fossil_fuel_extraction"],
+            tier=2, column=0, category="basic",
+        ))
         self.add_node(TechNode(
             id="chaos_prediction",
             name="混沌预测模型",
             description="基于非线性动力学的三体运动预测。",
             effect_description="星图中显示三体未来数十天的运动轨迹预测。",
             research_cost={RESEARCH_APPLIED: 200, RESEARCH_THEORETICAL: 50},
-            resource_cost={"energy": 500},
+            resource_cost={"algae_fuel": 300},
             requirements={"population": 300},
             prerequisites=["computer"],
-            tier=2, column=0, category="theoretical",
+            tier=2, column=1, category="theoretical",
         ))
         self.add_node(TechNode(
             id="automation",
             name="自动化控制",
             description="机器替代人工的生产控制系统。",
-            effect_description="所有建筑产出效率+30%。",
+            effect_description="所有建筑产出效率+30% (提升全局自动化倍率)。",
             research_cost={RESEARCH_APPLIED: 150},
-            resource_cost={"minerals": 300, "energy": 200},
+            resource_cost={"iron": 200, "copper": 150},
             requirements={"population": 200},
-            prerequisites=["computer"],
-            tier=2, column=1, category="applied",
+            prerequisites=["computer", "basic_electrification"],
+            tier=2, column=2, category="applied",
         ))
         self.add_node(TechNode(
             id="radiation_armor",
@@ -203,10 +228,10 @@ class TechTree:
             description="高密度辐射屏蔽材料。",
             effect_description="建筑辐射抗性+50%。",
             research_cost={RESEARCH_APPLIED: 100, RESEARCH_BASIC: 80},
-            resource_cost={"minerals": 400},
+            resource_cost={"iron": 300, "rare_mineral": 20},
             requirements={"population": 150},
             prerequisites=["deep_shelter"],
-            tier=2, column=2, category="applied",
+            tier=2, column=3, category="applied",
         ))
         self.add_node(TechNode(
             id="applied_physics",
@@ -214,10 +239,10 @@ class TechTree:
             description="系统化的物理工程学研究。",
             effect_description="解锁高级建筑研究分支。",
             research_cost={RESEARCH_APPLIED: 200},
-            resource_cost={"energy": 300},
+            resource_cost={"rare_mineral": 30},
             requirements={"population": 250},
             prerequisites=["laboratory"],
-            tier=2, column=3, category="applied",
+            tier=2, column=4, category="applied",
         ))
         self.add_node(TechNode(
             id="material_science",
@@ -225,10 +250,10 @@ class TechTree:
             description="微观结构与材料性能研究。",
             effect_description="解锁高强度合金，建筑耐久度+50%。",
             research_cost={RESEARCH_APPLIED: 180},
-            resource_cost={"minerals": 350, "energy": 150},
+            resource_cost={"iron": 300, "copper": 100},
             requirements={"population": 200},
             prerequisites=["laboratory"],
-            tier=2, column=4, category="applied",
+            tier=2, column=5, category="applied",
         ))
 
         # ═══════════════════ Tier 3：高级科技 ═══════════════════════
@@ -238,7 +263,7 @@ class TechTree:
             description="最高等级的科研机构，汇聚顶尖科学家。",
             effect_description="解锁科学院建造，产出理论科研点。消耗大量电力。",
             research_cost={RESEARCH_APPLIED: 300, RESEARCH_THEORETICAL: 100},
-            resource_cost={"minerals": 2000, "energy": 1000, "food": 500},
+            resource_cost={"iron": 1500, "copper": 500, "rare_mineral": 100},
             requirements={"population": 500},
             prerequisites=["applied_physics", "power_plant"],
             tier=3, column=0, category="theoretical",
@@ -249,7 +274,7 @@ class TechTree:
             description="极端条件下仍保持结构完整性的特种合金。",
             effect_description="所有建筑耐久度上限翻倍，热/辐射抗性+30%。",
             research_cost={RESEARCH_APPLIED: 250},
-            resource_cost={"minerals": 800, "energy": 400},
+            resource_cost={"iron": 800, "copper": 200, "rare_mineral": 50},
             requirements={"population": 300},
             prerequisites=["material_science"],
             tier=3, column=1, category="applied",
@@ -262,7 +287,7 @@ class TechTree:
             description="人造恒星级别的能量来源。",
             effect_description="解锁聚变反应堆，提供近乎无限的清洁能源。",
             research_cost={RESEARCH_THEORETICAL: 500, RESEARCH_APPLIED: 300},
-            resource_cost={"minerals": 5000, "energy": 3000},
+            resource_cost={"iron": 3000, "copper": 1000, "rare_mineral": 500},
             requirements={"population": 800},
             prerequisites=["academy"],
             tier=4, column=0, category="theoretical",
@@ -310,21 +335,17 @@ class TechTree:
                 return False, f"{type_name}点数不足（需求：{required}，当前：{int(current)}）"
 
         # 检查资源消耗（只检查是否足够，不扣除）
-        res_name_map = {
-            "population": "人口", "energy": "能源",
-            "food": "食物", "minerals": "矿物"
-        }
         for res_name, required in node.resource_cost.items():
             current_amt = entities.get_resource(res_name)
             if current_amt < required:
-                display_name = res_name_map.get(res_name, res_name)
+                display_name = RESOURCE_DISPLAY_NAMES.get(res_name, res_name)
                 return False, f"资源「{display_name}」不足（需求：{required}，当前：{int(current_amt)}）"
 
         # 检查人口等前提条件
         for req_res, req_amt in node.requirements.items():
             current_amt = entities.get_resource(req_res)
             if current_amt < req_amt:
-                display_name = res_name_map.get(req_res, req_res)
+                display_name = RESOURCE_DISPLAY_NAMES.get(req_res, req_res)
                 return False, f"{display_name}不足（最低要求：{int(req_amt)}，当前：{int(current_amt)}）"
 
         return True, ""
@@ -345,6 +366,10 @@ class TechTree:
             entities.consume_resource(res_name, cost)
 
         node.unlocked = True
+
+        # 如果解锁了自动化科技，提升全局自动化倍率
+        if node_id == "automation":
+            entities.population.automation_multiplier += 0.3
 
     def get_prerequisites_for(self, node_id: str) -> List[str]:
         """获取某科技的前置科技ID列表"""

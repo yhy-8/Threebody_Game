@@ -50,17 +50,28 @@ stars:
     color: [255, 100, 100]
     radius: 15.0
 
+# 初始资源
 initial_entities:
+  population: 100
   resources:
-    - name: "minerals"
-      amount: 1000
-      max_storage: 10000
-      regeneration_rate: 1.0
-    - name: "energy"
-      amount: 500
+    - name: "iron"
+      amount: 200
       max_storage: 5000
-      regeneration_rate: 0.5
+    - name: "copper"
+      amount: 30
+      max_storage: 3000
+    - name: "rare_mineral"
+      amount: 0
+      max_storage: 1000
+    - name: "algae_fuel"
+      amount: 100
+      max_storage: 3000
+    - name: "fossil_fuel"
+      amount: 0
+      max_storage: 3000
+    - name: "electricity"
+      amount: 0
+      max_storage: 500
     - name: "food"
-      amount: 800
+      amount: 1000
       max_storage: 8000
-      regeneration_rate: 0.8

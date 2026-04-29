@@ -1,7 +1,13 @@
-"""决策系统 - 管理文明的建造和政策选择（原"政策系统"重构）"""
+"""决策系统 - 管理文明的建造和政策选择（原"政策系统"重构）
+
+新版资源体系下，建筑成本和产出使用细分资源类型。
+建筑采用 worker_capacity + per_worker_output 模型。
+"""
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Tuple, Optional
+
+from .entities import RESOURCE_DISPLAY_NAMES
 
 
 class CivilizationState(Enum):
@@ -24,10 +30,11 @@ class Decision:
     cooldown: float = 0.0      # 冷却时间（游戏天）
     requires_zone: bool = False  # 是否需要选择区域放置
 
-    # 建造相关
+    # 建造相关 — 人力驱动模型
     building_type: str = ""    # 建造的建筑类型（仅 construction 类）
-    production: Dict[str, float] = field(default_factory=dict)   # 建筑产出
-    consumption: Dict[str, float] = field(default_factory=dict)  # 建筑消耗
+    worker_capacity: int = 0   # 最大工人容量
+    per_worker_output: Dict[str, float] = field(default_factory=dict)  # 每工人产出/天
+    consumption: Dict[str, float] = field(default_factory=dict)  # 建筑消耗/天
 
 
 # ── 预定义的决策列表 ─────────────────────────────────────────────
@@ -38,46 +45,124 @@ def _default_decisions() -> Dict[str, Decision]:
 
     # ═══════════════════ 建筑建造类决策 ═══════════════════════════
 
+    decisions["build_algae_collector"] = Decision(
+        id="build_algae_collector",
+        name="建造藻类采集场",
+        description="采集行星原生藻类，干燥后作为初级燃料。",
+        category="construction",
+        resource_cost={"iron": 20},
+        tech_requirement="",
+        requires_zone=True,
+        building_type="algae_collector",
+        worker_capacity=5,
+        per_worker_output={"algae_fuel": 3.0},
+        consumption={},
+        effects={"algae_fuel": "最多+15/天(满5人)"},
+    )
+
+    decisions["build_iron_mine"] = Decision(
+        id="build_iron_mine",
+        name="建造铁矿场",
+        description="在指定区域开采铁矿石，基础建筑材料。",
+        category="construction",
+        resource_cost={"iron": 30},
+        tech_requirement="",
+        requires_zone=True,
+        building_type="iron_mine",
+        worker_capacity=5,
+        per_worker_output={"iron": 2.0},
+        consumption={},
+        effects={"iron": "最多+10/天(满5人)"},
+    )
+
+    decisions["build_copper_mine"] = Decision(
+        id="build_copper_mine",
+        name="建造铜矿场",
+        description="开采铜矿，用于制造电气设备和高级设施。",
+        category="construction",
+        resource_cost={"iron": 40, "copper": 10},
+        tech_requirement="basic_metallurgy",
+        requires_zone=True,
+        building_type="copper_mine",
+        worker_capacity=5,
+        per_worker_output={"copper": 1.5},
+        consumption={},
+        effects={"copper": "最多+7.5/天(满5人)"},
+    )
+
+    decisions["build_rare_mine"] = Decision(
+        id="build_rare_mine",
+        name="建造稀有矿场",
+        description="开采稀有矿物，用于高级科技和建筑。",
+        category="construction",
+        resource_cost={"iron": 60, "copper": 20},
+        tech_requirement="basic_metallurgy",
+        requires_zone=True,
+        building_type="rare_mine",
+        worker_capacity=3,
+        per_worker_output={"rare_mineral": 0.5},
+        consumption={},
+        effects={"rare_mineral": "最多+1.5/天(满3人)"},
+    )
+
     decisions["build_farm"] = Decision(
         id="build_farm",
         name="建造农场",
         description="在指定区域建造一座农场，持续产出食物。",
         category="construction",
-        resource_cost={"minerals": 100, "energy": 30},
+        resource_cost={"iron": 50},
         tech_requirement="basic_agriculture",
         requires_zone=True,
         building_type="farm",
-        production={"food": 5.0},
-        consumption={"energy": 1.0},
-        effects={"food": "+5/天", "energy": "-1/天"},
+        worker_capacity=8,
+        per_worker_output={"food": 3.0},
+        consumption={},
+        effects={"food": "最多+24/天(满8人)"},
     )
 
-    decisions["build_mine"] = Decision(
-        id="build_mine",
-        name="建造矿场",
-        description="在指定区域建造一座矿场，持续开采矿物。",
+    decisions["build_fossil_mine"] = Decision(
+        id="build_fossil_mine",
+        name="建造化石燃料矿井",
+        description="开采地下化石燃料沉积层。",
         category="construction",
-        resource_cost={"energy": 50},
-        tech_requirement="",
+        resource_cost={"iron": 80, "copper": 20},
+        tech_requirement="fossil_fuel_extraction",
         requires_zone=True,
-        building_type="mine",
-        production={"minerals": 3.0},
-        consumption={"energy": 1.5},
-        effects={"minerals": "+3/天", "energy": "-1.5/天"},
+        building_type="fossil_mine",
+        worker_capacity=5,
+        per_worker_output={"fossil_fuel": 4.0},
+        consumption={},
+        effects={"fossil_fuel": "最多+20/天(满5人)"},
     )
 
-    decisions["build_power_plant"] = Decision(
-        id="build_power_plant",
-        name="建造发电站",
-        description="大规模电力设施，为其他建筑供能。",
+    decisions["build_algae_power"] = Decision(
+        id="build_algae_power",
+        name="建造藻类燃烧发电站",
+        description="燃烧干燥藻类发电，初级电力来源。",
         category="construction",
-        resource_cost={"minerals": 400, "energy": 100},
+        resource_cost={"iron": 60, "copper": 15},
+        tech_requirement="basic_electrification",
+        requires_zone=True,
+        building_type="algae_power_plant",
+        worker_capacity=3,
+        per_worker_output={"electricity": 5.0},
+        consumption={"algae_fuel": 3.0},
+        effects={"electricity": "最多+15kW(满3人)", "algae_fuel": "-3/天"},
+    )
+
+    decisions["build_fossil_power"] = Decision(
+        id="build_fossil_power",
+        name="建造化石燃料发电站",
+        description="大规模化石燃料发电设施，中级电力来源。",
+        category="construction",
+        resource_cost={"iron": 120, "copper": 40},
         tech_requirement="power_plant",
         requires_zone=True,
-        building_type="power_plant",
-        production={"energy": 15.0},
-        consumption={"minerals": 0.5},
-        effects={"energy": "+15/天", "minerals": "-0.5/天"},
+        building_type="fossil_power_plant",
+        worker_capacity=3,
+        per_worker_output={"electricity": 15.0},
+        consumption={"fossil_fuel": 5.0},
+        effects={"electricity": "最多+45kW(满3人)", "fossil_fuel": "-5/天"},
     )
 
     decisions["build_shelter"] = Decision(
@@ -85,13 +170,14 @@ def _default_decisions() -> Dict[str, Decision]:
         name="建造庇护所",
         description="保护居民免受极端环境伤害的地下工事。",
         category="construction",
-        resource_cost={"minerals": 200, "energy": 80},
+        resource_cost={"iron": 100},
         tech_requirement="survival_shelter",
         requires_zone=True,
         building_type="shelter",
-        production={},
-        consumption={"energy": 2.0},
-        effects={"zone_protection": "+20%", "energy": "-2/天"},
+        worker_capacity=0,  # 无需工人
+        per_worker_output={},
+        consumption={"electricity": 1.0},
+        effects={"zone_protection": "+20%", "electricity": "-1kW/天"},
     )
 
     decisions["build_laboratory"] = Decision(
@@ -99,13 +185,14 @@ def _default_decisions() -> Dict[str, Decision]:
         name="建造实验室",
         description="科学研究设施，产出应用科研点。消耗可观的电力。",
         category="construction",
-        resource_cost={"minerals": 500, "energy": 300},
+        resource_cost={"iron": 200, "copper": 80},
         tech_requirement="laboratory",
         requires_zone=True,
         building_type="laboratory",
-        production={},  # 科研点由特殊逻辑产出
-        consumption={"energy": 8.0},
-        effects={"applied_research": "+2/天", "energy": "-8/天"},
+        worker_capacity=5,
+        per_worker_output={},  # 科研点由特殊逻辑产出
+        consumption={"electricity": 8.0},
+        effects={"applied_research": "+2/天(满员)", "electricity": "-8kW/天"},
     )
 
     decisions["build_academy"] = Decision(
@@ -113,13 +200,14 @@ def _default_decisions() -> Dict[str, Decision]:
         name="建造科学院",
         description="最高级别的科研机构，产出理论科研点。极度耗电。",
         category="construction",
-        resource_cost={"minerals": 2000, "energy": 1000, "food": 500},
+        resource_cost={"iron": 800, "copper": 200, "rare_mineral": 50},
         tech_requirement="academy",
         requires_zone=True,
         building_type="academy",
-        production={},
-        consumption={"energy": 25.0, "food": 5.0},
-        effects={"theoretical_research": "+1/天", "energy": "-25/天", "food": "-5/天"},
+        worker_capacity=8,
+        per_worker_output={},
+        consumption={"electricity": 25.0, "food": 5.0},
+        effects={"theoretical_research": "+1/天(满员)", "electricity": "-25kW/天", "food": "-5/天"},
     )
 
     decisions["build_deep_shelter"] = Decision(
@@ -127,13 +215,14 @@ def _default_decisions() -> Dict[str, Decision]:
         name="建造深地庇护所",
         description="深入地下的巨型避难系统，可容纳大量人口。",
         category="construction",
-        resource_cost={"minerals": 800, "energy": 400},
+        resource_cost={"iron": 300, "copper": 60},
         tech_requirement="deep_shelter",
         requires_zone=True,
         building_type="deep_shelter",
-        production={},
-        consumption={"energy": 5.0},
-        effects={"zone_protection": "+50%", "energy": "-5/天"},
+        worker_capacity=0,
+        per_worker_output={},
+        consumption={"electricity": 3.0},
+        effects={"zone_protection": "+50%", "electricity": "-3kW/天"},
     )
 
     decisions["build_radiation_shield"] = Decision(
@@ -141,13 +230,14 @@ def _default_decisions() -> Dict[str, Decision]:
         name="建造辐射屏蔽站",
         description="为所在区域提供辐射防护。",
         category="construction",
-        resource_cost={"minerals": 600, "energy": 250},
+        resource_cost={"iron": 250, "copper": 50, "rare_mineral": 20},
         tech_requirement="radiation_armor",
         requires_zone=True,
         building_type="radiation_shield",
-        production={},
-        consumption={"energy": 6.0},
-        effects={"radiation_resistance": "+50%", "energy": "-6/天"},
+        worker_capacity=0,
+        per_worker_output={},
+        consumption={"electricity": 5.0},
+        effects={"radiation_resistance": "+50%", "electricity": "-5kW/天"},
     )
 
     # ═══════════════════ 文明政策类决策 ═══════════════════════════
@@ -201,7 +291,7 @@ def _default_decisions() -> Dict[str, Decision]:
 
 
 class DecisionManager:
-    """决策管理器 - 管理建芑建造和政策执行"""
+    """决策管理器 - 管理建筑建造和政策执行"""
 
     def __init__(self):
         self.current_state = CivilizationState.NORMAL
@@ -246,14 +336,10 @@ class DecisionManager:
                 return False, f"需要先研发科技「{tech_name}」"
 
         # 检查资源
-        res_name_map = {
-            "population": "人口", "energy": "能源",
-            "food": "食物", "minerals": "矿物"
-        }
         for res_name, cost in decision.resource_cost.items():
             current = entities.get_resource(res_name)
+            display = RESOURCE_DISPLAY_NAMES.get(res_name, res_name)
             if current < cost:
-                display = res_name_map.get(res_name, res_name)
                 return False, f"资源「{display}」不足（需求：{int(cost)}，当前：{int(current)}）"
 
         # 政策类的特殊检查
@@ -321,7 +407,8 @@ class DecisionManager:
             name=decision.name.replace("建造", ""),
             building_type=decision.building_type,
             zone_id=zone_id if decision.requires_zone else -1,
-            production=dict(decision.production),
+            worker_capacity=decision.worker_capacity,
+            per_worker_output=dict(decision.per_worker_output),
             consumption=dict(decision.consumption),
         )
 
@@ -332,7 +419,8 @@ class DecisionManager:
             zone_manager.add_building_to_zone(zone_id, building_id)
 
         zone_info = f"（区域 {zone_id}）" if zone_id >= 0 else ""
-        return True, f"已建造 {building.name}{zone_info}", building_id
+        worker_info = f"，需分配最多{decision.worker_capacity}名工人" if decision.worker_capacity > 0 else ""
+        return True, f"已建造 {building.name}{zone_info}{worker_info}", building_id
 
     def _execute_policy(self, policy_id: str, entities) -> Tuple[bool, str, None]:
         """执行政策"""

@@ -198,6 +198,10 @@ class GameSimulator:
                 )
                 self.environment.stars.append(star)
 
+        # 恢复实体状态
+        if "entities" in data:
+            self.entities.load_state(data["entities"])
+
         # 恢复科技状态
         if "technology" in data:
             tech_data = data["technology"]

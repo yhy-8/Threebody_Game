@@ -1,8 +1,46 @@
-"""行星区域系统 - 将行星球体划分为多个区域，模拟自转与逐区环境差异"""
+"""行星区域系统 - 将行星球体划分为多个区域，模拟自转与逐区环境差异
+
+新增特性：
+  - 区域资源禀赋（铁/铜/稀有矿物密度、土地肥沃度、藻类密度）
+  - 地形对资源禀赋的影响
+  - 环境温度对工作效率的影响
+"""
 import math
+import random
 import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple
+
+
+# ── 地形对资源禀赋的基础系数 ──────────────────────────────────────
+#     铁    铜    稀有矿   肥沃度  藻类密度
+TERRAIN_RESOURCE_TABLE: Dict[str, Dict[str, float]] = {
+    "平原":  {"iron": 0.3, "copper": 0.2, "rare_mineral": 0.05, "fertility": 0.8, "algae": 0.4},
+    "高原":  {"iron": 0.4, "copper": 0.3, "rare_mineral": 0.30, "fertility": 0.3, "algae": 0.1},
+    "山地":  {"iron": 0.9, "copper": 0.5, "rare_mineral": 0.20, "fertility": 0.1, "algae": 0.0},
+    "峡谷":  {"iron": 0.5, "copper": 0.8, "rare_mineral": 0.15, "fertility": 0.2, "algae": 0.3},
+    "盆地":  {"iron": 0.2, "copper": 0.2, "rare_mineral": 0.05, "fertility": 0.9, "algae": 0.8},
+    "丘陵":  {"iron": 0.6, "copper": 0.4, "rare_mineral": 0.10, "fertility": 0.5, "algae": 0.2},
+}
+
+
+def _calc_work_efficiency(temperature: float) -> float:
+    """根据区域温度计算工作效率
+
+    -10°~40° → 100%
+    偏离此范围效率下降
+    <-80° 或 >100° → 0%（无法工作）
+    """
+    if -10 <= temperature <= 40:
+        return 1.0
+    elif temperature < -80 or temperature > 100:
+        return 0.0
+    elif temperature < -10:
+        # -80 → 0%, -10 → 100%
+        return max(0.0, (temperature + 80) / 70.0)
+    else:
+        # 40 → 100%, 100 → 0%
+        return max(0.0, (100 - temperature) / 60.0)
 
 
 @dataclass
@@ -22,11 +60,20 @@ class PlanetZone:
     radiation: float = 0.0
     light_intensity: float = 0.0
 
+    # 资源禀赋（初始化时随机生成，受地形影响）
+    resource_deposits: Dict[str, float] = field(default_factory=dict)
+    fertility: float = 0.5           # 土地肥沃度（影响农业产出）
+    algae_density: float = 0.3       # 藻类密度（影响藻类采集）
+
     # 建筑列表（存储建筑对象的引用ID）
     building_ids: List[int] = field(default_factory=list)
 
     # 区域面积权重（极地区域面积小于赤道区域）
     area_weight: float = 1.0
+
+    def get_work_efficiency(self) -> float:
+        """获取当前区域的工作效率（温度影响）"""
+        return _calc_work_efficiency(self.temperature)
 
 
 class PlanetZoneManager:
@@ -63,7 +110,6 @@ class PlanetZoneManager:
 
     def _init_zones(self):
         """初始化所有区域"""
-        import random
         self.zones = []
 
         lat_step = 180.0 / self.LATITUDE_DIVISIONS   # 30°
@@ -85,6 +131,17 @@ class PlanetZoneManager:
 
                 terrain = random.choice(self.TERRAIN_TYPES)
 
+                # 根据地形生成资源禀赋（基础值 ± 30% 随机浮动）
+                base = TERRAIN_RESOURCE_TABLE.get(terrain, TERRAIN_RESOURCE_TABLE["平原"])
+                resource_deposits = {}
+                for mineral in ["iron", "copper", "rare_mineral"]:
+                    base_val = base.get(mineral, 0.0)
+                    jitter = base_val * random.uniform(-0.3, 0.3)
+                    resource_deposits[mineral] = max(0.0, base_val + jitter)
+
+                fertility = max(0.0, base.get("fertility", 0.5) + base.get("fertility", 0.5) * random.uniform(-0.3, 0.3))
+                algae_dens = max(0.0, base.get("algae", 0.3) + base.get("algae", 0.3) * random.uniform(-0.3, 0.3))
+
                 zone = PlanetZone(
                     zone_id=zone_id,
                     lat_index=lat_i,
@@ -95,6 +152,9 @@ class PlanetZoneManager:
                     lon_range=(lon_left, lon_right),
                     terrain_type=terrain,
                     area_weight=max(0.1, area_weight),
+                    resource_deposits=resource_deposits,
+                    fertility=fertility,
+                    algae_density=algae_dens,
                 )
                 self.zones.append(zone)
                 zone_id += 1
@@ -246,6 +306,10 @@ class PlanetZoneManager:
             "light_intensity": zone.light_intensity,
             "building_count": len(zone.building_ids),
             "area_weight": zone.area_weight,
+            "resource_deposits": dict(zone.resource_deposits),
+            "fertility": zone.fertility,
+            "algae_density": zone.algae_density,
+            "work_efficiency": zone.get_work_efficiency(),
         }
 
     def get_illuminated_zones(self) -> List[int]:
@@ -264,6 +328,9 @@ class PlanetZoneManager:
                 "light": z.light_intensity,
                 "terrain": z.terrain_type,
                 "buildings": len(z.building_ids),
+                "fertility": z.fertility,
+                "algae": z.algae_density,
+                "deposits": dict(z.resource_deposits),
             }
             for z in self.zones
         ]
@@ -292,6 +359,9 @@ class PlanetZoneManager:
                     "terrain_type": z.terrain_type,
                     "building_ids": z.building_ids.copy(),
                     "temperature": z.temperature,
+                    "resource_deposits": dict(z.resource_deposits),
+                    "fertility": z.fertility,
+                    "algae_density": z.algae_density,
                 }
                 for z in self.zones
             ]
@@ -307,3 +377,10 @@ class PlanetZoneManager:
                 zone.terrain_type = zd.get("terrain_type", zone.terrain_type)
                 zone.building_ids = zd.get("building_ids", [])
                 zone.temperature = zd.get("temperature", -273.15)
+                # 恢复资源禀赋（如果存档有就用存档的，否则保持初始化随机值）
+                if "resource_deposits" in zd:
+                    zone.resource_deposits = zd["resource_deposits"]
+                if "fertility" in zd:
+                    zone.fertility = zd["fertility"]
+                if "algae_density" in zd:
+                    zone.algae_density = zd["algae_density"]

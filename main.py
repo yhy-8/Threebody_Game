@@ -13,7 +13,7 @@ from render.scene import SceneRenderer
 from render.ui import create_hud, update_hud, Button, UIManager, get_font, Panel, Label
 
 # UI模块 - 新的界面管理系统
-from ui import ScreenManager, InitialMenu, StartGameMenu, SettingsScreen, GameMenu, MainScreen, StarmapView, TechTreeScreen, DecisionScreen, ZoneViewScreen
+from ui import ScreenManager, InitialMenu, StartGameMenu, SettingsScreen, GameMenu, MainScreen, StarmapView, TechTreeScreen, DecisionScreen, ZoneViewScreen, PopulationScreen
 from ui.screen_manager import ScreenType
 
 
@@ -239,6 +239,10 @@ def init_screen_manager(screen: pygame.Surface) -> ScreenManager:
     # 注册区域浏览界面
     zone_view_screen = ZoneViewScreen(manager, screen)
     manager.register_screen(ScreenType.ZONE_VIEW, zone_view_screen)
+
+    # 注册人口管理界面
+    population_screen = PopulationScreen(manager, screen)
+    manager.register_screen(ScreenType.POPULATION, population_screen)
 
     return manager
 

@@ -89,6 +89,15 @@ class MainScreen(Screen):
             callback=self.on_zone_clicked,
             font_size=btn_font_size
         )
+        x += btn_w + gap
+
+        # 人口管理按钮
+        self.pop_button = MenuButton(
+            x, int(15 * scale), btn_w, btn_h,
+            "人口",
+            callback=self.on_pop_clicked,
+            font_size=btn_font_size
+        )
 
         # 右上角星图按钮
         starmap_w = max(90, int(110 * scale))
@@ -156,6 +165,10 @@ class MainScreen(Screen):
         """点击区域浏览按钮"""
         self.screen_manager.switch_to(ScreenType.ZONE_VIEW)
 
+    def on_pop_clicked(self):
+        """点击人口管理按钮"""
+        self.screen_manager.switch_to(ScreenType.POPULATION)
+
     def on_enter(self, previous_screen: Optional[ScreenType] = None, **kwargs):
         """进入界面"""
         super().on_enter(previous_screen, **kwargs)
@@ -187,6 +200,7 @@ class MainScreen(Screen):
         self.tech_button.update(dt)
         self.decision_button.update(dt)
         self.zone_button.update(dt)
+        self.pop_button.update(dt)
         self.starmap_button.update(dt)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
@@ -204,6 +218,8 @@ class MainScreen(Screen):
         if self.decision_button.handle_event(event):
             return True
         if self.zone_button.handle_event(event):
+            return True
+        if self.pop_button.handle_event(event):
             return True
         if self.starmap_button.handle_event(event):
             return True
@@ -259,6 +275,7 @@ class MainScreen(Screen):
         self.tech_button.render(screen)
         self.decision_button.render(screen)
         self.zone_button.render(screen)
+        self.pop_button.render(screen)
         self.starmap_button.render(screen)
         
         # 渲染游戏时间和说明
@@ -305,23 +322,27 @@ class MainScreen(Screen):
         if self.simulator:
             state = self.simulator.get_state()
             resources = state.get("entities", {}).get("resources", {})
+            pop_state = state.get("entities", {}).get("population", {})
             # 转换为显示格式
             resource_data = [
-                ("能源", str(int(resources.get("energy", 1200))), (255, 200, 100)),
-                ("矿物", str(int(resources.get("minerals", 850))), (150, 200, 255)),
-                ("食物", str(int(resources.get("food", 2300))), (100, 255, 150)),
-                ("人口", str(int(resources.get("population", 1250))), (255, 150, 200)),
+                ("电力 (kW)", str(int(resources.get("electricity", 0))), (255, 220, 80)),
+                ("铁矿", str(int(resources.get("iron", 0))), (180, 180, 200)),
+                ("铜矿", str(int(resources.get("copper", 0))), (220, 160, 100)),
+                ("稀有矿", str(int(resources.get("rare_mineral", 0))), (180, 120, 255)),
+                ("食物", str(int(resources.get("food", 0))), (100, 255, 150)),
+                ("化石燃料", str(int(resources.get("fossil_fuel", 0))), (160, 140, 100)),
+                ("藻类燃料", str(int(resources.get("algae_fuel", 0))), (100, 200, 120)),
             ]
         else:
             # 使用默认数据
             resource_data = [
-                ("能源", "1200", (255, 200, 100)),
-                ("矿物", "850", (150, 200, 255)),
-                ("食物", "2300", (100, 255, 150)),
-                ("人口", "1250", (255, 150, 200)),
+                ("电力 (kW)", "0", (255, 220, 80)),
+                ("铁矿", "200", (180, 180, 200)),
+                ("铜矿", "30", (220, 160, 100)),
+                ("食物", "300", (100, 255, 150)),
             ]
 
-        line_gap = max(25, int(panel.rect.height * 0.1))
+        line_gap = max(20, int(panel.rect.height * 0.1))
         for name, value, color in resource_data:
             text = f"{name}: {value}"
             surf = font.render(text, True, color)
@@ -347,23 +368,24 @@ class MainScreen(Screen):
             policy = state.get("decision", {}).get("current_state", "normal")
             tech_count = len(state.get("technology", {}).get("unlocked", []))
 
-            buildings_count = entities.get('buildings_count', 45)
-            avg_efficiency = entities.get('avg_efficiency', 0.85)
+            buildings_count = entities.get('buildings_count', 0)
+            avg_efficiency = entities.get('avg_efficiency', 1.0)
+            pop_total = entities.get('population', {}).get('total', 100)
 
             items = [
+                ("人口总数", f"{pop_total} 人", ""),
                 ("设施数量", f"{buildings_count} 座", ""),
                 ("工业效率", f"{avg_efficiency:.0%}", ""),
                 ("已解科技", f"{tech_count} 项", ""),
-                ("社会安定", f"{env_params.get('stability', 0.92):.0%}", ""),
                 ("当前政策", policy.upper(), ""),
             ]
         else:
             # 使用默认数据
             items = [
-                ("设施数量", "45 座", ""),
-                ("工业效率", "85%", ""),
+                ("人口总数", "100 人", ""),
+                ("设施数量", "0 座", ""),
+                ("工业效率", "100%", ""),
                 ("已解科技", "0 项", ""),
-                ("社会安定", "92%", ""),
                 ("当前政策", "NORMAL", ""),
             ]
 
