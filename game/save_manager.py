@@ -43,20 +43,71 @@ class SaveManager:
         self.saves_dir = saves_dir
         os.makedirs(self.saves_dir, exist_ok=True)
 
-    def scan_saves(self) -> List[SaveInfo]:
-        """扫描所有存档文件，返回按保存时间倒序排列的 SaveInfo 列表"""
-        saves: List[SaveInfo] = []
+    def scan_saves(self) -> Dict[str, List[SaveInfo]]:
+        """扫描所有存档文件，返回按宇宙分组的 SaveInfo 列表，每个列表按时间倒序"""
+        saves_by_universe: Dict[str, List[SaveInfo]] = {}
 
-        json_files = glob.glob(os.path.join(self.saves_dir, "*.json"))
-
-        for filepath in json_files:
+        # 扫描根目录的遗留存档（*.json）
+        for filepath in glob.glob(os.path.join(self.saves_dir, "*.json")):
             info = self._read_save_info(filepath)
             if info:
-                saves.append(info)
+                uni = info.universe_name
+                if uni not in saves_by_universe:
+                    saves_by_universe[uni] = []
+                saves_by_universe[uni].append(info)
+                
+        # 扫描各个宇宙文件夹
+        for item in os.listdir(self.saves_dir):
+            item_path = os.path.join(self.saves_dir, item)
+            if os.path.isdir(item_path):
+                for filepath in glob.glob(os.path.join(item_path, "*.json")):
+                    info = self._read_save_info(filepath)
+                    if info:
+                        uni = info.universe_name
+                        if uni not in saves_by_universe:
+                            saves_by_universe[uni] = []
+                        saves_by_universe[uni].append(info)
 
-        # 按保存时间倒序排列（最新的在前）
-        saves.sort(key=lambda s: s.save_time, reverse=True)
-        return saves
+        # 排序
+        for uni in saves_by_universe:
+            saves_by_universe[uni].sort(key=lambda s: s.save_time, reverse=True)
+            
+        return saves_by_universe
+
+    def scan_universes(self) -> List[Dict[str, Any]]:
+        """扫描所有宇宙并返回摘要信息列表（名称、存档数、最新存档时间）"""
+        grouped_saves = self.scan_saves()
+        universes = []
+        for uni_name, saves in grouped_saves.items():
+            if not saves: continue
+            universes.append({
+                "name": uni_name,
+                "count": len(saves),
+                "latest_time": saves[0].save_time,
+                "latest_filepath": saves[0].filepath
+            })
+        # 按最新存档时间倒序排序
+        universes.sort(key=lambda u: u["latest_time"], reverse=True)
+        return universes
+
+    def universe_exists(self, name: str) -> bool:
+        """检查宇宙名称是否存在（忽略大小写，防止同名冲突）"""
+        target_name = self._sanitize_filename(name).lower()
+        if not target_name: return False
+        
+        # 检查文件夹
+        for item in os.listdir(self.saves_dir):
+            if os.path.isdir(os.path.join(self.saves_dir, item)):
+                if item.lower() == target_name:
+                    return True
+                    
+        # 检查内部命名（包含遗留存档）
+        grouped = self.scan_saves()
+        for u_name in grouped.keys():
+            if self._sanitize_filename(u_name).lower() == target_name:
+                return True
+                
+        return False
 
     def _read_save_info(self, filepath: str) -> Optional[SaveInfo]:
         """读取单个存档的元信息（不加载完整 game_state）"""
@@ -117,13 +168,17 @@ class SaveManager:
 
         # 用时间戳生成唯一文件名
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        # 清理文件名中的非法字符
-        safe_name = self._sanitize_filename(save_name)
-        filename = f"{timestamp}_{safe_name}.json"
-        filepath = os.path.join(self.saves_dir, filename)
+        safe_save = self._sanitize_filename(save_name)
+        safe_universe = self._sanitize_filename(universe_name)
+        
+        # 将存档放到独立的宇宙文件夹中
+        uni_dir = os.path.join(self.saves_dir, safe_universe)
+        os.makedirs(uni_dir, exist_ok=True)
+        
+        filename = f"{timestamp}_{safe_save}.json"
+        filepath = os.path.join(uni_dir, filename)
 
         try:
-            os.makedirs(self.saves_dir, exist_ok=True)
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
             return True, f"已保存: {save_name}"
@@ -174,8 +229,8 @@ class SaveManager:
         return True, f"已加载: {save_name}"
 
     def delete_save(self, filepath: str) -> Tuple[bool, str]:
-        """删除存档文件
-
+        """删除存档文件，如果所在宇宙文件夹为空则一并删除
+        
         Args:
             filepath: 存档文件路径
 
@@ -185,15 +240,61 @@ class SaveManager:
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
+                # 尝试删除空文件夹
+                parent_dir = os.path.dirname(filepath)
+                # 确保 parent_dir 是在 self.saves_dir 之下的第一级子目录
+                if os.path.abspath(parent_dir) != os.path.abspath(self.saves_dir) and os.path.isdir(parent_dir):
+                    if not os.listdir(parent_dir):
+                        try:
+                            os.rmdir(parent_dir)
+                        except OSError:
+                            pass
                 return True, "存档已删除"
             return False, "存档文件不存在"
         except Exception as e:
             return False, f"删除失败: {e}"
 
+    def delete_universe(self, universe_name: str) -> Tuple[bool, str]:
+        """删除整个宇宙档案及其所有存档"""
+        try:
+            target_name = self._sanitize_filename(universe_name).lower()
+            if not target_name: return False, "无效的宇宙名称"
+
+            deleted_count = 0
+            
+            # 删除遗留存档中的同名档
+            for filepath in glob.glob(os.path.join(self.saves_dir, "*.json")):
+                info = self._read_save_info(filepath)
+                if info and self._sanitize_filename(info.universe_name).lower() == target_name:
+                    os.remove(filepath)
+                    deleted_count += 1
+            
+            # 找到对应的文件夹并清空删除
+            for item in os.listdir(self.saves_dir):
+                item_path = os.path.join(self.saves_dir, item)
+                if os.path.isdir(item_path) and item.lower() == target_name:
+                    for filepath in glob.glob(os.path.join(item_path, "*.json")):
+                        os.remove(filepath)
+                        deleted_count += 1
+                    try:
+                        os.rmdir(item_path)
+                    except OSError:
+                        pass
+                        
+            if deleted_count > 0:
+                return True, f"已删除宇宙，清理 {deleted_count} 个存档"
+            return False, "未找到该宇宙的存档"
+        except Exception as e:
+            return False, f"删除宇宙失败: {e}"
+
     def find_latest_save(self) -> Optional[SaveInfo]:
-        """找到最新的存档"""
-        saves = self.scan_saves()
-        return saves[0] if saves else None
+        """找到全局最新的存档"""
+        all_saves = []
+        for saves in self.scan_saves().values():
+            all_saves.extend(saves)
+        if not all_saves: return None
+        all_saves.sort(key=lambda s: s.save_time, reverse=True)
+        return all_saves[0]
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:

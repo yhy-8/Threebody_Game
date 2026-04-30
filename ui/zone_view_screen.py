@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 from .screen_manager import Screen, ScreenType
 from .initial_menu import MenuButton
 from render.ui import get_font
+from game.entities import RESOURCE_DISPLAY_NAMES
 
 
 class ZoneViewScreen(Screen):
@@ -33,6 +34,13 @@ class ZoneViewScreen(Screen):
         self.message_timer = 0.0
         self.dynamic_buttons = []
         self.breeder_buttons = []
+        
+        self.show_build_menu = False
+        self.build_buttons = []
+        self.build_scroll = 0
+        self.build_max_scroll = 0
+        self.build_cancel_button = None
+        self.construct_new_button = None
 
         self.setup_ui()
 
@@ -70,6 +78,13 @@ class ZoneViewScreen(Screen):
         # 布局计算：网格区域（留足标签空间）
         self._header_h = row1_y + btn_h + int(15 * scale)  # 头部总高度
 
+        self.build_cancel_button = MenuButton(
+            width // 2 - int(60 * scale), height - int(60 * scale), int(120 * scale), btn_h,
+            "关闭列表",
+            callback=self.close_build_menu,
+            font_size=btn_font_size
+        )
+
         self.load_fonts()
 
     def set_display_mode(self, mode: int):
@@ -80,6 +95,7 @@ class ZoneViewScreen(Screen):
     def _refresh_dynamic_buttons(self):
         self.dynamic_buttons.clear()
         self.breeder_buttons.clear()
+        self.construct_new_button = None
         if not self.simulator:
             return
             
@@ -143,6 +159,69 @@ class ZoneViewScreen(Screen):
                 self.dynamic_buttons.append(MenuButton(panel_x + panel_w - btn_w, btn_y, btn_w, btn_h, "+", callback=make_b_cb(b.id, 1), font_size=max(14, int(18*scale))))
             y += small_font.get_height() + 2
 
+        y += 15
+        self.construct_new_button = MenuButton(
+            panel_x + panel_w // 2 - max(50, int(60 * scale)), y, max(100, int(120 * scale)), max(25, int(30 * scale)),
+            "建造新建筑",
+            callback=self.open_build_menu,
+            font_size=max(13, int(16 * scale))
+        )
+
+    def open_build_menu(self):
+        self.show_build_menu = True
+        self.build_scroll = 0
+        self.refresh_build_buttons()
+
+    def close_build_menu(self):
+        self.show_build_menu = False
+        self._refresh_dynamic_buttons()
+
+    def refresh_build_buttons(self):
+        self.build_buttons.clear()
+        if not self.simulator: return
+        width, height = self.screen.get_size()
+        scale = self.scale
+        
+        dm = self.simulator.decision_manager
+        decisions = dm.get_construction_decisions()
+        
+        start_y = max(100, int(height * 0.15))
+        gap = max(70, int(80 * scale))
+        btn_w = max(100, int(120 * scale))
+        btn_h = max(32, int(40 * scale))
+        
+        for idx, decision in enumerate(decisions):
+            btn_y = start_y + idx * gap - self.build_scroll
+            btn_x = int(width * 0.75)
+            
+            can, _ = dm.can_execute(decision.id, self.simulator.entities, self.simulator.tech_tree)
+            btn_text = "建造" if can else "不可用"
+            
+            def make_cb(did):
+                return lambda: self.on_construct_building(did)
+                
+            btn = MenuButton(btn_x, btn_y, btn_w, btn_h, btn_text, callback=make_cb(decision.id), font_size=max(14, int(18 * scale)))
+            self.build_buttons.append((btn, decision.id))
+            
+        self.build_max_scroll = max(0, len(decisions) * gap - (height - start_y - 100))
+
+    def on_construct_building(self, decision_id: str):
+        if not self.simulator or self.selected_zone_id < 0: return
+        dm = self.simulator.decision_manager
+        can, reason = dm.can_execute(decision_id, self.simulator.entities, self.simulator.tech_tree)
+        if not can:
+            self.message = f"无法建造：{reason}"
+            self.message_timer = 3.0
+            return
+            
+        success, msg, _ = dm.execute_decision(decision_id, self.simulator.entities, self.simulator.tech_tree, self.simulator.planet_zones, self.selected_zone_id)
+        self.message = msg
+        self.message_timer = 3.0
+        if success:
+            self.close_build_menu()
+        else:
+            self.refresh_build_buttons()
+
     def on_back(self):
         """返回主界面"""
         self.screen_manager.switch_to(ScreenType.MAIN_SCREEN)
@@ -162,15 +241,32 @@ class ZoneViewScreen(Screen):
         super().update(dt)
         if self.message_timer > 0:
             self.message_timer -= dt
-        self.back_button.update(dt)
-        for btn in self.dynamic_buttons: btn.update(dt)
-        for btn in self.breeder_buttons: btn.update(dt)
-
-        for btn in self.mode_buttons:
-            btn.update(dt)
+            
+        if self.show_build_menu:
+            self.build_cancel_button.update(dt)
+            for btn, _ in self.build_buttons: btn.update(dt)
+        else:
+            self.back_button.update(dt)
+            for btn in self.dynamic_buttons: btn.update(dt)
+            for btn in self.breeder_buttons: btn.update(dt)
+            for btn in self.mode_buttons: btn.update(dt)
+            if self.construct_new_button: self.construct_new_button.update(dt)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.active:
+            return False
+
+        if self.show_build_menu:
+            if self.build_cancel_button.handle_event(event): return True
+            if event.type == pygame.MOUSEWHEEL:
+                self.build_scroll = max(0, min(self.build_max_scroll, self.build_scroll - event.y * 30))
+                self.refresh_build_buttons()
+                return True
+            for btn, _ in self.build_buttons:
+                if btn.handle_event(event): return True
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.close_build_menu()
+                return True
             return False
 
         if self.back_button.handle_event(event):
@@ -179,6 +275,8 @@ class ZoneViewScreen(Screen):
             if btn.handle_event(event): return True
         for btn in self.breeder_buttons:
             if btn.handle_event(event): return True
+        if self.construct_new_button and self.construct_new_button.handle_event(event):
+            return True
 
         for btn in self.mode_buttons:
             if btn.handle_event(event):
@@ -273,6 +371,9 @@ class ZoneViewScreen(Screen):
             self._render_zone_grid(screen, scale)
             # 右侧面板：全球概览 + 区域详情
             self._render_right_panel(screen, scale)
+            
+            if self.show_build_menu:
+                self._render_build_menu(screen, scale)
 
         # 底部提示
         if 'tiny' in self.fonts:
@@ -285,7 +386,57 @@ class ZoneViewScreen(Screen):
         if self.message_timer > 0 and 'normal' in self.fonts:
             msg_surf = self.fonts['normal'].render(self.message, True, (255, 200, 100))
             msg_rect = msg_surf.get_rect(center=(width // 2, height - max(35, int(45 * scale))))
+            # 在顶部绘制一层半透明背景提升可见度
+            bg_rect = msg_rect.inflate(20, 10)
+            pygame.draw.rect(screen, (0, 0, 0, 150), bg_rect, border_radius=5)
             screen.blit(msg_surf, msg_rect)
+
+    def _render_build_menu(self, screen: pygame.Surface, scale: float):
+        # 绘制半透明遮罩
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((10, 15, 25, 230))
+        screen.blit(overlay, (0, 0))
+        
+        width, height = screen.get_size()
+        dm = self.simulator.decision_manager
+        decisions = dm.get_construction_decisions()
+        
+        title_font = get_font(max(20, int(26 * scale)))
+        name_font = get_font(max(16, int(22 * scale)))
+        desc_font = get_font(max(13, int(16 * scale)))
+        cost_font = get_font(max(12, int(14 * scale)))
+        
+        # 标题
+        title = title_font.render(f"在 区域 #{self.selected_zone_id} 建造新建筑", True, (100, 200, 255))
+        screen.blit(title, (width // 2 - title.get_width() // 2, max(20, int(40 * scale))))
+        
+        start_y = max(100, int(height * 0.15))
+        gap = max(70, int(80 * scale))
+        x_left = int(width * 0.15)
+        
+        for idx, decision in enumerate(decisions):
+            y = start_y + idx * gap - self.build_scroll
+            if y < start_y - 20 or y > height - 100: continue
+            
+            can, _ = dm.can_execute(decision.id, self.simulator.entities, self.simulator.tech_tree)
+            color = (220, 220, 240) if can else (100, 100, 120)
+            
+            name_surf = name_font.render(decision.name, True, color)
+            screen.blit(name_surf, (x_left, y))
+            
+            desc_surf = desc_font.render(decision.description, True, (130, 130, 150))
+            screen.blit(desc_surf, (x_left, y + name_font.get_height() + 2))
+            
+            cost_parts = []
+            for res, cost in decision.resource_cost.items():
+                display = RESOURCE_DISPLAY_NAMES.get(res, res)
+                cost_parts.append(f"{display}:{int(cost)}")
+            if cost_parts:
+                cost_surf = cost_font.render("消耗: " + " | ".join(cost_parts), True, (200, 180, 100))
+                screen.blit(cost_surf, (x_left, y + name_font.get_height() + desc_font.get_height() + 4))
+                
+        for btn, _ in self.build_buttons: btn.render(screen)
+        self.build_cancel_button.render(screen)
 
     def _render_right_panel(self, screen: pygame.Surface, scale: float):
         """渲染右侧信息面板（全球概览 + 区域详情）"""
@@ -328,6 +479,8 @@ class ZoneViewScreen(Screen):
             btn.render(screen)
         for btn in self.dynamic_buttons:
             btn.render(screen)
+        if hasattr(self, 'construct_new_button') and self.construct_new_button:
+            self.construct_new_button.render(screen)
 
         # ── 分隔线 ──
         y += 10

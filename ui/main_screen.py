@@ -73,11 +73,11 @@ class MainScreen(Screen):
         )
         x += btn_w + gap
 
-        # 决策按钮
-        self.decision_button = MenuButton(
+        # 政策按钮
+        self.policy_button = MenuButton(
             x, int(15 * scale), btn_w, btn_h,
-            "决策",
-            callback=self.on_decision_clicked,
+            "政策",
+            callback=self.on_policy_clicked,
             font_size=btn_font_size
         )
         x += btn_w + gap
@@ -149,8 +149,8 @@ class MainScreen(Screen):
         """点击科技树按钮"""
         self.screen_manager.switch_to(ScreenType.TECH_TREE)
 
-    def on_decision_clicked(self):
-        """点击决策按钮"""
+    def on_policy_clicked(self):
+        """点击政策按钮"""
         self.screen_manager.switch_to(ScreenType.DECISION)
 
     def on_zone_clicked(self):
@@ -182,11 +182,19 @@ class MainScreen(Screen):
         """更新界面"""
         super().update(dt)
 
+        # 检查自动存档
+        if self.simulator and not self.simulator.paused and not self.simulator.game_over:
+            current_day = int(self.simulator.time)
+            if current_day % 100 == 0 and current_day != getattr(self.simulator, 'last_autosave_day', -1):
+                self.simulator.last_autosave_day = current_day
+                from game.save_manager import SaveManager
+                SaveManager().save_game(self.simulator, save_name=f"自动存档_第{current_day}天")
+
         # 更新按钮
         self.menu_button.update(dt)
         self.pause_button.update(dt)
         self.tech_button.update(dt)
-        self.decision_button.update(dt)
+        self.policy_button.update(dt)
         self.zone_button.update(dt)
         self.starmap_button.update(dt)
 
@@ -202,7 +210,7 @@ class MainScreen(Screen):
             return True
         if self.tech_button.handle_event(event):
             return True
-        if self.decision_button.handle_event(event):
+        if self.policy_button.handle_event(event):
             return True
         if self.zone_button.handle_event(event):
             return True
@@ -258,7 +266,7 @@ class MainScreen(Screen):
         self.menu_button.render(screen)
         self.pause_button.render(screen)
         self.tech_button.render(screen)
-        self.decision_button.render(screen)
+        self.policy_button.render(screen)
         self.zone_button.render(screen)
         self.starmap_button.render(screen)
         

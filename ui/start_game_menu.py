@@ -92,7 +92,8 @@ class StartGameMenu(Screen):
     # 子界面状态
     STATE_MAIN = 0           # 主菜单（新游戏/继续/加载/返回）
     STATE_NAMING = 1         # 新游戏命名
-    STATE_LOAD = 2           # 加载存档列表
+    STATE_LOAD_UNIVERSE = 2  # 加载宇宙列表
+    STATE_LOAD_SAVE = 3      # 加载某宇宙的具体存档列表
 
     def __init__(self, screen_manager, screen: pygame.Surface):
         super().__init__(screen_manager, screen)
@@ -102,8 +103,10 @@ class StartGameMenu(Screen):
 
         # 存档管理
         self.save_manager = SaveManager()
+        self.universe_list: List[dict] = []
         self.save_list: List[SaveInfo] = []
         self.scroll_offset = 0
+        self.selected_universe_idx = -1
         self.selected_save_idx = -1
 
         # 命名输入
@@ -238,11 +241,11 @@ class StartGameMenu(Screen):
             self.message_timer = 2.5
 
     def on_load_game(self):
-        """进入加载存档列表"""
-        self.state = self.STATE_LOAD
-        self.save_list = self.save_manager.scan_saves()
+        """进入加载宇宙列表"""
+        self.state = self.STATE_LOAD_UNIVERSE
+        self.universe_list = self.save_manager.scan_universes()
         self.scroll_offset = 0
-        self.selected_save_idx = -1
+        self.selected_universe_idx = -1
         self.confirm_delete = False
 
     def on_back(self):
@@ -261,6 +264,12 @@ class StartGameMenu(Screen):
         if not name:
             self.message = "请输入宇宙名称"
             self.message_color = (255, 150, 100)
+            self.message_timer = 2.0
+            return
+            
+        if self.save_manager.universe_exists(name):
+            self.message = "宇宙名称已存在，请重新命名"
+            self.message_color = (255, 100, 100)
             self.message_timer = 2.0
             return
 
@@ -290,31 +299,75 @@ class StartGameMenu(Screen):
 
     def on_back_from_load(self):
         """从加载界面返回"""
-        self.state = self.STATE_MAIN
-        self.confirm_delete = False
+        if self.state == self.STATE_LOAD_SAVE:
+            self.state = self.STATE_LOAD_UNIVERSE
+            self.universe_list = self.save_manager.scan_universes()
+            self.scroll_offset = 0
+            self.confirm_delete = False
+        else:
+            self.state = self.STATE_MAIN
+            self.confirm_delete = False
+
+    def on_enter_universe(self):
+        """进入选中的宇宙，显示该宇宙的存档"""
+        if 0 <= self.selected_universe_idx < len(self.universe_list):
+            uni_name = self.universe_list[self.selected_universe_idx]["name"]
+            grouped_saves = self.save_manager.scan_saves()
+            self.save_list = grouped_saves.get(uni_name, [])
+            self.state = self.STATE_LOAD_SAVE
+            self.scroll_offset = 0
+            self.selected_save_idx = -1
+            self.confirm_delete = False
 
     def on_load_selected(self):
-        """加载选中的存档"""
+        """加载选中的存档（如果是宇宙界面则进入宇宙）"""
+        if self.state == self.STATE_LOAD_UNIVERSE:
+            self.on_enter_universe()
+            return
+        
         if 0 <= self.selected_save_idx < len(self.save_list):
             save = self.save_list[self.selected_save_idx]
             self._load_save(save.filepath)
 
     def on_delete_selected(self):
-        """请求删除选中的存档"""
-        if 0 <= self.selected_save_idx < len(self.save_list):
-            self.confirm_delete = True
+        """请求删除选中的存档或宇宙"""
+        if self.state == self.STATE_LOAD_UNIVERSE:
+            if 0 <= self.selected_universe_idx < len(self.universe_list):
+                self.confirm_delete = True
+        elif self.state == self.STATE_LOAD_SAVE:
+            if 0 <= self.selected_save_idx < len(self.save_list):
+                self.confirm_delete = True
 
     def on_confirm_delete(self):
         """确认删除"""
-        if 0 <= self.selected_save_idx < len(self.save_list):
-            save = self.save_list[self.selected_save_idx]
-            success, msg = self.save_manager.delete_save(save.filepath)
-            self.message = msg
-            self.message_color = (150, 255, 150) if success else (255, 100, 100)
-            self.message_timer = 2.0
-            # 刷新列表
-            self.save_list = self.save_manager.scan_saves()
-            self.selected_save_idx = -1
+        if self.state == self.STATE_LOAD_UNIVERSE:
+            if 0 <= self.selected_universe_idx < len(self.universe_list):
+                uni = self.universe_list[self.selected_universe_idx]
+                success, msg = self.save_manager.delete_universe(uni["name"])
+                self.message = msg
+                self.message_color = (150, 255, 150) if success else (255, 100, 100)
+                self.message_timer = 2.0
+                
+                # 刷新列表
+                self.universe_list = self.save_manager.scan_universes()
+                self.selected_universe_idx = -1
+        elif self.state == self.STATE_LOAD_SAVE:
+            if 0 <= self.selected_save_idx < len(self.save_list):
+                save = self.save_list[self.selected_save_idx]
+                success, msg = self.save_manager.delete_save(save.filepath)
+                self.message = msg
+                self.message_color = (150, 255, 150) if success else (255, 100, 100)
+                self.message_timer = 2.0
+                
+                # 刷新当前宇宙的存档列表
+                uni_name = self.universe_list[self.selected_universe_idx]["name"]
+                self.save_list = self.save_manager.scan_saves().get(uni_name, [])
+                self.selected_save_idx = -1
+                
+                # 如果这个宇宙的存档都被删光了，返回宇宙列表
+                if not self.save_list:
+                    self.on_back_from_load()
+
         self.confirm_delete = False
 
     def on_cancel_delete(self):
@@ -373,8 +426,10 @@ class StartGameMenu(Screen):
             return self._handle_main_event(event)
         elif self.state == self.STATE_NAMING:
             return self._handle_naming_event(event)
-        elif self.state == self.STATE_LOAD:
-            return self._handle_load_event(event)
+        elif self.state == self.STATE_LOAD_UNIVERSE:
+            return self._handle_load_universe_event(event)
+        elif self.state == self.STATE_LOAD_SAVE:
+            return self._handle_load_save_event(event)
 
         return False
 
@@ -403,7 +458,36 @@ class StartGameMenu(Screen):
                 return True
         return False
 
-    def _handle_load_event(self, event) -> bool:
+    def _handle_load_universe_event(self, event) -> bool:
+        # 底部工具栏
+        if self.back_button and self.back_button.handle_event(event):
+            return True
+        if self.load_btn and self.load_btn.handle_event(event):
+            return True
+
+        # 滚轮滚动
+        if event.type == pygame.MOUSEWHEEL:
+            self.scroll_offset = max(0, self.scroll_offset - event.y * 40)
+            return True
+
+        # 点击选择宇宙
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            idx = self._get_item_at_mouse(event.pos, len(self.universe_list))
+            if idx >= 0:
+                self.selected_universe_idx = idx
+                return True
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.on_back_from_load()
+                return True
+            if event.key == pygame.K_RETURN:
+                self.on_enter_universe()
+                return True
+
+        return False
+
+    def _handle_load_save_event(self, event) -> bool:
         # 删除确认对话框
         if self.confirm_delete:
             if self.delete_confirm_btn and self.delete_confirm_btn.handle_event(event):
@@ -430,15 +514,10 @@ class StartGameMenu(Screen):
 
         # 点击选择存档
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            idx = self._get_save_at_mouse(event.pos)
+            idx = self._get_item_at_mouse(event.pos, len(self.save_list))
             if idx >= 0:
                 self.selected_save_idx = idx
                 return True
-
-        # 双击加载
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # pygame 没有原生双击，先跳过
-            pass
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
@@ -453,8 +532,8 @@ class StartGameMenu(Screen):
 
         return False
 
-    def _get_save_at_mouse(self, pos: Tuple[int, int]) -> int:
-        """根据鼠标位置找到对应的存档索引"""
+    def _get_item_at_mouse(self, pos: Tuple[int, int], list_len: int) -> int:
+        """根据鼠标位置找到对应的列表项索引"""
         width, height = self.screen.get_size()
         scale = self.scale
 
@@ -470,7 +549,7 @@ class StartGameMenu(Screen):
         if my < list_y:
             return -1
 
-        for i in range(len(self.save_list)):
+        for i in range(list_len):
             iy = list_y + i * (item_h + gap) - self.scroll_offset
             if iy < list_y - item_h or iy > height - 80:
                 continue
@@ -494,8 +573,10 @@ class StartGameMenu(Screen):
             self._render_main(screen, width, height, scale)
         elif self.state == self.STATE_NAMING:
             self._render_naming(screen, width, height, scale)
-        elif self.state == self.STATE_LOAD:
-            self._render_load(screen, width, height, scale)
+        elif self.state == self.STATE_LOAD_UNIVERSE:
+            self._render_load_universe(screen, width, height, scale)
+        elif self.state == self.STATE_LOAD_SAVE:
+            self._render_load_save(screen, width, height, scale)
 
         # 消息
         if self.message_timer > 0 and self.message:
@@ -557,18 +638,75 @@ class StartGameMenu(Screen):
             self.cancel_button.update(0.016)
             self.cancel_button.render(screen)
 
-    def _render_load(self, screen, width, height, scale):
-        """渲染加载存档列表"""
+    def _render_load_universe(self, screen, width, height, scale):
+        """渲染宇宙列表"""
         # 标题
         title_font = get_font(max(24, int(34 * scale)))
-        title = title_font.render("加载存档", True, (200, 220, 255))
+        title = title_font.render("选择宇宙", True, (200, 220, 255))
         screen.blit(title, (int(width * 0.08), int(height * 0.04)))
 
-        # 存档数量
+        # 宇宙数量
         count_font = get_font(max(13, int(16 * scale)))
-        count_text = f"共 {len(self.save_list)} 个存档"
+        count_text = f"共 {len(self.universe_list)} 个宇宙档案"
         count_surf = count_font.render(count_text, True, (120, 140, 170))
         screen.blit(count_surf, (int(width * 0.08), int(height * 0.10)))
+
+        list_x = int(width * 0.08)
+        list_y = int(height * 0.15)
+        list_w = int(width * 0.84)
+        item_h = max(60, int(70 * scale))
+        gap = max(6, int(8 * scale))
+        bottom_limit = height - max(80, int(90 * scale))
+
+        name_font = get_font(max(16, int(20 * scale)))
+        detail_font = get_font(max(12, int(15 * scale)))
+
+        if not self.universe_list:
+            empty_font = get_font(max(18, int(24 * scale)))
+            empty = empty_font.render("暂无档案", True, (100, 110, 140))
+            empty_rect = empty.get_rect(center=(width // 2, height // 2))
+            screen.blit(empty, empty_rect)
+        else:
+            for i, uni in enumerate(self.universe_list):
+                iy = list_y + i * (item_h + gap) - self.scroll_offset
+                if iy + item_h < list_y or iy > bottom_limit:
+                    continue
+
+                rect = pygame.Rect(list_x, iy, list_w, item_h)
+
+                if i == self.selected_universe_idx:
+                    bg_color = (50, 65, 120)
+                    border_color = (120, 160, 255)
+                else:
+                    bg_color = (25, 30, 55)
+                    border_color = (50, 60, 90)
+
+                pygame.draw.rect(screen, bg_color, rect, border_radius=8)
+                pygame.draw.rect(screen, border_color, rect, 2, border_radius=8)
+
+                # 宇宙名称
+                name_color = (220, 230, 255) if i == self.selected_universe_idx else (180, 190, 220)
+                name_surf = name_font.render(uni["name"], True, name_color)
+                screen.blit(name_surf, (rect.x + 15, rect.y + 8))
+
+                # 详情
+                detail_text = f"包含 {uni['count']} 个存档  ·  最新存档时间: {uni['latest_time']}"
+                detail_surf = detail_font.render(detail_text, True, (120, 140, 170))
+                screen.blit(detail_surf, (rect.x + 15, rect.y + 8 + name_font.get_height() + 4))
+
+        self._render_load_toolbar(screen, width, height, scale, show_delete=True)
+
+        # 删除确认对话框
+        if self.confirm_delete and 0 <= self.selected_universe_idx < len(self.universe_list):
+            self._render_delete_confirm(screen, width, height, scale, title="确认删除宇宙？")
+
+    def _render_load_save(self, screen, width, height, scale):
+        """渲染指定宇宙的存档列表"""
+        # 标题
+        title_font = get_font(max(24, int(34 * scale)))
+        uni_name = self.universe_list[self.selected_universe_idx]["name"] if 0 <= self.selected_universe_idx < len(self.universe_list) else ""
+        title = title_font.render(f"宇宙: {uni_name}", True, (200, 220, 255))
+        screen.blit(title, (int(width * 0.08), int(height * 0.04)))
 
         # 存档列表
         list_x = int(width * 0.08)
@@ -625,6 +763,13 @@ class StartGameMenu(Screen):
                 detail_surf = detail_font.render(detail_text, True, (120, 140, 170))
                 screen.blit(detail_surf, (rect.x + 15, rect.y + 8 + name_font.get_height() + 4))
 
+        self._render_load_toolbar(screen, width, height, scale, show_delete=True)
+
+        # 删除确认对话框
+        if self.confirm_delete and 0 <= self.selected_save_idx < len(self.save_list):
+            self._render_delete_confirm(screen, width, height, scale, title="确认删除存档？")
+
+    def _render_load_toolbar(self, screen, width, height, scale, show_delete: bool):
         # 底部工具栏背景
         toolbar_bg = pygame.Surface((width, max(70, int(85 * scale))), pygame.SRCALPHA)
         toolbar_bg.fill((10, 12, 25, 230))
@@ -633,22 +778,23 @@ class StartGameMenu(Screen):
         # 按钮
         self.back_button.update(0.016)
         self.back_button.render(screen)
+        
+        self.load_btn.text = "加载" if show_delete else "进入"
         self.load_btn.update(0.016)
         self.load_btn.render(screen)
-        self.delete_btn.update(0.016)
-        self.delete_btn.render(screen)
+        
+        if show_delete:
+            self.delete_btn.update(0.016)
+            self.delete_btn.render(screen)
 
         # 提示
         hint_font = get_font(max(12, int(14 * scale)))
-        hint = hint_font.render("滚轮滚动 | Enter加载 | Delete删除", True, (80, 90, 120))
+        hint_text = "滚轮滚动 | Enter确认 | Delete删除" if show_delete else "滚轮滚动 | Enter确认"
+        hint = hint_font.render(hint_text, True, (80, 90, 120))
         screen.blit(hint, (width - hint.get_width() - int(20 * scale),
                            height - max(25, int(30 * scale))))
 
-        # 删除确认对话框
-        if self.confirm_delete and 0 <= self.selected_save_idx < len(self.save_list):
-            self._render_delete_confirm(screen, width, height, scale)
-
-    def _render_delete_confirm(self, screen, width, height, scale):
+    def _render_delete_confirm(self, screen, width, height, scale, title: str = "确认删除此存档？"):
         """渲染删除确认对话框"""
         # 遮罩
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -664,14 +810,20 @@ class StartGameMenu(Screen):
         pygame.draw.rect(screen, (30, 25, 45), (dlg_x, dlg_y, dlg_w, dlg_h), border_radius=12)
         pygame.draw.rect(screen, (180, 80, 80), (dlg_x, dlg_y, dlg_w, dlg_h), 2, border_radius=12)
 
-        save = self.save_list[self.selected_save_idx]
         warn_font = get_font(max(18, int(24 * scale)))
         name_font = get_font(max(14, int(18 * scale)))
 
-        warn_surf = warn_font.render("确认删除此存档？", True, (255, 120, 120))
-        name_surf = name_font.render(save.save_name, True, (200, 200, 220))
-
+        warn_surf = warn_font.render(title, True, (255, 120, 120))
         screen.blit(warn_surf, warn_surf.get_rect(center=(width // 2, dlg_y + int(dlg_h * 0.22))))
+
+        if self.state == self.STATE_LOAD_UNIVERSE:
+            uni = self.universe_list[self.selected_universe_idx]
+            name_text = f"宇宙: {uni['name']} (含 {uni['count']} 个存档)"
+        else:
+            save = self.save_list[self.selected_save_idx]
+            name_text = save.save_name
+            
+        name_surf = name_font.render(name_text, True, (200, 200, 220))
         screen.blit(name_surf, name_surf.get_rect(center=(width // 2, dlg_y + int(dlg_h * 0.45))))
 
         # 按钮位置调整到对话框内

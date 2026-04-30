@@ -117,12 +117,16 @@ class GameMenu(Screen):
     def on_save(self):
         """弹出保存面板"""
         self.save_state = self.SAVE_PANEL
-        self.save_list = self.save_manager.scan_saves()
         # 预填存档名
         simulator = self.screen_manager.global_state.get('simulator')
         if simulator:
+            uni_name = getattr(simulator, 'universe_name', '未命名宇宙')
+            self.save_list = self.save_manager.scan_saves().get(uni_name, [])
             day = max(1, int(simulator.time))
-            self.save_name_input.text = f"{simulator.universe_name}_Day{day}"
+            self.save_name_input.text = f"{uni_name}_Day{day}"
+        else:
+            self.save_list = []
+            
         self.save_name_input.active = True
 
     def on_save_game(self):
@@ -143,7 +147,8 @@ class GameMenu(Screen):
         self.save_message = msg
         self.save_message_timer = 2.5
         if success:
-            self.save_list = self.save_manager.scan_saves()
+            uni_name = getattr(simulator, 'universe_name', '未命名宇宙')
+            self.save_list = self.save_manager.scan_saves().get(uni_name, [])
 
     def on_close_save_panel(self):
         """关闭保存面板"""

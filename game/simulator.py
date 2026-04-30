@@ -21,6 +21,7 @@ class GameSimulator:
         self.paused = False
         self.game_over = False  # 游戏是否结束
         self.universe_name = "未命名宇宙"  # 宇宙名称（新建游戏时设置）
+        self.last_autosave_day = -1  # 记录上次自动存档的天数
 
     def reset(self, config: dict = None):
         """重置游戏状态 - 用于开始新游戏（不重置 universe_name，由外部设置）"""
@@ -32,6 +33,7 @@ class GameSimulator:
         self.time = 0.0
         self.paused = False
         self.game_over = False
+        self.last_autosave_day = -1
 
     def update(self, dt: float):
         """更新游戏状态"""
