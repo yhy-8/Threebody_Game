@@ -22,6 +22,7 @@ class GameSimulator:
         self.game_over = False  # 游戏是否结束
         self.universe_name = "未命名宇宙"  # 宇宙名称（新建游戏时设置）
         self.last_autosave_day = -1  # 记录上次自动存档的天数
+        self._init_zone_temperatures()
 
     def reset(self, config: dict = None):
         """重置游戏状态 - 用于开始新游戏（不重置 universe_name，由外部设置）"""
@@ -34,6 +35,7 @@ class GameSimulator:
         self.paused = False
         self.game_over = False
         self.last_autosave_day = -1
+        self._init_zone_temperatures()
 
     def update(self, dt: float):
         """更新游戏状态"""
@@ -234,3 +236,17 @@ class GameSimulator:
     def set_time_scale(self, scale: float):
         """设置时间流逝速度"""
         self.environment.time_scale = max(0.1, min(10.0, scale))
+
+    def _init_zone_temperatures(self):
+        """在游戏开始时将区域温度初始化为目标温度"""
+        stars_data = []
+        planet_position = np.zeros(3)
+        for star in self.environment.stars:
+            stars_data.append({
+                "position": star.position.copy(),
+                "mass": star.mass,
+                "is_planet": star.is_planet,
+            })
+            if star.is_planet:
+                planet_position = star.position.copy()
+        self.planet_zones.initialize_temperatures(stars_data, planet_position)

@@ -253,25 +253,56 @@ class Building:
             zone_radiation: 区域辐射度
             dt: 帧间隔（游戏天数）
         """
+        if self.under_construction:
+            return
+
         damage = 0.0
 
         # 高温伤害
         if zone_temp > self.heat_resistance:
             excess = zone_temp - self.heat_resistance
-            damage += excess * 0.1 * dt  # 每超1度每天0.1点伤害
+            damage += excess * 0.02 * dt
 
         # 低温伤害
         if zone_temp < self.cold_resistance:
             excess = self.cold_resistance - zone_temp
-            damage += excess * 0.05 * dt  # 严寒伤害略低
+            damage += excess * 0.01 * dt
 
         # 辐射伤害
         if zone_radiation > self.radiation_resistance:
             excess = zone_radiation - self.radiation_resistance
-            damage += excess * 0.2 * dt
+            damage += excess * 0.03 * dt
 
         if damage > 0:
             self.take_damage(damage)
+
+    def advance_construction(self, dt: float):
+        """推进建造进度 — 需要分配工人才有效
+
+        建造速度 = assigned_workers / max(worker_capacity, 1)
+        无工人的建筑（worker_capacity=0）以固定速度建造
+        """
+        if not self.under_construction:
+            return
+
+        if self.build_time <= 0:
+            self.under_construction = False
+            self.build_progress = self.build_time
+            self.active = True
+            return
+
+        if self.worker_capacity > 0:
+            workers = min(self.assigned_workers, self.worker_capacity)
+            speed = workers / self.worker_capacity
+        else:
+            speed = 1.0  # 无需工人的建筑以满速建造
+
+        self.build_progress += speed * dt
+
+        if self.build_progress >= self.build_time:
+            self.under_construction = False
+            self.build_progress = self.build_time
+            self.active = True
 
 
 class EntityManager:
@@ -392,31 +423,31 @@ class EntityManager:
         b = self.get_building(building_id)
         if not b:
             return False, "建筑不存在"
-        if not b.active or b.destroyed:
-            return False, "建筑已停用或损毁"
-        
+        if b.destroyed:
+            return False, "建筑已损毁"
+
         idle = self.get_idle_population()
         if count > idle:
             return False, f"闲置人口不足（需要 {count}，仅剩 {idle}）"
-            
+
         space = b.worker_capacity - b.assigned_workers
         if count > space:
             return False, f"建筑容量不足（仅剩 {space} 个空余岗位）"
-            
+
         b.assigned_workers += count
-        return True, f"已分配 {count} 人到 {b.name}"
+        return True, ""
 
     def unassign_worker_from_building(self, building_id: int, count: int) -> Tuple[bool, str]:
         """从特定建筑撤回工人"""
         b = self.get_building(building_id)
         if not b:
             return False, "建筑不存在"
-            
+
         if count > b.assigned_workers:
             return False, f"当前建筑只有 {b.assigned_workers} 人"
-            
+
         b.assigned_workers -= count
-        return True, f"已从 {b.name} 撤回 {count} 人"
+        return True, ""
 
     def assign_breeders(self, count: int) -> Tuple[bool, str]:
         """分配生育人员"""
@@ -424,14 +455,14 @@ class EntityManager:
         if count > idle:
             return False, f"闲置人口不足（需要 {count}，仅剩 {idle}）"
         self.population.breeders += count
-        return True, f"已分配 {count} 人生育"
+        return True, ""
 
     def unassign_breeders(self, count: int) -> Tuple[bool, str]:
         """撤回生育人员"""
         if count > self.population.breeders:
             return False, f"当前只有 {self.population.breeders} 人在生育"
         self.population.breeders -= count
-        return True, f"已撤回 {count} 名生育人员"
+        return True, ""
 
     def get_electricity_balance(self) -> Tuple[float, float]:
         """获取电力收支: (总发电量/天, 总耗电量/天)
@@ -479,6 +510,11 @@ class EntityManager:
                     building.apply_environment_damage(
                         zone.temperature, zone.radiation, dt
                     )
+
+        # 建造进度推进
+        for building in self.buildings:
+            if building.under_construction:
+                building.advance_construction(dt)
 
         # 建筑产出和消耗（人力驱动）
         self._process_buildings(dt)
@@ -540,6 +576,9 @@ class EntityManager:
                     "assigned_workers": b.assigned_workers,
                     "per_worker_output": dict(b.per_worker_output),
                     "consumption": dict(b.consumption),
+                    "build_time": b.build_time,
+                    "build_progress": b.build_progress,
+                    "under_construction": b.under_construction,
                 }
                 for b in self.buildings
             ],
@@ -573,6 +612,9 @@ class EntityManager:
                 worker_capacity=b_data.get("worker_capacity", 0),
                 assigned_workers=b_data.get("assigned_workers", 0),
                 per_worker_output=b_data.get("per_worker_output", {}),
-                consumption=b_data.get("consumption", {})
+                consumption=b_data.get("consumption", {}),
+                build_time=b_data.get("build_time", 0.0),
+                build_progress=b_data.get("build_progress", 0.0),
+                under_construction=b_data.get("under_construction", False),
             )
             self.buildings.append(b)

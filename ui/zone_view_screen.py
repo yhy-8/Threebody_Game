@@ -92,46 +92,63 @@ class ZoneViewScreen(Screen):
         self.display_mode = mode
 
 
+    def _get_click_amount(self, base: int) -> int:
+        """根据修饰键获取点击增减量：Shift=5x, Ctrl=最大值, 默认=1x"""
+        mods = pygame.key.get_mods()
+        if mods & pygame.KMOD_CTRL:
+            return 999  # 标记为"填满"，由调用方截断
+        elif mods & pygame.KMOD_SHIFT:
+            return base * 5
+        return base
+
     def _refresh_dynamic_buttons(self):
         self.dynamic_buttons.clear()
         self.breeder_buttons.clear()
         self.construct_new_button = None
         if not self.simulator:
             return
-            
+
         width, height = self.screen.get_size()
         scale = self.scale
         panel_x = int(width * 0.58)
         panel_w = width - panel_x - int(15 * scale)
-        
+
         # ── 生育按钮 ──
         y = self._header_h + 5
         font = get_font(max(14, int(17 * scale)))
         y += font.get_height() + 6
         small_font = get_font(max(12, int(14 * scale)))
         y += (small_font.get_height() + 3) * 6 # 5 lines + 1 extra
-        
+
         btn_w = max(20, int(25 * scale))
         btn_h = max(20, int(25 * scale))
-        
+
         btn_y = y - (small_font.get_height() + 3) # approximately on the last overview line
-        
-        def make_breeder_cb(amount):
+
+        def make_breeder_cb(direction):
             def cb():
+                amount = self._get_click_amount(direction)
                 if amount > 0:
+                    if amount >= 999:
+                        amount = self.simulator.entities.get_idle_population()
                     ok, msg = self.simulator.entities.assign_breeders(amount)
                 else:
-                    ok, msg = self.simulator.entities.unassign_breeders(-amount)
-                self.message = msg
-                self.message_timer = 2.0
+                    if amount <= -999:
+                        amount = self.simulator.entities.population.breeders
+                    else:
+                        amount = -amount
+                    ok, msg = self.simulator.entities.unassign_breeders(amount)
+                if not ok and msg:
+                    self.message = msg
+                    self.message_timer = 2.0
             return cb
-            
+
         self.breeder_buttons.append(MenuButton(panel_x + panel_w - btn_w * 2 - 10, btn_y, btn_w, btn_h, "-", callback=make_breeder_cb(-1), font_size=max(14, int(18*scale))))
         self.breeder_buttons.append(MenuButton(panel_x + panel_w - btn_w, btn_y, btn_w, btn_h, "+", callback=make_breeder_cb(1), font_size=max(14, int(18*scale))))
-        
+
         if self.selected_zone_id < 0:
             return
-            
+
         # ── 建筑按钮 ──
         y += 20 # after separator
         title_font = get_font(max(16, int(20 * scale)))
@@ -140,21 +157,31 @@ class ZoneViewScreen(Screen):
         y += (font.get_height() + 2) * 8 # 8 lines
         y += 6
         y += font.get_height() + 4 # header
-        
+
         buildings = self.simulator.entities.get_buildings_in_zone(self.selected_zone_id)
         for b in buildings[:6]:
             btn_y = y
-            def make_b_cb(bid, amount):
+            def make_b_cb(bid, direction):
                 def cb():
+                    amount = self._get_click_amount(direction)
                     if amount > 0:
+                        if amount >= 999:
+                            building = self.simulator.entities.get_building(bid)
+                            amount = building.worker_capacity - building.assigned_workers if building else 0
                         ok, msg = self.simulator.entities.assign_worker_to_building(bid, amount)
                     else:
-                        ok, msg = self.simulator.entities.unassign_worker_from_building(bid, -amount)
-                    self.message = msg
-                    self.message_timer = 2.0
+                        if amount <= -999:
+                            building = self.simulator.entities.get_building(bid)
+                            amount = building.assigned_workers if building else 0
+                        else:
+                            amount = -amount
+                        ok, msg = self.simulator.entities.unassign_worker_from_building(bid, amount)
+                    if not ok and msg:
+                        self.message = msg
+                        self.message_timer = 2.0
                 return cb
-            
-            if b.worker_capacity > 0 and b.active and not b.destroyed:
+
+            if b.worker_capacity > 0 and not b.destroyed:
                 self.dynamic_buttons.append(MenuButton(panel_x + panel_w - btn_w * 2 - 10, btn_y, btn_w, btn_h, "-", callback=make_b_cb(b.id, -1), font_size=max(14, int(18*scale))))
                 self.dynamic_buttons.append(MenuButton(panel_x + panel_w - btn_w, btn_y, btn_w, btn_h, "+", callback=make_b_cb(b.id, 1), font_size=max(14, int(18*scale))))
             y += small_font.get_height() + 2
@@ -378,7 +405,7 @@ class ZoneViewScreen(Screen):
         # 底部提示
         if 'tiny' in self.fonts:
             hint = self.fonts['tiny'].render(
-                "点击区域查看详情 | TAB切换显示模式", True, (80, 100, 130)
+                "点击区域查看详情 | TAB切换模式 | Shift+5倍 | Ctrl=填满/清空", True, (80, 100, 130)
             )
             screen.blit(hint, (width - hint.get_width() - 15, height - 20))
 
@@ -545,6 +572,10 @@ class ZoneViewScreen(Screen):
                 if b.destroyed:
                     status = "已损毁"
                     color = (255, 80, 80)
+                elif b.under_construction:
+                    pct = b.build_progress / b.build_time * 100 if b.build_time > 0 else 100
+                    status = f"建造中 {pct:.0f}%"
+                    color = (100, 180, 255)
                 elif b.durability < b.max_durability * 0.3:
                     status = f"耐久:{b.durability:.0f}/{b.max_durability:.0f}"
                     color = (255, 180, 80)

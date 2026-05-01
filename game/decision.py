@@ -35,6 +35,7 @@ class Decision:
     worker_capacity: int = 0   # 最大工人容量
     per_worker_output: Dict[str, float] = field(default_factory=dict)  # 每工人产出/天
     consumption: Dict[str, float] = field(default_factory=dict)  # 建筑消耗/天
+    build_time: float = 3.0    # 建造所需天数（满工人时）
 
 
 # ── 预定义的决策列表 ─────────────────────────────────────────────
@@ -57,6 +58,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=5,
         per_worker_output={"algae_fuel": 3.0},
         consumption={},
+        build_time=2.0,
         effects={"algae_fuel": "最多+15/天(满5人)"},
     )
 
@@ -72,6 +74,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=5,
         per_worker_output={"food": 2.5},
         consumption={},
+        build_time=2.0,
         effects={"food": "最多+12.5/天(满5人)"},
     )
 
@@ -87,6 +90,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=5,
         per_worker_output={"iron": 2.0},
         consumption={},
+        build_time=3.0,
         effects={"iron": "最多+10/天(满5人)"},
     )
 
@@ -102,6 +106,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=5,
         per_worker_output={"copper": 1.5},
         consumption={},
+        build_time=3.0,
         effects={"copper": "最多+7.5/天(满5人)"},
     )
 
@@ -117,6 +122,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=3,
         per_worker_output={"rare_mineral": 0.5},
         consumption={},
+        build_time=4.0,
         effects={"rare_mineral": "最多+1.5/天(满3人)"},
     )
 
@@ -132,6 +138,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=8,
         per_worker_output={"food": 3.0},
         consumption={},
+        build_time=3.0,
         effects={"food": "最多+24/天(满8人)"},
     )
 
@@ -147,6 +154,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=5,
         per_worker_output={"fossil_fuel": 4.0},
         consumption={},
+        build_time=4.0,
         effects={"fossil_fuel": "最多+20/天(满5人)"},
     )
 
@@ -162,6 +170,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=3,
         per_worker_output={"electricity": 5.0},
         consumption={"algae_fuel": 3.0},
+        build_time=3.0,
         effects={"electricity": "最多+15kW(满3人)", "algae_fuel": "-3/天"},
     )
 
@@ -177,6 +186,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=3,
         per_worker_output={"electricity": 15.0},
         consumption={"fossil_fuel": 5.0},
+        build_time=5.0,
         effects={"electricity": "最多+45kW(满3人)", "fossil_fuel": "-5/天"},
     )
 
@@ -192,6 +202,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=0,  # 无需工人
         per_worker_output={},
         consumption={"electricity": 1.0},
+        build_time=5.0,
         effects={"zone_protection": "+20%", "electricity": "-1kW/天"},
     )
 
@@ -207,6 +218,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=5,
         per_worker_output={},  # 科研点由特殊逻辑产出
         consumption={"electricity": 8.0},
+        build_time=6.0,
         effects={"applied_research": "+2/天(满员)", "electricity": "-8kW/天"},
     )
 
@@ -222,6 +234,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=8,
         per_worker_output={},
         consumption={"electricity": 25.0, "food": 5.0},
+        build_time=10.0,
         effects={"theoretical_research": "+1/天(满员)", "electricity": "-25kW/天", "food": "-5/天"},
     )
 
@@ -237,6 +250,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=0,
         per_worker_output={},
         consumption={"electricity": 3.0},
+        build_time=8.0,
         effects={"zone_protection": "+50%", "electricity": "-3kW/天"},
     )
 
@@ -252,6 +266,7 @@ def _default_decisions() -> Dict[str, Decision]:
         worker_capacity=0,
         per_worker_output={},
         consumption={"electricity": 5.0},
+        build_time=7.0,
         effects={"radiation_resistance": "+50%", "electricity": "-5kW/天"},
     )
 
@@ -425,6 +440,10 @@ class DecisionManager:
             worker_capacity=decision.worker_capacity,
             per_worker_output=dict(decision.per_worker_output),
             consumption=dict(decision.consumption),
+            build_time=decision.build_time,
+            build_progress=0.0,
+            under_construction=True,
+            active=False,
         )
 
         entities.add_building(building)
@@ -434,8 +453,9 @@ class DecisionManager:
             zone_manager.add_building_to_zone(zone_id, building_id)
 
         zone_info = f"（区域 {zone_id}）" if zone_id >= 0 else ""
+        time_info = f"，预计{decision.build_time:.0f}天建成" if decision.build_time > 0 else ""
         worker_info = f"，需分配最多{decision.worker_capacity}名工人" if decision.worker_capacity > 0 else ""
-        return True, f"已建造 {building.name}{zone_info}{worker_info}", building_id
+        return True, f"开始建造 {building.name}{zone_info}{time_info}{worker_info}", building_id
 
     def _execute_policy(self, policy_id: str, entities) -> Tuple[bool, str, None]:
         """执行政策"""

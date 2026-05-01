@@ -214,8 +214,8 @@ class ThreeBodySimulation:
         stability = self._compute_stability(planet)
         
         # 基础温度 -273.15℃，根据接收到的热量增加
-        # 假设热量指数 total_intensity 达到 6.0 时，增加约 300度 -> 环境约为 20~30 度
-        temperature = -273.15 + (total_intensity * 50.0)
+        # 调整乘数使稳定纪元下全球平均约20°C
+        temperature = -273.15 + (total_intensity * 2000.0)
 
         return {
             "light_intensity": min(1.0, total_intensity / 8.0),

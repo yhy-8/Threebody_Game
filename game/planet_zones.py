@@ -207,7 +207,57 @@ class PlanetZoneManager:
                 "mass": s.get("mass", 1000.0),
             })
 
-        # 更新每个区域
+        # 计算每个区域的环境数据
+        self._compute_zone_environments(active_stars, game_days_elapsed)
+
+    def initialize_temperatures(self, stars_data: list, planet_position: np.ndarray):
+        """在游戏开始时将所有区域温度初始化为目标温度（跳过热惯性过渡）
+
+        Args:
+            stars_data: 恒星列表
+            planet_position: 行星当前位置
+        """
+        active_stars = []
+        for s in stars_data:
+            if s.get("is_planet", False):
+                continue
+            star_pos = s["position"] if isinstance(s["position"], np.ndarray) else np.array(s["position"])
+            direction = star_pos - planet_position
+            dist = np.linalg.norm(direction)
+            if dist < 1e-6:
+                continue
+            star_dir = direction / dist
+            active_stars.append({
+                "direction": star_dir,
+                "distance": dist,
+                "mass": s.get("mass", 1000.0),
+            })
+
+        for zone in self.zones:
+            normal = self._get_zone_normal(zone)
+            target_temp_contribution = 0.0
+            target_radiation = 0.0
+            target_light = 0.0
+
+            for star in active_stars:
+                cos_angle = np.dot(normal, star["direction"])
+                scatter_factor = 0.05 if cos_angle <= 0 else cos_angle
+                dist = star["distance"]
+                mass = star["mass"]
+
+                intensity = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
+                target_light += intensity
+                safe_dist = max(5.0, dist)
+                rad = mass * 200.0 / (safe_dist ** 2.5) * scatter_factor
+                target_radiation += rad
+                target_temp_contribution += intensity * 2000.0
+
+            zone.temperature = -273.15 + target_temp_contribution
+            zone.radiation = target_radiation
+            zone.light_intensity = min(1.0, target_light / 8.0)
+
+    def _compute_zone_environments(self, active_stars: list, game_days_elapsed: float):
+        """计算每个区域的环境数据（抽取为独立方法以便复用）"""
         for zone in self.zones:
             normal = self._get_zone_normal(zone)
 
@@ -216,12 +266,9 @@ class PlanetZoneManager:
             target_light = 0.0
 
             for star in active_stars:
-                # 法线与恒星方向的点积：>0 表示面朝恒星
                 cos_angle = np.dot(normal, star["direction"])
 
                 if cos_angle <= 0:
-                    # 此区域背对该恒星，不接收其直射辐射
-                    # 但仍然有少量散射辐射（约5%）
                     scatter_factor = 0.05
                 else:
                     scatter_factor = cos_angle
@@ -229,23 +276,20 @@ class PlanetZoneManager:
                 dist = star["distance"]
                 mass = star["mass"]
 
-                # 光照：质量和距离的平方反比
                 intensity = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
                 target_light += intensity
 
-                # 辐射：极近距离急剧攀升
                 safe_dist = max(5.0, dist)
                 rad = mass * 200.0 / (safe_dist ** 2.5) * scatter_factor
                 target_radiation += rad
 
-                # 温度贡献
-                target_temp_contribution += intensity * 50.0
+                target_temp_contribution += intensity * 2000.0
 
             # 目标温度
             target_temp = -273.15 + target_temp_contribution
 
             # 热惯性：缓慢趋近目标温度
-            inertia_factor = min(1.0, self.thermal_inertia * abs(dt * time_scale))
+            inertia_factor = min(1.0, self.thermal_inertia * abs(game_days_elapsed))
             zone.temperature += (target_temp - zone.temperature) * inertia_factor
             zone.radiation = target_radiation
             zone.light_intensity = min(1.0, target_light / 8.0)
