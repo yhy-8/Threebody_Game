@@ -179,6 +179,11 @@ class Building:
     durability: float = 100.0
     max_durability: float = 100.0
 
+    # 建造系统
+    build_time: float = 0.0          # 总建造天数（0=已完工）
+    build_progress: float = 0.0      # 当前建造进度
+    under_construction: bool = False  # 是否正在建造中
+
     # 抗性（可通过科技强化）
     heat_resistance: float = 60.0      # 温度超过此值时开始受损 (℃)
     cold_resistance: float = -80.0     # 温度低于此值时开始受损 (℃)
@@ -190,13 +195,13 @@ class Building:
 
     def get_output(self, automation_multiplier: float = 1.0) -> dict:
         """获取产出 — 由人力驱动，设施决定上限
-        
+
         产出 = min(assigned_workers, worker_capacity) × per_worker_output × 耐久度% × 自动化倍率
-        
+
         Args:
             automation_multiplier: 自动化科技带来的效率倍率
         """
-        if not self.active or self.destroyed:
+        if not self.active or self.destroyed or self.under_construction:
             return {}
 
         if self.worker_capacity <= 0:
@@ -215,7 +220,7 @@ class Building:
 
     def get_consumption(self) -> dict:
         """获取建筑消耗 — 只要建筑活跃就消耗（不依赖工人数）"""
-        if not self.active or self.destroyed:
+        if not self.active or self.destroyed or self.under_construction:
             return {}
         return dict(self.consumption)
 

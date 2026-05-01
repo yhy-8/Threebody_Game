@@ -2,6 +2,7 @@
 
 import os
 import json
+import shutil
 import glob
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
@@ -273,11 +274,9 @@ class SaveManager:
             for item in os.listdir(self.saves_dir):
                 item_path = os.path.join(self.saves_dir, item)
                 if os.path.isdir(item_path) and item.lower() == target_name:
-                    for filepath in glob.glob(os.path.join(item_path, "*.json")):
-                        os.remove(filepath)
-                        deleted_count += 1
+                    deleted_count += len(glob.glob(os.path.join(item_path, "*.json")))
                     try:
-                        os.rmdir(item_path)
+                        shutil.rmtree(item_path)
                     except OSError:
                         pass
                         

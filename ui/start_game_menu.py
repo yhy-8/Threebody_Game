@@ -459,10 +459,23 @@ class StartGameMenu(Screen):
         return False
 
     def _handle_load_universe_event(self, event) -> bool:
+        # 删除确认对话框
+        if self.confirm_delete:
+            if self.delete_confirm_btn and self.delete_confirm_btn.handle_event(event):
+                return True
+            if self.delete_cancel_btn and self.delete_cancel_btn.handle_event(event):
+                return True
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self.on_cancel_delete()
+                return True
+            return True  # 拦截所有
+
         # 底部工具栏
         if self.back_button and self.back_button.handle_event(event):
             return True
         if self.load_btn and self.load_btn.handle_event(event):
+            return True
+        if self.delete_btn and self.delete_btn.handle_event(event):
             return True
 
         # 滚轮滚动
