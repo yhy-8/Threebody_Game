@@ -106,6 +106,9 @@ class PlanetZoneManager:
         # 热惯性：区域温度不会瞬变，而是逐渐趋近目标温度
         self.thermal_inertia: float = 0.1      # 温度变化速率因子
 
+        # 宜居基准偏移：校准使恒纪元开局全球平均~20°C
+        self.habitable_offset: float = 0.0
+
         self._init_zones()
 
     def _init_zones(self):
@@ -250,9 +253,9 @@ class PlanetZoneManager:
                 safe_dist = max(5.0, dist)
                 rad = mass * 200.0 / (safe_dist ** 2.5) * scatter_factor
                 target_radiation += rad
-                target_temp_contribution += intensity * 2000.0
+                target_temp_contribution += intensity * 500.0
 
-            zone.temperature = -273.15 + target_temp_contribution
+            zone.temperature = -273.15 + target_temp_contribution + self.habitable_offset
             zone.radiation = target_radiation
             zone.light_intensity = min(1.0, target_light / 8.0)
 
@@ -283,10 +286,10 @@ class PlanetZoneManager:
                 rad = mass * 200.0 / (safe_dist ** 2.5) * scatter_factor
                 target_radiation += rad
 
-                target_temp_contribution += intensity * 2000.0
+                target_temp_contribution += intensity * 500.0
 
             # 目标温度
-            target_temp = -273.15 + target_temp_contribution
+            target_temp = -273.15 + target_temp_contribution + self.habitable_offset
 
             # 热惯性：缓慢趋近目标温度
             inertia_factor = min(1.0, self.thermal_inertia * abs(game_days_elapsed))

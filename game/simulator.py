@@ -238,7 +238,7 @@ class GameSimulator:
         self.environment.time_scale = max(0.1, min(10.0, scale))
 
     def _init_zone_temperatures(self):
-        """在游戏开始时将区域温度初始化为目标温度"""
+        """在游戏开始时校准宜居偏移并将区域温度初始化为目标温度"""
         stars_data = []
         planet_position = np.zeros(3)
         for star in self.environment.stars:
@@ -249,4 +249,14 @@ class GameSimulator:
             })
             if star.is_planet:
                 planet_position = star.position.copy()
+
+        # 先不带偏移计算一次，获取原始平均温度
+        self.planet_zones.habitable_offset = 0.0
+        self.planet_zones.initialize_temperatures(stars_data, planet_position)
+
+        # 校准偏移使全球平均温度为 20°C
+        avg = self.planet_zones.get_average_environment()
+        self.planet_zones.habitable_offset = 20.0 - avg["temperature"]
+
+        # 用校准后的偏移重新计算初始温度
         self.planet_zones.initialize_temperatures(stars_data, planet_position)

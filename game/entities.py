@@ -411,8 +411,9 @@ class EntityManager:
     # ── 人口分配管理 ──
     
     def get_total_building_workers(self) -> int:
-        """获取分配在所有建筑中的总工人数"""
-        return sum(b.assigned_workers for b in self.buildings if b.active and not b.destroyed)
+        """获取分配在所有建筑中的总工人数（含建造中的建筑）"""
+        return sum(b.assigned_workers for b in self.buildings
+                   if not b.destroyed and (b.active or b.under_construction))
 
     def get_idle_population(self) -> int:
         """获取当前闲置人口"""

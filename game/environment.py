@@ -30,28 +30,31 @@ class ThreeBodySimulation:
     def _initialize_stars(self):
         import random
         import math
-        """初始化三颗恒星和一颗行星 (采用随机层级稳定配置)"""
-        
-        # 内层双星：随机生成质量，并让它们互相绕转（质心在原点附近）
-        m1 = random.uniform(800.0, 1200.0)
-        m2 = random.uniform(600.0, 1000.0)
-        
-        # 随机分配一个双星间距
-        binary_dist = random.uniform(150.0, 250.0)
-        
+        """初始化三颗恒星和一颗行星 (采用随机层级稳定配置)
+
+        恒纪元开局：恒星参数范围收紧，确保初始温度宜居（全球平均~20°C）
+        """
+
+        # 内层双星：质量范围收紧
+        m1 = random.uniform(900.0, 1100.0)
+        m2 = random.uniform(700.0, 900.0)
+
+        # 双星间距范围收紧
+        binary_dist = random.uniform(180.0, 220.0)
+
         # 估算相对速度 v = sqrt(G(m1+m2)/r)
         v_rel = math.sqrt(self.G * (m1 + m2) / binary_dist)
-        
-        # 为了让它们绕质心转，根据质量分配距离和速度
+
+        # 根据质量分配距离和速度
         r1 = binary_dist * (m2 / (m1 + m2))
         r2 = binary_dist * (m1 / (m1 + m2))
-        
+
         v1 = v_rel * (m2 / (m1 + m2))
         v2 = v_rel * (m1 / (m1 + m2))
-        
+
         # 随机给双星轨道一个初始旋转相位
         angle = random.uniform(0, 2 * math.pi)
-        
+
         star1 = Star(
             mass=m1,
             position=np.array([r1 * math.cos(angle), 0.0, r1 * math.sin(angle)]),
@@ -70,27 +73,27 @@ class ThreeBodySimulation:
             is_planet=False
         )
 
-        # 外层第三恒星，绕双星质心旋转，距离远一点
-        m3 = random.uniform(400.0, 800.0)
-        outer_dist = random.uniform(600.0, 900.0)
+        # 外层第三恒星，距离范围收紧
+        m3 = random.uniform(500.0, 700.0)
+        outer_dist = random.uniform(650.0, 800.0)
         v_outer = math.sqrt(self.G * (m1 + m2 + m3) / outer_dist)
         outer_angle = random.uniform(0, 2 * math.pi)
-        
+
         star3 = Star(
             mass=m3,
-            position=np.array([outer_dist * math.cos(outer_angle), random.uniform(-50, 50), outer_dist * math.sin(outer_angle)]),
-            velocity=np.array([-v_outer * math.sin(outer_angle), random.uniform(-0.1, 0.1), v_outer * math.cos(outer_angle)]),
+            position=np.array([outer_dist * math.cos(outer_angle), random.uniform(-30, 30), outer_dist * math.sin(outer_angle)]),
+            velocity=np.array([-v_outer * math.sin(outer_angle), random.uniform(-0.05, 0.05), v_outer * math.cos(outer_angle)]),
             color=(255, random.randint(80, 120), random.randint(80, 120)),
             radius=random.uniform(18.0, 25.0),
             is_planet=False
         )
 
-        # 行星，在内层双星的引力影响范围外，围绕内侧双星运转
-        planet_dist = outer_dist * random.uniform(0.35, 0.55)
+        # 行星，围绕内侧双星运转，距离范围收紧以确保宜居温度
+        planet_dist = outer_dist * random.uniform(0.4, 0.5)
         p_angle = random.uniform(0, 2 * math.pi)
-        # 略微调整行星速度，以产生一个非完美的圆轨道
-        v_planet = math.sqrt(self.G * (m1 + m2) / planet_dist) * random.uniform(0.8, 1.2)
-        
+        # 接近圆轨道，微小偏差保持长期稳定性
+        v_planet = math.sqrt(self.G * (m1 + m2) / planet_dist) * random.uniform(0.9, 1.1)
+
         planet = Star(
             mass=1.0,
             position=np.array([planet_dist * math.cos(p_angle), 0.0, planet_dist * math.sin(p_angle)]),
@@ -215,7 +218,7 @@ class ThreeBodySimulation:
         
         # 基础温度 -273.15℃，根据接收到的热量增加
         # 调整乘数使稳定纪元下全球平均约20°C
-        temperature = -273.15 + (total_intensity * 2000.0)
+        temperature = -273.15 + (total_intensity * 7000.0)
 
         return {
             "light_intensity": min(1.0, total_intensity / 8.0),
