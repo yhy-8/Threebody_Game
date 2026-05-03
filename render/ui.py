@@ -70,14 +70,15 @@ class Button(UIElement):
         text: str,
         width: int = 120,
         height: int = 40,
-        callback: Optional[Callable] = None
+        callback: Optional[Callable] = None,
+        font_size: int = 28
     ):
         super().__init__(x, y, width, height)
         self.text = text
         self.callback = callback
         self.hovered = False
         self.clicked = False
-        self.font = get_font(28)
+        self.font = get_font(font_size)
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -203,8 +204,11 @@ class Compass(UIElement):
     def __init__(self, x: int, y: int, size: int = 140):
         super().__init__(x, y, size, size + 70)
         self.size = size
-        self.font = get_font(16)
-        self.font_small = get_font(13)
+        # 字体大小按比例缩放（基准: size=140 -> font=16, font_small=13）
+        font_size = max(12, int(size * 16 / 140))
+        font_small_size = max(10, int(size * 13 / 140))
+        self.font = get_font(font_size)
+        self.font_small = get_font(font_small_size)
         self._locked = False
         self._orbit_distance = 0.0
 

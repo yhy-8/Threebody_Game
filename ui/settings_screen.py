@@ -205,16 +205,17 @@ class SettingCheckbox:
         pygame.draw.rect(screen, bg_color, checkbox_rect, border_radius=4)
         pygame.draw.rect(screen, (120, 140, 180), checkbox_rect, 2, border_radius=4)
 
-        # 勾选标记
+        # 勾选标记（按 checkbox_size 比例缩放，基准: size=18）
         if self.checked:
-            # 绘制对勾
             check_color = (200, 220, 255)
+            s = self.checkbox_size
             points = [
-                (checkbox_rect.x + 5, checkbox_rect.centery),
-                (checkbox_rect.x + 10, checkbox_rect.centery + 5),
-                (checkbox_rect.x + 19, checkbox_rect.centery - 6)
+                (checkbox_rect.x + int(s * 0.25), checkbox_rect.centery),
+                (checkbox_rect.x + int(s * 0.45), checkbox_rect.centery + int(s * 0.25)),
+                (checkbox_rect.x + int(s * 0.8), checkbox_rect.centery - int(s * 0.3))
             ]
-            pygame.draw.lines(screen, check_color, False, points, 3)
+            line_w = max(2, int(s * 3 / 18))
+            pygame.draw.lines(screen, check_color, False, points, line_w)
 
         # 绘制标签
         label_surf = self.font.render(self.label, True, (200, 210, 240))

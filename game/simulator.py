@@ -97,17 +97,30 @@ class GameSimulator:
         basic_output = (pop / 500.0) * game_days_dt
         self.tech_tree.produce_research(RESEARCH_BASIC, basic_output)
 
-        # 应用科研：每座活跃的实验室每天产出2点
+        # 应用科研：每座活跃的实验室每天产出2点（受工人饱和度和耐久度影响）
         labs = self.entities.get_buildings_by_type("laboratory")
         for lab in labs:
-            efficiency = lab.durability / lab.max_durability if lab.max_durability > 0 else 0
+            durability_ratio = lab.durability / lab.max_durability if lab.max_durability > 0 else 0
+            worker_ratio = lab.get_saturation()
+            efficiency = durability_ratio * worker_ratio
             self.tech_tree.produce_research(RESEARCH_APPLIED, 2.0 * efficiency * game_days_dt)
 
-        # 理论科研：每座活跃的科学院每天产出1点
+        # 理论科研：每座活跃的科学院每天产出1点（受工人饱和度和耐久度影响）
         academies = self.entities.get_buildings_by_type("academy")
         for academy in academies:
-            efficiency = academy.durability / academy.max_durability if academy.max_durability > 0 else 0
+            durability_ratio = academy.durability / academy.max_durability if academy.max_durability > 0 else 0
+            worker_ratio = academy.get_saturation()
+            efficiency = durability_ratio * worker_ratio
             self.tech_tree.produce_research(RESEARCH_THEORETICAL, 1.0 * efficiency * game_days_dt)
+
+        # 检查是否有研究刚完成并触发特殊效果（如自动化）
+        # _check_research_completion 在 produce_research 内部已调用
+        # 这里处理完成后的附加效果
+        if not self.tech_tree.researching_tech_id:
+            # 如果自动化科技刚刚通过研究完成解锁
+            auto_node = self.tech_tree.get_node("automation")
+            if auto_node and auto_node.unlocked and self.entities.population.automation_multiplier < 1.3:
+                self.entities.population.automation_multiplier = 1.3
 
     def get_state(self) -> Dict[str, Any]:
         """获取完整游戏状态"""

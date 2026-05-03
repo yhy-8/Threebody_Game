@@ -23,6 +23,7 @@ class TechNode:
     prerequisites: List[str] = field(default_factory=list)
 
     unlocked: bool = False
+    researching: bool = False  # 是否正在研究中
 
     # 科技树布局信息
     tier: int = 0             # 层级（从左到右：0=最左）
@@ -72,6 +73,10 @@ class TechTree:
             RESEARCH_APPLIED: 0.0,
             RESEARCH_THEORETICAL: 0.0,
         }
+        # 当前正在研究的科技ID（一次只能研究一个）
+        self.researching_tech_id: Optional[str] = None
+        # 当前研究已投入的各类科技点数 {point_type: accumulated}
+        self.research_progress: Dict[str, float] = {}
         self._init_default_techs()
 
     def _init_default_techs(self):
@@ -307,12 +312,41 @@ class TechTree:
         return False
 
     def produce_research(self, point_type: str, amount: float):
-        """产出科技点数（由研究建筑调用）"""
-        if point_type in self.research_points:
-            self.research_points[point_type] += amount
+        """产出科技点数（由研究建筑调用）
+        
+        如果有正在研究的科技且需要该类型点数，优先注入研究进度，
+        剩余部分才进入点数池。
+        """
+        if point_type not in self.research_points:
+            return
 
-    def can_unlock(self, node_id: str, entities) -> Tuple[bool, str]:
-        """判定目标科技是否满足解锁条件，返回(布尔值，不满足条件时的原因)"""
+        remaining = amount
+
+        # 如果有正在研究的科技，优先注入
+        if self.researching_tech_id:
+            node = self.nodes.get(self.researching_tech_id)
+            if node and node.researching:
+                needed = node.research_cost.get(point_type, 0)
+                already = self.research_progress.get(point_type, 0.0)
+                gap = max(0.0, needed - already)
+                if gap > 0 and remaining > 0:
+                    inject = min(remaining, gap)
+                    self.research_progress[point_type] = already + inject
+                    remaining -= inject
+
+                    # 检查是否所有类型的需求都已满足
+                    self._check_research_completion()
+
+        # 剩余进入点数池
+        if remaining > 0:
+            self.research_points[point_type] += remaining
+
+    def can_start_research(self, node_id: str, entities) -> Tuple[bool, str]:
+        """判定目标科技是否可以开始研究
+        
+        检查：前置科技、资源消耗、人口要求。
+        不检查科技点数（点数在研究过程中逐渐投入）。
+        """
         node = self.nodes.get(node_id)
         if not node:
             return False, "找不到该科技节点"
@@ -320,19 +354,20 @@ class TechTree:
         if node.unlocked:
             return False, "该科技已经解锁完毕"
 
+        if node.researching:
+            return False, "该科技正在研究中"
+
+        if self.researching_tech_id:
+            current = self.nodes.get(self.researching_tech_id)
+            current_name = current.name if current else self.researching_tech_id
+            return False, f"正在研究「{current_name}」，一次只能研究一个科技"
+
         # 检查前置科技
         for pre_id in node.prerequisites:
             pre_node = self.nodes.get(pre_id)
             if not pre_node or not pre_node.unlocked:
                 pre_name = pre_node.name if pre_node else pre_id
                 return False, f"前置科技「{pre_name}」尚未研发完成"
-
-        # 检查科技点数
-        for rtype, required in node.research_cost.items():
-            current = self.research_points.get(rtype, 0)
-            if current < required:
-                type_name = RESEARCH_NAMES.get(rtype, rtype)
-                return False, f"{type_name}点数不足（需求：{required}，当前：{int(current)}）"
 
         # 检查资源消耗（只检查是否足够，不扣除）
         for res_name, required in node.resource_cost.items():
@@ -350,8 +385,99 @@ class TechTree:
 
         return True, ""
 
+    def can_unlock(self, node_id: str, entities) -> Tuple[bool, str]:
+        """判定目标科技是否满足解锁条件（保留用于向后兼容）"""
+        can, reason = self.can_start_research(node_id, entities)
+        if not can:
+            return False, reason
+        # 额外检查科技点数是否足够（立即解锁模式）
+        node = self.nodes.get(node_id)
+        for rtype, required in node.research_cost.items():
+            current = self.research_points.get(rtype, 0)
+            if current < required:
+                type_name = RESEARCH_NAMES.get(rtype, rtype)
+                return False, f"{type_name}点数不足（需求：{required}，当前：{int(current)}）"
+        return True, ""
+
+    def start_research(self, node_id: str, entities) -> Tuple[bool, str]:
+        """开始研究科技
+        
+        立即扣除物质资源（iron, copper等），但不扣除科技点数。
+        科技点数在研究过程中由科技建筑逐渐注入。
+        """
+        can, reason = self.can_start_research(node_id, entities)
+        if not can:
+            return False, reason
+
+        node = self.nodes.get(node_id)
+
+        # 扣除资源
+        for res_name, cost in node.resource_cost.items():
+            entities.consume_resource(res_name, cost)
+
+        # 设置研究状态
+        node.researching = True
+        self.researching_tech_id = node_id
+        self.research_progress = {rtype: 0.0 for rtype in node.research_cost}
+
+        return True, f"开始研究「{node.name}」"
+
+    def cancel_research(self) -> Tuple[bool, str]:
+        """取消当前研究
+        
+        已投入的科技点数退回到点数池，但物质资源不退回。
+        """
+        if not self.researching_tech_id:
+            return False, "当前没有正在进行的研究"
+
+        node = self.nodes.get(self.researching_tech_id)
+        if not node:
+            self.researching_tech_id = None
+            self.research_progress.clear()
+            return False, "研究节点不存在"
+
+        # 退回已投入的科技点数
+        for rtype, amount in self.research_progress.items():
+            if amount > 0 and rtype in self.research_points:
+                self.research_points[rtype] += amount
+
+        name = node.name
+        node.researching = False
+        self.researching_tech_id = None
+        self.research_progress.clear()
+
+        return True, f"已取消研究「{name}」，科技点数已退回"
+
+    def _check_research_completion(self):
+        """检查当前研究是否已完成"""
+        if not self.researching_tech_id:
+            return
+
+        node = self.nodes.get(self.researching_tech_id)
+        if not node:
+            return
+
+        # 检查所有类型的需求是否已满足
+        for rtype, required in node.research_cost.items():
+            accumulated = self.research_progress.get(rtype, 0.0)
+            if accumulated < required:
+                return  # 还没完成
+
+        # 所有需求满足，完成研究
+        self._complete_research(node)
+
+    def _complete_research(self, node: TechNode):
+        """完成研究，解锁科技"""
+        node.unlocked = True
+        node.researching = False
+        self.researching_tech_id = None
+        self.research_progress.clear()
+
+        # 如果解锁了自动化科技，提升全局自动化倍率
+        # （需要通过 entities 设置，这里仅标记，由 simulator 处理）
+
     def unlock_tech(self, node_id: str, entities):
-        """解锁科技（扣除科技点数和资源，由上层先调can_unlock确保可行）"""
+        """立即解锁科技（向后兼容，扣除科技点数和资源）"""
         node = self.nodes.get(node_id)
         if not node:
             return
@@ -366,10 +492,52 @@ class TechTree:
             entities.consume_resource(res_name, cost)
 
         node.unlocked = True
+        node.researching = False
 
         # 如果解锁了自动化科技，提升全局自动化倍率
         if node_id == "automation":
             entities.population.automation_multiplier += 0.3
+
+    def get_research_progress(self) -> Optional[Dict]:
+        """获取当前研究进度信息
+        
+        Returns:
+            None 如果没有进行中的研究，否则返回:
+            {
+                'tech_id': str,
+                'tech_name': str,
+                'progress': {point_type: (current, required)},
+                'overall_percent': float  # 0.0 ~ 1.0
+            }
+        """
+        if not self.researching_tech_id:
+            return None
+
+        node = self.nodes.get(self.researching_tech_id)
+        if not node:
+            return None
+
+        progress = {}
+        total_current = 0.0
+        total_required = 0.0
+        for rtype, required in node.research_cost.items():
+            current = self.research_progress.get(rtype, 0.0)
+            progress[rtype] = (current, float(required))
+            total_current += current
+            total_required += required
+
+        overall = total_current / max(total_required, 0.001)
+
+        return {
+            'tech_id': self.researching_tech_id,
+            'tech_name': node.name,
+            'progress': progress,
+            'overall_percent': min(1.0, overall),
+        }
+
+    def is_researching(self, node_id: str) -> bool:
+        """检查指定科技是否正在研究中"""
+        return self.researching_tech_id == node_id
 
     def get_prerequisites_for(self, node_id: str) -> List[str]:
         """获取某科技的前置科技ID列表"""
@@ -385,9 +553,9 @@ class TechTree:
         return deps
 
     def is_researchable(self, node_id: str) -> bool:
-        """判断科技是否可被研发（前置已解锁，自身未解锁）"""
+        """判断科技是否可被研发（前置已解锁，自身未解锁且未在研究中）"""
         node = self.nodes.get(node_id)
-        if not node or node.unlocked:
+        if not node or node.unlocked or node.researching:
             return False
         for pre_id in node.prerequisites:
             pre = self.nodes.get(pre_id)
@@ -411,17 +579,22 @@ class TechTree:
         """获取当前科技树状态摘录"""
         return {
             "unlocked": [k for k, v in self.nodes.items() if v.unlocked],
+            "researching": [k for k, v in self.nodes.items() if v.researching],
             "research_points": dict(self.research_points),
+            "researching_tech_id": self.researching_tech_id,
+            "research_progress": dict(self.research_progress),
         }
 
     def load_state(self, data: dict):
         """载入科技状态"""
         if isinstance(data, dict):
             unlocked_nodes = data.get("unlocked", [])
+            researching_nodes = data.get("researching", [])
             points = data.get("research_points", {})
         elif isinstance(data, list):
             # 向后兼容旧版只保存unlocked列表的格式
             unlocked_nodes = data
+            researching_nodes = []
             points = {}
         else:
             return
@@ -430,6 +603,14 @@ class TechTree:
             if node_id in self.nodes:
                 self.nodes[node_id].unlocked = True
 
+        for node_id in researching_nodes:
+            if node_id in self.nodes:
+                self.nodes[node_id].researching = True
+
         for rtype, amount in points.items():
             if rtype in self.research_points:
                 self.research_points[rtype] = amount
+
+        # 恢复研究进度
+        self.researching_tech_id = data.get("researching_tech_id", None)
+        self.research_progress = data.get("research_progress", {})

@@ -22,12 +22,14 @@ class TechTreeScreen(Screen):
     _BASE_MARGIN_TOP = 100
 
     # 节点颜色
-    COLOR_LOCKED = (60, 60, 80)           # 未满足前置
-    COLOR_RESEARCHABLE = (40, 80, 140)    # 可研发
-    COLOR_UNLOCKED = (30, 100, 60)        # 已解锁
+    COLOR_LOCKED = (60, 60, 80)
+    COLOR_RESEARCHABLE = (40, 80, 140)
+    COLOR_UNLOCKED = (30, 100, 60)
+    COLOR_RESEARCHING = (120, 80, 20)       # 研究中
     COLOR_BORDER_LOCKED = (80, 80, 100)
     COLOR_BORDER_RESEARCHABLE = (100, 180, 255)
     COLOR_BORDER_UNLOCKED = (100, 255, 130)
+    COLOR_BORDER_RESEARCHING = (255, 200, 80)  # 研究中边框
 
     def __init__(self, screen_manager, screen: pygame.Surface):
         super().__init__(screen_manager, screen)
@@ -183,7 +185,7 @@ class TechTreeScreen(Screen):
         return False
 
     def _try_research(self, node_id: str):
-        """尝试研发科技"""
+        """尝试研发科技（时间制：开始研究而非立即解锁）"""
         if not self.simulator:
             return
         tech_tree = self.simulator.tech_tree
@@ -196,15 +198,20 @@ class TechTreeScreen(Screen):
             self.message_timer = 2.0
             return
 
-        can_unlock, reason = tech_tree.can_unlock(node_id, self.simulator.entities)
+        # 如果点击的是正在研究的科技，取消研究
+        if node.researching:
+            ok, msg = tech_tree.cancel_research()
+            self.message = msg
+            self.message_timer = 3.0
+            return
 
-        if can_unlock:
-            tech_tree.unlock_tech(node_id, self.simulator.entities)
-            self.message = f"✓ 成功研发科技：{node.name}"
-            self.message_timer = 3.0
+        # 尝试开始研究
+        ok, msg = tech_tree.start_research(node_id, self.simulator.entities)
+        if ok:
+            self.message = f"⏳ {msg}"
         else:
-            self.message = f"✗ 无法研发：{reason}"
-            self.message_timer = 3.0
+            self.message = f"✗ 无法研发：{msg}"
+        self.message_timer = 3.0
 
     def render(self, screen: pygame.Surface):
         """界面渲染"""
@@ -316,6 +323,10 @@ class TechTreeScreen(Screen):
                 bg_color = self.COLOR_UNLOCKED
                 border_color = self.COLOR_BORDER_UNLOCKED
                 text_color = (200, 255, 200)
+            elif node.researching:
+                bg_color = self.COLOR_RESEARCHING
+                border_color = self.COLOR_BORDER_RESEARCHING
+                text_color = (255, 220, 150)
             elif tech_tree.is_researchable(node_id):
                 bg_color = self.COLOR_RESEARCHABLE
                 border_color = self.COLOR_BORDER_RESEARCHABLE
@@ -336,16 +347,36 @@ class TechTreeScreen(Screen):
                 check = small_font.render("✓", True, (100, 255, 100))
                 screen.blit(check, (rect.right - 18, rect.top + 4))
 
+            # 研究中进度条
+            if node.researching:
+                progress_info = tech_tree.get_research_progress()
+                if progress_info:
+                    pct = progress_info['overall_percent']
+                    bar_margin = 4
+                    bar_h = max(4, int(6 * ui_scale))
+                    bar_rect = pygame.Rect(rect.x + bar_margin, rect.bottom - bar_h - bar_margin,
+                                           rect.width - bar_margin * 2, bar_h)
+                    pygame.draw.rect(screen, (40, 40, 40), bar_rect, border_radius=2)
+                    fill_w = int(bar_rect.width * pct)
+                    if fill_w > 0:
+                        fill_rect = pygame.Rect(bar_rect.x, bar_rect.y, fill_w, bar_h)
+                        pygame.draw.rect(screen, (255, 200, 80), fill_rect, border_radius=2)
+                    # 百分比文本
+                    pct_text = small_font.render(f"{int(pct*100)}%", True, (255, 220, 100))
+                    screen.blit(pct_text, (rect.right - 18 - pct_text.get_width(), rect.top + 4))
+
             # 名称
             name_surf = node_font.render(node.name, True, text_color)
-            name_rect = name_surf.get_rect(center=(rect.centerx, rect.top + rect.height * 0.35))
+            name_y = rect.top + rect.height * 0.25 if node.researching else rect.top + rect.height * 0.35
+            name_rect = name_surf.get_rect(center=(rect.centerx, int(name_y)))
             screen.blit(name_surf, name_rect)
 
             # 分类标签
             cat_text = {"basic": "基础", "applied": "应用", "theoretical": "理论"}.get(node.category, "")
             cat_color = RESEARCH_COLORS.get(node.category, (150, 150, 150))
             cat_surf = small_font.render(cat_text, True, cat_color)
-            cat_rect = cat_surf.get_rect(center=(rect.centerx, rect.bottom - rect.height * 0.25))
+            cat_y = rect.bottom - rect.height * 0.35 if node.researching else rect.bottom - rect.height * 0.25
+            cat_rect = cat_surf.get_rect(center=(rect.centerx, int(cat_y)))
             screen.blit(cat_surf, cat_rect)
 
     def _draw_tooltip(self, screen: pygame.Surface, tech_tree, ui_scale: float):
@@ -406,6 +437,19 @@ class TechTreeScreen(Screen):
         if node.unlocked:
             lines.append(("", None, small_font))
             lines.append(("★ 已解锁", (100, 255, 100), tip_font))
+        elif node.researching:
+            lines.append(("", None, small_font))
+            progress_info = tech_tree.get_research_progress()
+            if progress_info:
+                pct = progress_info['overall_percent']
+                lines.append((f"⏳ 研究中 ({int(pct*100)}%)", (255, 200, 80), tip_font))
+                lines.append(("─ 研究进度 ─", (200, 200, 220), small_font))
+                for rtype, (cur, req) in progress_info['progress'].items():
+                    name = RESEARCH_NAMES.get(rtype, rtype)
+                    color = RESEARCH_COLORS.get(rtype, (200, 200, 200))
+                    lines.append((f"  {name}: {int(cur)}/{int(req)}", color, small_font))
+            lines.append(("", None, small_font))
+            lines.append(("点击取消研究", (255, 150, 100), small_font))
 
         # 计算面板尺寸
         max_line_width = 0
@@ -442,17 +486,24 @@ class TechTreeScreen(Screen):
             ty += line_height
 
     def _draw_research_points(self, screen: pygame.Surface, tech_tree, ui_scale: float):
-        """绘制顶部科技点数显示"""
+        """绘制顶部科技点数显示 + 当前研究进度"""
         width = screen.get_width()
         font_size = max(14, int(18 * ui_scale))
         rp_font = get_font(font_size)
+        small_font = get_font(max(12, int(14 * ui_scale)))
 
         x_pos = width - max(200, int(320 * ui_scale))
         y_pos = max(15, int(20 * ui_scale))
 
-        # 背景
+        # 计算背景高度（动态：有研究时更高）
+        progress_info = tech_tree.get_research_progress()
+        extra_lines = 0
+        if progress_info:
+            extra_lines = 2 + len(progress_info['progress'])  # 标题+进度条+各类型
+
         bg_w = max(190, int(300 * ui_scale))
-        bg_h = max(65, int(85 * ui_scale))
+        base_h = max(65, int(85 * ui_scale))
+        bg_h = base_h + extra_lines * (font_size + 4)
         bg_rect = pygame.Rect(x_pos - 10, y_pos - 5, bg_w, bg_h)
         bg_surf = pygame.Surface((bg_w, bg_h), pygame.SRCALPHA)
         bg_surf.fill((15, 20, 35, 200))
@@ -468,3 +519,38 @@ class TechTreeScreen(Screen):
             surf = rp_font.render(text, True, color)
             screen.blit(surf, (x_pos, y_pos))
             y_pos += font_size + 6
+
+        # 显示当前研究进度
+        if progress_info:
+            y_pos += 4
+            # 分隔线
+            pygame.draw.line(screen, (60, 80, 120),
+                             (x_pos, y_pos), (x_pos + bg_w - 30, y_pos), 1)
+            y_pos += 6
+
+            # 研究名称和百分比
+            pct = progress_info['overall_percent']
+            header = f"⏳ {progress_info['tech_name']} ({int(pct*100)}%)"
+            header_surf = small_font.render(header, True, (255, 200, 80))
+            screen.blit(header_surf, (x_pos, y_pos))
+            y_pos += font_size + 2
+
+            # 进度条
+            bar_w = bg_w - 30
+            bar_h = max(6, int(8 * ui_scale))
+            bar_rect = pygame.Rect(x_pos, y_pos, bar_w, bar_h)
+            pygame.draw.rect(screen, (40, 40, 60), bar_rect, border_radius=3)
+            fill_w = int(bar_w * pct)
+            if fill_w > 0:
+                fill_rect = pygame.Rect(x_pos, y_pos, fill_w, bar_h)
+                pygame.draw.rect(screen, (255, 180, 50), fill_rect, border_radius=3)
+            y_pos += bar_h + 4
+
+            # 各类型进度
+            for rtype, (cur, req) in progress_info['progress'].items():
+                name = RESEARCH_NAMES.get(rtype, rtype)
+                color = RESEARCH_COLORS.get(rtype, (180, 180, 180))
+                detail = f"  {name}: {int(cur)}/{int(req)}"
+                detail_surf = small_font.render(detail, True, color)
+                screen.blit(detail_surf, (x_pos, y_pos))
+                y_pos += font_size + 2
