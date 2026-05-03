@@ -251,7 +251,15 @@ class GameSimulator:
         self.environment.time_scale = max(0.1, min(10.0, scale))
 
     def _init_zone_temperatures(self):
-        """在游戏开始时校准宜居偏移并将区域温度初始化为目标温度"""
+        """在游戏开始时校准 light_to_temp_scale 并将区域温度初始化
+
+        校准思路：
+        1. 先用默认 scale=500 计算一次全球平均温度
+        2. 根据 target_temp=20°C 反推正确的 light_to_temp_scale
+        3. 用校准后的系数重新初始化
+        
+        这样温度完全由光照驱动，而非人为偏移。
+        """
         stars_data = []
         planet_position = np.zeros(3)
         for star in self.environment.stars:
@@ -263,13 +271,37 @@ class GameSimulator:
             if star.is_planet:
                 planet_position = star.position.copy()
 
-        # 先不带偏移计算一次，获取原始平均温度
-        self.planet_zones.habitable_offset = 0.0
+        # 第一轮：用默认 scale 计算，获取原始平均温度和平均光照
+        self.planet_zones.light_to_temp_scale = 500.0
         self.planet_zones.initialize_temperatures(stars_data, planet_position)
 
-        # 校准偏移使全球平均温度为 20°C
-        avg = self.planet_zones.get_average_environment()
-        self.planet_zones.habitable_offset = 20.0 - avg["temperature"]
+        # 计算全球加权平均光照和地形修正（用于校准 scale）
+        from game.planet_zones import TERRAIN_THERMAL_MODIFIER
+        total_weight = 0.0
+        avg_raw_light = 0.0
+        avg_terrain_mod = 0.0
+        for zone in self.planet_zones.zones:
+            w = zone.area_weight
+            terrain_mod = TERRAIN_THERMAL_MODIFIER.get(zone.terrain_type, 0.0)
+            # 反算光照：temp = base + light * 500 + terrain_mod
+            raw_light = (zone.temperature - self.planet_zones.base_temperature - terrain_mod) / 500.0
+            avg_raw_light += raw_light * w
+            avg_terrain_mod += terrain_mod * w
+            total_weight += w
 
-        # 用校准后的偏移重新计算初始温度
+        if total_weight > 0:
+            avg_raw_light /= total_weight
+            avg_terrain_mod /= total_weight
+
+        # 校准：target = base + avg_light * scale + avg_terrain_mod
+        # => scale = (target - base - avg_terrain_mod) / avg_light
+        target_avg_temp = 20.0
+        if avg_raw_light > 1e-6:
+            self.planet_zones.light_to_temp_scale = (
+                (target_avg_temp - self.planet_zones.base_temperature - avg_terrain_mod) / avg_raw_light
+            )
+        else:
+            self.planet_zones.light_to_temp_scale = 500.0
+
+        # 第二轮：用校准后的系数重新初始化
         self.planet_zones.initialize_temperatures(stars_data, planet_position)

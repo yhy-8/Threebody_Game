@@ -23,6 +23,16 @@ TERRAIN_RESOURCE_TABLE: Dict[str, Dict[str, float]] = {
     "丘陵":  {"iron": 0.6, "copper": 0.4, "rare_mineral": 0.10, "fertility": 0.5, "algae": 0.2},
 }
 
+# 地形对温度的修正（°C）：高原/山地更冷，盆地更暖，峡谷居中
+TERRAIN_THERMAL_MODIFIER: Dict[str, float] = {
+    "平原":  0.0,
+    "高原": -6.0,    # 海拔高，温度低
+    "山地": -10.0,   # 海拔最高，温度最低
+    "峡谷": -2.0,    # 略低于平原
+    "盆地":  3.0,    # 低洼蓄热
+    "丘陵": -3.0,    # 略高于平原
+}
+
 
 def _calc_work_efficiency(temperature: float) -> float:
     """根据区域温度计算工作效率
@@ -84,11 +94,9 @@ class PlanetZoneManager:
     实时计算该区域接收到的辐射、热量和光照。
 
     物理模型：
-    - 区域法线 = sphere_normal(lat, lon + rotation_angle)
-    - 恒星方向 = normalize(star_pos - planet_pos)
-    - 区域光照 = max(0, dot(normal, star_dir)) * luminosity / dist²
-    - 辐射使用 dist^2.5 衰减
-    - 温度 = -273.15 + sum(各恒星贡献)
+    - 光照：受恒星方向×法线夹角影响（日照角度），距离平方反比衰减
+    - 温度：由光照强度驱动，受地形修正，具有热惯性（缓慢趋近目标温度）
+    - 辐射：纯距离函数，不受地形/朝向影响，瞬间变化
     """
 
     LATITUDE_DIVISIONS = 6     # 纬度分6带 (-90~-60, -60~-30, ..., 60~90)
@@ -106,8 +114,10 @@ class PlanetZoneManager:
         # 热惯性：区域温度不会瞬变，而是逐渐趋近目标温度
         self.thermal_inertia: float = 0.1      # 温度变化速率因子
 
-        # 宜居基准偏移：校准使恒纪元开局全球平均~20°C
-        self.habitable_offset: float = 0.0
+        # 平衡温度系数：将光照强度转换为温度的缩放因子
+        # 在 _init_calibration() 中根据实际初始光照计算
+        self.light_to_temp_scale: float = 500.0   # 初始值，会被校准覆盖
+        self.base_temperature: float = -273.15    # 无光照时的基础温度（宇宙背景）
 
         self._init_zones()
 
@@ -194,21 +204,7 @@ class PlanetZoneManager:
         self.rotation_angle %= 360.0
 
         # 收集所有恒星数据（排除行星自身）
-        active_stars = []
-        for s in stars_data:
-            if s.get("is_planet", False):
-                continue
-            star_pos = s["position"] if isinstance(s["position"], np.ndarray) else np.array(s["position"])
-            direction = star_pos - planet_position
-            dist = np.linalg.norm(direction)
-            if dist < 1e-6:
-                continue
-            star_dir = direction / dist
-            active_stars.append({
-                "direction": star_dir,
-                "distance": dist,
-                "mass": s.get("mass", 1000.0),
-            })
+        active_stars = self._collect_active_stars(stars_data, planet_position)
 
         # 计算每个区域的环境数据
         self._compute_zone_environments(active_stars, game_days_elapsed)
@@ -220,6 +216,37 @@ class PlanetZoneManager:
             stars_data: 恒星列表
             planet_position: 行星当前位置
         """
+        active_stars = self._collect_active_stars(stars_data, planet_position)
+
+        for zone in self.zones:
+            normal = self._get_zone_normal(zone)
+            target_light = 0.0
+            target_radiation = 0.0
+
+            for star in active_stars:
+                cos_angle = np.dot(normal, star["direction"])
+                dist = star["distance"]
+                mass = star["mass"]
+
+                # 光照：受朝向影响
+                scatter_factor = 0.05 if cos_angle <= 0 else cos_angle
+                intensity = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
+                target_light += intensity
+
+                # 辐射：纯距离函数，不受朝向影响
+                safe_dist = max(5.0, dist)
+                rad = mass * 200.0 / (safe_dist ** 2.5)
+                target_radiation += rad
+
+            terrain_mod = TERRAIN_THERMAL_MODIFIER.get(zone.terrain_type, 0.0)
+            target_temp = self.base_temperature + target_light * self.light_to_temp_scale + terrain_mod
+
+            zone.temperature = target_temp
+            zone.radiation = target_radiation
+            zone.light_intensity = min(1.0, target_light / 8.0)
+
+    def _collect_active_stars(self, stars_data: list, planet_position: np.ndarray) -> list:
+        """从恒星数据中提取有效恒星（排除行星自身）并计算方向和距离"""
         active_stars = []
         for s in stars_data:
             if s.get("is_planet", False):
@@ -235,66 +262,52 @@ class PlanetZoneManager:
                 "distance": dist,
                 "mass": s.get("mass", 1000.0),
             })
+        return active_stars
 
+    def _compute_zone_environments(self, active_stars: list, game_days_elapsed: float):
+        """计算每个区域的环境数据
+
+        物理模型：
+        - 光照强度：受恒星方向和距离影响，受法线夹角影响
+        - 温度：由光照强度驱动，受地形修正，具有热惯性（缓慢变化）
+        - 辐射：纯距离函数，不受地形/朝向影响，瞬间响应
+        """
         for zone in self.zones:
             normal = self._get_zone_normal(zone)
-            target_temp_contribution = 0.0
-            target_radiation = 0.0
+
             target_light = 0.0
+            target_radiation = 0.0
 
             for star in active_stars:
                 cos_angle = np.dot(normal, star["direction"])
-                scatter_factor = 0.05 if cos_angle <= 0 else cos_angle
                 dist = star["distance"]
                 mass = star["mass"]
 
-                intensity = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
-                target_light += intensity
-                safe_dist = max(5.0, dist)
-                rad = mass * 200.0 / (safe_dist ** 2.5) * scatter_factor
-                target_radiation += rad
-                target_temp_contribution += intensity * 500.0
-
-            zone.temperature = -273.15 + target_temp_contribution + self.habitable_offset
-            zone.radiation = target_radiation
-            zone.light_intensity = min(1.0, target_light / 8.0)
-
-    def _compute_zone_environments(self, active_stars: list, game_days_elapsed: float):
-        """计算每个区域的环境数据（抽取为独立方法以便复用）"""
-        for zone in self.zones:
-            normal = self._get_zone_normal(zone)
-
-            target_temp_contribution = 0.0
-            target_radiation = 0.0
-            target_light = 0.0
-
-            for star in active_stars:
-                cos_angle = np.dot(normal, star["direction"])
-
+                # 光照：受法线夹角影响（背光面仅有弮射散射）
                 if cos_angle <= 0:
                     scatter_factor = 0.05
                 else:
                     scatter_factor = cos_angle
 
-                dist = star["distance"]
-                mass = star["mass"]
-
                 intensity = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
                 target_light += intensity
 
+                # 辐射：纯距离函数，不受地形和朝向影响
                 safe_dist = max(5.0, dist)
-                rad = mass * 200.0 / (safe_dist ** 2.5) * scatter_factor
+                rad = mass * 200.0 / (safe_dist ** 2.5)
                 target_radiation += rad
 
-                target_temp_contribution += intensity * 500.0
+            # 目标温度：由光照强度驱动 + 地形修正
+            terrain_mod = TERRAIN_THERMAL_MODIFIER.get(zone.terrain_type, 0.0)
+            target_temp = self.base_temperature + target_light * self.light_to_temp_scale + terrain_mod
 
-            # 目标温度
-            target_temp = -273.15 + target_temp_contribution + self.habitable_offset
-
-            # 热惯性：缓慢趋近目标温度
+            # 热惯性：温度缓慢趋近目标温度
             inertia_factor = min(1.0, self.thermal_inertia * abs(game_days_elapsed))
             zone.temperature += (target_temp - zone.temperature) * inertia_factor
+
+            # 辐射：瞬间响应，不受热惯性影响
             zone.radiation = target_radiation
+
             zone.light_intensity = min(1.0, target_light / 8.0)
 
     def get_zone(self, zone_id: int) -> Optional[PlanetZone]:
@@ -400,6 +413,7 @@ class PlanetZoneManager:
         """序列化状态（用于保存）"""
         return {
             "rotation_angle": self.rotation_angle,
+            "light_to_temp_scale": self.light_to_temp_scale,
             "zones": [
                 {
                     "zone_id": z.zone_id,
@@ -417,6 +431,7 @@ class PlanetZoneManager:
     def load_state(self, data: dict):
         """从数据恢复状态"""
         self.rotation_angle = data.get("rotation_angle", 0.0)
+        self.light_to_temp_scale = data.get("light_to_temp_scale", self.light_to_temp_scale)
         zones_data = data.get("zones", [])
         for zd in zones_data:
             zone = self.get_zone(zd.get("zone_id", -1))
