@@ -13,6 +13,15 @@ simulation:
   accuracy: "medium"     # 积分精度
   initial_paused: false
 
+# 行星环境参数（可微调）
+environment:
+  thermal_inertia: 0.08         # 温度变化速率因子（越小温度变化越慢）
+  diffusion_rate: 0.15          # 大气热扩散速率（0=无扩散, 1=瞬间均匀）
+  dark_side_scatter: 0.25       # 背光面大气散射系数（越大夜间越温和）
+  rotation_speed: 15.0          # 行星自转速度（°/游戏天）
+  target_start_temp: 20.0       # 开局目标全球平均温度（°C）
+  target_peak_light: 0.85       # 开局最亮区域的显示光照百分比
+
 camera:
   fov: 500
   default_distance: 500

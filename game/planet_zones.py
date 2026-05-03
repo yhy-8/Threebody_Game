@@ -106,23 +106,31 @@ class PlanetZoneManager:
     # 地形类型列表（随机分配）
     TERRAIN_TYPES = ["平原", "高原", "山地", "峡谷", "盆地", "丘陵"]
 
-    def __init__(self):
+    def __init__(self, env_config: dict = None):
+        if env_config is None:
+            env_config = {}
+
         self.zones: List[PlanetZone] = []
-        self.rotation_angle: float = 0.0      # 当前自转角度 (度)
-        self.rotation_speed: float = 15.0      # 自转速度 (°/游戏天)
+        self.rotation_angle: float = 0.0
+        self.rotation_speed: float = env_config.get("rotation_speed", 15.0)
 
-        # 热惯性：区域温度不会瞬变，而是逐渐趋近目标温度
-        self.thermal_inertia: float = 0.1      # 温度变化速率因子
+        # 可配置参数
+        self.thermal_inertia: float = env_config.get("thermal_inertia", 0.08)
+        self.diffusion_rate: float = env_config.get("diffusion_rate", 0.15)
+        self.dark_side_scatter: float = env_config.get("dark_side_scatter", 0.25)
 
-        # 平衡温度系数：将光照强度转换为温度的缩放因子
-        # 在 _init_calibration() 中根据实际初始光照计算
-        self.light_to_temp_scale: float = 500.0   # 初始值，会被校准覆盖
-        self.base_temperature: float = -273.15    # 无光照时的基础温度（宇宙背景）
+        # 平衡温度系数（校准时计算）
+        self.light_to_temp_scale: float = 500.0
+        self.base_temperature: float = -273.15
 
-        # 光照显示归一化除数：初始化时校准，使开局平均光照约 40%
+        # 光照显示归一化除数（校准时计算）
         self.light_norm_divisor: float = 1.0
 
+        # 邻居缓存（在 _init_zones 后构建）
+        self._neighbor_cache: Dict[int, List[int]] = {}
+
         self._init_zones()
+        self._build_neighbor_cache()
 
     def _init_zones(self):
         """初始化所有区域"""
@@ -174,6 +182,61 @@ class PlanetZoneManager:
                 )
                 self.zones.append(zone)
                 zone_id += 1
+
+    def _build_neighbor_cache(self):
+        """构建每个区域的邻居索引缓存
+
+        邻居定义：纬度方向±1带 + 经度方向±1带（经度环绕，纬度截断）
+        每个区域最多4个邻居（极地区域可能只有3个）
+        """
+        self._neighbor_cache.clear()
+        LAT = self.LATITUDE_DIVISIONS
+        LON = self.LONGITUDE_DIVISIONS
+
+        for zone in self.zones:
+            lat_i = zone.lat_index
+            lon_i = zone.lon_index
+            neighbors = []
+
+            # 经度方向邻居（环绕）
+            left_lon = (lon_i - 1) % LON
+            right_lon = (lon_i + 1) % LON
+            neighbors.append(lat_i * LON + left_lon)
+            neighbors.append(lat_i * LON + right_lon)
+
+            # 纬度方向邻居（截断）
+            if lat_i > 0:
+                neighbors.append((lat_i - 1) * LON + lon_i)
+            if lat_i < LAT - 1:
+                neighbors.append((lat_i + 1) * LON + lon_i)
+
+            self._neighbor_cache[zone.zone_id] = neighbors
+
+    def _apply_diffusion(self, game_days_elapsed: float):
+        """大气热扩散：区域间温度向邻居平均值靠拢
+
+        模拟大气层对温度的均匀化效应：
+        - 高温区域向邻居散热
+        - 低温区域从邻居吸热
+        - 扩散速率由 self.diffusion_rate 控制
+        """
+        if self.diffusion_rate <= 0 or game_days_elapsed <= 0:
+            return
+
+        # 先计算所有区域的邻居平均温度（使用快照，避免顺序依赖）
+        neighbor_avg = []
+        for zone in self.zones:
+            nids = self._neighbor_cache.get(zone.zone_id, [])
+            if nids:
+                avg_t = sum(self.zones[nid].temperature for nid in nids) / len(nids)
+            else:
+                avg_t = zone.temperature
+            neighbor_avg.append(avg_t)
+
+        # 将每个区域的温度向邻居平均值靠拢
+        factor = min(1.0, self.diffusion_rate * abs(game_days_elapsed))
+        for i, zone in enumerate(self.zones):
+            zone.temperature += (neighbor_avg[i] - zone.temperature) * factor
 
     def _get_zone_normal(self, zone: PlanetZone) -> np.ndarray:
         """计算区域法线方向（考虑自转角度）
@@ -232,7 +295,7 @@ class PlanetZoneManager:
                 mass = star["mass"]
 
                 # 光照：受朝向影响（背光面有大气散射和热传导）
-                scatter_factor = 0.25 if cos_angle <= 0 else cos_angle
+                scatter_factor = self.dark_side_scatter if cos_angle <= 0 else cos_angle
                 intensity = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
                 target_light += intensity
 
@@ -247,6 +310,10 @@ class PlanetZoneManager:
             zone.temperature = target_temp
             zone.radiation = target_radiation
             zone.light_intensity = min(1.0, target_light / self.light_norm_divisor)
+
+        # 初始化时多轮扩散，模拟大气层长期均衡效应
+        for _ in range(10):
+            self._apply_diffusion(1.0)
 
     def _collect_active_stars(self, stars_data: list, planet_position: np.ndarray) -> list:
         """从恒星数据中提取有效恒星（排除行星自身）并计算方向和距离"""
@@ -288,7 +355,7 @@ class PlanetZoneManager:
 
                 # 光照：受法线夹角影响（背光面有大气散射和热传导）
                 if cos_angle <= 0:
-                    scatter_factor = 0.25
+                    scatter_factor = self.dark_side_scatter
                 else:
                     scatter_factor = cos_angle
 
@@ -312,6 +379,9 @@ class PlanetZoneManager:
             zone.radiation = target_radiation
 
             zone.light_intensity = min(1.0, target_light / self.light_norm_divisor)
+
+        # 大气热扩散：每帧计算后应用一次扩散
+        self._apply_diffusion(game_days_elapsed)
 
     def get_zone(self, zone_id: int) -> Optional[PlanetZone]:
         """获取指定区域"""

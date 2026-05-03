@@ -12,11 +12,13 @@ class GameSimulator:
     """游戏模拟器 - 协调环境、实体、区域、科技和决策更新"""
 
     def __init__(self, config: dict = None):
+        self._config = config or {}
+        self._env_config = self._config.get("environment", {})
         self.environment = ThreeBodySimulation()
         self.entities = EntityManager(config)
         self.tech_tree = TechTree()
         self.decision_manager = DecisionManager()
-        self.planet_zones = PlanetZoneManager()
+        self.planet_zones = PlanetZoneManager(self._env_config)
         self.time = 0.0
         self.paused = False
         self.game_over = False  # 游戏是否结束
@@ -30,7 +32,9 @@ class GameSimulator:
         self.entities = EntityManager(config)
         self.tech_tree = TechTree()
         self.decision_manager = DecisionManager()
-        self.planet_zones = PlanetZoneManager()
+        self._config = config or {}
+        self._env_config = self._config.get("environment", {})
+        self.planet_zones = PlanetZoneManager(self._env_config)
         self.time = 0.0
         self.paused = False
         self.game_over = False
@@ -297,7 +301,7 @@ class GameSimulator:
             avg_terrain_mod /= total_weight
 
         # 校准温度系数：target = base + avg_light * scale + avg_terrain_mod
-        target_avg_temp = 20.0
+        target_avg_temp = self._env_config.get("target_start_temp", 20.0)
         if avg_raw_light > 1e-6:
             self.planet_zones.light_to_temp_scale = (
                 (target_avg_temp - self.planet_zones.base_temperature - avg_terrain_mod) / avg_raw_light
@@ -305,9 +309,10 @@ class GameSimulator:
         else:
             self.planet_zones.light_to_temp_scale = 500.0
 
-        # 校准光照显示除数：使最亮区域约 80-90% 光照
+        # 校准光照显示除数：使最亮区域约 target_peak_light
+        target_peak = self._env_config.get("target_peak_light", 0.85)
         if max_raw_light > 1e-6:
-            self.planet_zones.light_norm_divisor = max_raw_light / 0.85
+            self.planet_zones.light_norm_divisor = max_raw_light / target_peak
         else:
             self.planet_zones.light_norm_divisor = 1.0
 
