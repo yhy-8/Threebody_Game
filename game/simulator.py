@@ -280,6 +280,7 @@ class GameSimulator:
         total_weight = 0.0
         avg_raw_light = 0.0
         avg_terrain_mod = 0.0
+        max_raw_light = 0.0
         for zone in self.planet_zones.zones:
             w = zone.area_weight
             terrain_mod = TERRAIN_THERMAL_MODIFIER.get(zone.terrain_type, 0.0)
@@ -288,13 +289,14 @@ class GameSimulator:
             avg_raw_light += raw_light * w
             avg_terrain_mod += terrain_mod * w
             total_weight += w
+            if raw_light > max_raw_light:
+                max_raw_light = raw_light
 
         if total_weight > 0:
             avg_raw_light /= total_weight
             avg_terrain_mod /= total_weight
 
-        # 校准：target = base + avg_light * scale + avg_terrain_mod
-        # => scale = (target - base - avg_terrain_mod) / avg_light
+        # 校准温度系数：target = base + avg_light * scale + avg_terrain_mod
         target_avg_temp = 20.0
         if avg_raw_light > 1e-6:
             self.planet_zones.light_to_temp_scale = (
@@ -302,6 +304,12 @@ class GameSimulator:
             )
         else:
             self.planet_zones.light_to_temp_scale = 500.0
+
+        # 校准光照显示除数：使最亮区域约 80-90% 光照
+        if max_raw_light > 1e-6:
+            self.planet_zones.light_norm_divisor = max_raw_light / 0.85
+        else:
+            self.planet_zones.light_norm_divisor = 1.0
 
         # 第二轮：用校准后的系数重新初始化
         self.planet_zones.initialize_temperatures(stars_data, planet_position)

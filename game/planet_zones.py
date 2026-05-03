@@ -119,6 +119,9 @@ class PlanetZoneManager:
         self.light_to_temp_scale: float = 500.0   # 初始值，会被校准覆盖
         self.base_temperature: float = -273.15    # 无光照时的基础温度（宇宙背景）
 
+        # 光照显示归一化除数：初始化时校准，使开局平均光照约 40%
+        self.light_norm_divisor: float = 1.0
+
         self._init_zones()
 
     def _init_zones(self):
@@ -228,8 +231,8 @@ class PlanetZoneManager:
                 dist = star["distance"]
                 mass = star["mass"]
 
-                # 光照：受朝向影响
-                scatter_factor = 0.05 if cos_angle <= 0 else cos_angle
+                # 光照：受朝向影响（背光面有大气散射和热传导）
+                scatter_factor = 0.25 if cos_angle <= 0 else cos_angle
                 intensity = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
                 target_light += intensity
 
@@ -243,7 +246,7 @@ class PlanetZoneManager:
 
             zone.temperature = target_temp
             zone.radiation = target_radiation
-            zone.light_intensity = min(1.0, target_light / 8.0)
+            zone.light_intensity = min(1.0, target_light / self.light_norm_divisor)
 
     def _collect_active_stars(self, stars_data: list, planet_position: np.ndarray) -> list:
         """从恒星数据中提取有效恒星（排除行星自身）并计算方向和距离"""
@@ -283,9 +286,9 @@ class PlanetZoneManager:
                 dist = star["distance"]
                 mass = star["mass"]
 
-                # 光照：受法线夹角影响（背光面仅有弮射散射）
+                # 光照：受法线夹角影响（背光面有大气散射和热传导）
                 if cos_angle <= 0:
-                    scatter_factor = 0.05
+                    scatter_factor = 0.25
                 else:
                     scatter_factor = cos_angle
 
@@ -308,7 +311,7 @@ class PlanetZoneManager:
             # 辐射：瞬间响应，不受热惯性影响
             zone.radiation = target_radiation
 
-            zone.light_intensity = min(1.0, target_light / 8.0)
+            zone.light_intensity = min(1.0, target_light / self.light_norm_divisor)
 
     def get_zone(self, zone_id: int) -> Optional[PlanetZone]:
         """获取指定区域"""
@@ -414,6 +417,7 @@ class PlanetZoneManager:
         return {
             "rotation_angle": self.rotation_angle,
             "light_to_temp_scale": self.light_to_temp_scale,
+            "light_norm_divisor": self.light_norm_divisor,
             "zones": [
                 {
                     "zone_id": z.zone_id,
@@ -432,6 +436,7 @@ class PlanetZoneManager:
         """从数据恢复状态"""
         self.rotation_angle = data.get("rotation_angle", 0.0)
         self.light_to_temp_scale = data.get("light_to_temp_scale", self.light_to_temp_scale)
+        self.light_norm_divisor = data.get("light_norm_divisor", self.light_norm_divisor)
         zones_data = data.get("zones", [])
         for zd in zones_data:
             zone = self.get_zone(zd.get("zone_id", -1))
