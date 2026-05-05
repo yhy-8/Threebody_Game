@@ -13,8 +13,7 @@ from .entities import RESOURCE_DISPLAY_NAMES
 class CivilizationState(Enum):
     """当前文明主要形态状态"""
     NORMAL = "normal"
-    DEHYDRATED = "dehydrated"      # 全民脱水状态
-    BOOMING = "booming"            # 大生育计划
+    DEHYDRATED = "dehydrated"      # 脱水状态
 
 
 @dataclass
@@ -193,7 +192,7 @@ def _default_decisions() -> Dict[str, Decision]:
     decisions["build_shelter"] = Decision(
         id="build_shelter",
         name="建造庇护所",
-        description="保护居民免受极端环境伤害的地下工事。",
+        description="保护居民免受极端环境伤害的地下工事，也可存放少量脱水人口。",
         category="construction",
         resource_cost={"iron": 100},
         tech_requirement="survival_shelter",
@@ -203,7 +202,7 @@ def _default_decisions() -> Dict[str, Decision]:
         per_worker_output={},
         consumption={"electricity": 1.0},
         build_time=5.0,
-        effects={"zone_protection": "+20%", "electricity": "-1kW/天"},
+        effects={"zone_protection": "+20%", "storage_capacity": "+20人", "electricity": "-1kW/天"},
     )
 
     decisions["build_laboratory"] = Decision(
@@ -241,7 +240,7 @@ def _default_decisions() -> Dict[str, Decision]:
     decisions["build_deep_shelter"] = Decision(
         id="build_deep_shelter",
         name="建造深地庇护所",
-        description="深入地下的巨型避难系统，可容纳大量人口。",
+        description="深入地下的巨型避难系统，可容纳大量脱水人口。",
         category="construction",
         resource_cost={"iron": 300, "copper": 60},
         tech_requirement="deep_shelter",
@@ -251,7 +250,7 @@ def _default_decisions() -> Dict[str, Decision]:
         per_worker_output={},
         consumption={"electricity": 3.0},
         build_time=8.0,
-        effects={"zone_protection": "+50%", "electricity": "-3kW/天"},
+        effects={"zone_protection": "+50%", "storage_capacity": "+100人", "electricity": "-3kW/天"},
     )
 
     decisions["build_radiation_shield"] = Decision(
@@ -270,12 +269,60 @@ def _default_decisions() -> Dict[str, Decision]:
         effects={"radiation_resistance": "+50%", "electricity": "-5kW/天"},
     )
 
+    decisions["build_storage_vault"] = Decision(
+        id="build_storage_vault",
+        name="建造脱水仓",
+        description="专用脱水人口存储设施，可安全存放大量脱水休眠体。",
+        category="construction",
+        resource_cost={"iron": 80, "copper": 20},
+        tech_requirement="survival_shelter",
+        requires_zone=True,
+        building_type="storage_vault",
+        worker_capacity=0,
+        per_worker_output={},
+        consumption={"electricity": 0.5},
+        build_time=3.0,
+        effects={"storage_capacity": "+100人", "electricity": "-0.5kW/天"},
+    )
+
+    decisions["build_large_storage_vault"] = Decision(
+        id="build_large_storage_vault",
+        name="建造大型脱水仓",
+        description="大规模脱水人口存储设施，可容纳大量人口安全度过乱纪元。",
+        category="construction",
+        resource_cost={"iron": 200, "copper": 60},
+        tech_requirement="deep_shelter",
+        requires_zone=True,
+        building_type="large_storage_vault",
+        worker_capacity=0,
+        per_worker_output={},
+        consumption={"electricity": 2.0},
+        build_time=6.0,
+        effects={"storage_capacity": "+500人", "electricity": "-2kW/天"},
+    )
+
+    decisions["build_research_institute"] = Decision(
+        id="build_research_institute",
+        name="建造研究院",
+        description="基础科研设施，产出基础科研点。需要电力和研究人员。",
+        category="construction",
+        resource_cost={"iron": 150, "copper": 30},
+        tech_requirement="basic_metallurgy",
+        requires_zone=True,
+        building_type="research_institute",
+        worker_capacity=5,
+        per_worker_output={},  # 科研点由特殊逻辑产出
+        consumption={"electricity": 5.0},
+        build_time=4.0,
+        effects={"basic_research": "+1/天(满员)", "electricity": "-5kW/天"},
+    )
+
     # ═══════════════════ 文明政策类决策 ═══════════════════════════
 
     decisions["dehydrate"] = Decision(
         id="dehydrate",
         name="全民脱水",
-        description="应对极端恶劣环境，大部分建筑停工。资源消耗大幅降低。",
+        description="应对极端恶劣环境，将人口脱水存入库存。库存满后剩余人口留在恶劣环境中，会因环境而减少。大部分建筑停工，食物消耗大幅降低。",
         category="policy",
         resource_cost={},
         effects={"civilization": "进入脱水状态", "consumption": "-80%", "production": "-90%"},
@@ -284,37 +331,10 @@ def _default_decisions() -> Dict[str, Decision]:
     decisions["rehydrate"] = Decision(
         id="rehydrate",
         name="浸泡复苏",
-        description="文明重新激活，恢复正常的建设与繁衍。",
+        description="将库存中的脱水人口全部唤醒，恢复正常运作。",
         category="policy",
         resource_cost={},
         effects={"civilization": "恢复正常状态"},
-    )
-
-    decisions["boom"] = Decision(
-        id="boom",
-        name="大生育计划",
-        description="在恒纪元中快速增加人口。需要消耗大量食物。",
-        category="policy",
-        resource_cost={"food": 500},
-        effects={"population_growth": "+200%", "food": "-500"},
-    )
-
-    decisions["rationing"] = Decision(
-        id="rationing",
-        name="配给制",
-        description="食物消耗减半，但社会安定度和效率大幅下降。",
-        category="policy",
-        resource_cost={},
-        effects={"food_consumption": "-50%", "efficiency": "-30%", "stability": "-20%"},
-    )
-
-    decisions["forced_labor"] = Decision(
-        id="forced_labor",
-        name="工业强心剂",
-        description="强制劳动，暂时大幅提高产出，但严重损害人口健康。",
-        category="policy",
-        resource_cost={},
-        effects={"production": "+150%", "health": "-30%", "stability": "-25%"},
     )
 
     return decisions
@@ -347,6 +367,19 @@ class DecisionManager:
         """获取所有政策类决策"""
         return [d for d in self.available_decisions.values() if d.category == "policy"]
 
+    def _check_policy_conditions(self, policy_id: str, entities=None) -> Tuple[bool, str]:
+        """检查政策的特殊前提条件"""
+        if policy_id == "dehydrate":
+            if self.current_state == CivilizationState.DEHYDRATED:
+                return False, "当前已经是脱水状态"
+            if entities and entities.population.total <= 0:
+                return False, "没有活跃人口可以脱水"
+        elif policy_id == "rehydrate":
+            if self.current_state != CivilizationState.DEHYDRATED:
+                return False, "目前不在脱水状态，无需浸泡"
+
+        return True, ""
+
     def can_execute(self, decision_id: str, entities, tech_tree=None) -> Tuple[bool, str]:
         """检查某个决策是否可以执行"""
         decision = self.available_decisions.get(decision_id)
@@ -374,21 +407,7 @@ class DecisionManager:
 
         # 政策类的特殊检查
         if decision.category == "policy":
-            return self._check_policy_conditions(decision_id)
-
-        return True, ""
-
-    def _check_policy_conditions(self, policy_id: str) -> Tuple[bool, str]:
-        """检查政策的特殊前提条件"""
-        if policy_id == "dehydrate":
-            if self.current_state == CivilizationState.DEHYDRATED:
-                return False, "当前已经是脱水状态"
-        elif policy_id == "rehydrate":
-            if self.current_state != CivilizationState.DEHYDRATED:
-                return False, "目前不在脱水状态，无需浸泡"
-        elif policy_id == "boom":
-            if self.current_state == CivilizationState.DEHYDRATED:
-                return False, "脱水状态下无法执行生育计划"
+            return self._check_policy_conditions(decision_id, entities)
 
         return True, ""
 
@@ -422,6 +441,14 @@ class DecisionManager:
 
         return False, "未知决策类型", None
 
+    # 建筑类型对应的库存容量映射
+    BUILDING_STORAGE_CAPACITY = {
+        "shelter": 20,
+        "deep_shelter": 100,
+        "storage_vault": 100,
+        "large_storage_vault": 500,
+    }
+
     def _execute_construction(self, decision: Decision, entities,
                               zone_manager, zone_id: int) -> Tuple[bool, str, Optional[int]]:
         """执行建筑建造"""
@@ -431,6 +458,9 @@ class DecisionManager:
             return False, "需要选择一个建造区域", None
 
         building_id = self.get_next_building_id()
+
+        # 查找库存容量
+        storage_cap = self.BUILDING_STORAGE_CAPACITY.get(decision.building_type, 0)
 
         building = Building(
             id=building_id,
@@ -444,6 +474,7 @@ class DecisionManager:
             build_progress=0.0,
             under_construction=True,
             active=False,
+            storage_capacity=storage_cap,
         )
 
         entities.add_building(building)
@@ -455,27 +486,39 @@ class DecisionManager:
         zone_info = f"（区域 {zone_id}）" if zone_id >= 0 else ""
         time_info = f"，预计{decision.build_time:.0f}天建成" if decision.build_time > 0 else ""
         worker_info = f"，需分配最多{decision.worker_capacity}名工人" if decision.worker_capacity > 0 else ""
-        return True, f"开始建造 {building.name}{zone_info}{time_info}{worker_info}", building_id
+        storage_info = f"，可存放{storage_cap}人" if storage_cap > 0 else ""
+        return True, f"开始建造 {building.name}{zone_info}{time_info}{worker_info}{storage_info}", building_id
 
     def _execute_policy(self, policy_id: str, entities) -> Tuple[bool, str, None]:
         """执行政策"""
         if policy_id == "dehydrate":
             self.current_state = CivilizationState.DEHYDRATED
-            return True, "已成功开启全民脱水，渡劫模式启动", None
+            pop = entities.population
+            # 尽可能多的人存入库存，剩余1%留在恶劣环境中
+            keep = max(1, int(pop.total * 0.01))
+            to_store = pop.total - keep
+            if to_store <= 0:
+                return True, "人口过少，无需脱水", None
+
+            # 能存多少存多少
+            can_store = pop.get_storable_amount()
+            actual_store = min(to_store, can_store)
+            if actual_store > 0:
+                pop.store_population(actual_store)
+
+            # 剩余的人留在环境中（会在 simulator 中受环境影响减少）
+            exposed = to_store - actual_store
+            if exposed > 0:
+                return True, f"脱水启动：{actual_store}人入库，{exposed}人暴露在恶劣环境中", None
+            return True, f"脱水启动：{actual_store}人入库，{keep}人维持运转", None
+
         elif policy_id == "rehydrate":
             self.current_state = CivilizationState.NORMAL
-            return True, "文明浸泡复苏完成，恢复常规运作", None
-        elif policy_id == "boom":
-            self.current_state = CivilizationState.BOOMING
-            return True, "大生育计划已开启，人口增长率上升", None
-        elif policy_id == "rationing":
-            if "rationing" not in self.active_policies:
-                self.active_policies.append("rationing")
-            return True, "配给制已生效", None
-        elif policy_id == "forced_labor":
-            if "forced_labor" not in self.active_policies:
-                self.active_policies.append("forced_labor")
-            return True, "工业强心剂已注入", None
+            pop = entities.population
+            stored = pop.stored_population
+            if stored > 0:
+                pop.retrieve_population(stored)
+            return True, f"浸泡复苏完成：{stored}人苏醒，恢复常规运作", None
 
         return False, "未知政策", None
 

@@ -24,6 +24,12 @@ class GameSimulator:
         self.game_over = False  # 游戏是否结束
         self.universe_name = "未命名宇宙"  # 宇宙名称（新建游戏时设置）
         self.last_autosave_day = -1  # 记录上次自动存档的天数
+        # 科技点数每日产出速率（用于 UI 显示）
+        self.research_output_rate: Dict[str, float] = {
+            RESEARCH_BASIC: 0.0,
+            RESEARCH_APPLIED: 0.0,
+            RESEARCH_THEORETICAL: 0.0,
+        }
         self._init_zone_temperatures()
 
     def reset(self, config: dict = None):
@@ -39,6 +45,11 @@ class GameSimulator:
         self.paused = False
         self.game_over = False
         self.last_autosave_day = -1
+        self.research_output_rate = {
+            RESEARCH_BASIC: 0.0,
+            RESEARCH_APPLIED: 0.0,
+            RESEARCH_THEORETICAL: 0.0,
+        }
         self._init_zone_temperatures()
 
     def update(self, dt: float):
@@ -47,6 +58,7 @@ class GameSimulator:
             return
 
         time_scale = self.environment.time_scale
+        dehydrated = self.decision_manager.current_state.value == "dehydrated"
 
         # 更新三体运动
         self.environment.update(dt)
@@ -83,10 +95,14 @@ class GameSimulator:
 
         # 更新实体（传入区域管理器进行逐区域建筑伤害）
         game_days_dt = dt * time_scale
-        self.entities.update(env_params, zone_manager=self.planet_zones, dt=game_days_dt)
+        self.entities.update(env_params, zone_manager=self.planet_zones, dt=game_days_dt, dehydrated=dehydrated)
 
         # 研究建筑产出科技点数
         self._process_research_output(game_days_dt)
+
+        # 脱水状态下：库存人口环境损耗 + 暴露人口环境损耗
+        if dehydrated:
+            self._process_storage_damage(game_days_dt)
 
         # 更新决策冷却时间
         self.decision_manager.update_cooldowns(dt, time_scale)
@@ -96,35 +112,173 @@ class GameSimulator:
 
     def _process_research_output(self, game_days_dt: float):
         """处理研究建筑的科技点数产出"""
+        dehydrated = self.decision_manager.current_state.value == "dehydrated"
+        dehydrate_mult = 0.1 if dehydrated else 1.0
+
+        # 累计本帧产出（用于 UI 显示产出速率）
+        frame_output = {RESEARCH_BASIC: 0.0, RESEARCH_APPLIED: 0.0, RESEARCH_THEORETICAL: 0.0}
+
         # 基础科研：人口 / 500 每天产出1点基础科研
         pop = self.entities.get_resource("population")
-        basic_output = (pop / 500.0) * game_days_dt
+        basic_output = (pop / 500.0) * dehydrate_mult * game_days_dt
         self.tech_tree.produce_research(RESEARCH_BASIC, basic_output)
+        frame_output[RESEARCH_BASIC] += (pop / 500.0) * dehydrate_mult
 
-        # 应用科研：每座活跃的实验室每天产出2点（受工人饱和度和耐久度影响）
+        # 研究院：每座活跃研究院每天产出1点基础科研（受工人饱和度、耐久度、区域效率影响）
+        institutes = self.entities.get_buildings_by_type("research_institute")
+        for inst in institutes:
+            durability_ratio = inst.durability / inst.max_durability if inst.max_durability > 0 else 0
+            worker_ratio = inst.get_saturation()
+            zone_eff = 1.0
+            if inst.zone_id >= 0:
+                zone = self.planet_zones.get_zone(inst.zone_id)
+                if zone:
+                    zone_eff = zone.get_work_efficiency()
+            efficiency = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
+            output = 1.0 * efficiency * game_days_dt
+            self.tech_tree.produce_research(RESEARCH_BASIC, output)
+            frame_output[RESEARCH_BASIC] += 1.0 * efficiency
+
+        # 应用科研：每座活跃的实验室每天产出2点（受工人饱和度、耐久度、区域效率影响）
         labs = self.entities.get_buildings_by_type("laboratory")
         for lab in labs:
             durability_ratio = lab.durability / lab.max_durability if lab.max_durability > 0 else 0
             worker_ratio = lab.get_saturation()
-            efficiency = durability_ratio * worker_ratio
-            self.tech_tree.produce_research(RESEARCH_APPLIED, 2.0 * efficiency * game_days_dt)
+            zone_eff = 1.0
+            if lab.zone_id >= 0:
+                zone = self.planet_zones.get_zone(lab.zone_id)
+                if zone:
+                    zone_eff = zone.get_work_efficiency()
+            efficiency = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
+            output = 2.0 * efficiency * game_days_dt
+            self.tech_tree.produce_research(RESEARCH_APPLIED, output)
+            frame_output[RESEARCH_APPLIED] += 2.0 * efficiency
 
-        # 理论科研：每座活跃的科学院每天产出1点（受工人饱和度和耐久度影响）
+        # 理论科研：每座活跃的科学院每天产出1点（受工人饱和度、耐久度、区域效率影响）
         academies = self.entities.get_buildings_by_type("academy")
         for academy in academies:
             durability_ratio = academy.durability / academy.max_durability if academy.max_durability > 0 else 0
             worker_ratio = academy.get_saturation()
-            efficiency = durability_ratio * worker_ratio
-            self.tech_tree.produce_research(RESEARCH_THEORETICAL, 1.0 * efficiency * game_days_dt)
+            zone_eff = 1.0
+            if academy.zone_id >= 0:
+                zone = self.planet_zones.get_zone(academy.zone_id)
+                if zone:
+                    zone_eff = zone.get_work_efficiency()
+            efficiency = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
+            output = 1.0 * efficiency * game_days_dt
+            self.tech_tree.produce_research(RESEARCH_THEORETICAL, output)
+            frame_output[RESEARCH_THEORETICAL] += 1.0 * efficiency
 
-        # 检查是否有研究刚完成并触发特殊效果（如自动化）
-        # _check_research_completion 在 produce_research 内部已调用
-        # 这里处理完成后的附加效果
+        # 更新产出速率（指数移动平均，平滑显示）
+        alpha = 0.05
+        for rtype in self.research_output_rate:
+            self.research_output_rate[rtype] = (
+                alpha * frame_output[rtype]
+                + (1 - alpha) * self.research_output_rate[rtype]
+            )
+
+        # 检查是否有研究刚完成并触发特殊效果
         if not self.tech_tree.researching_tech_id:
-            # 如果自动化科技刚刚通过研究完成解锁
             auto_node = self.tech_tree.get_node("automation")
             if auto_node and auto_node.unlocked and self.entities.population.automation_multiplier < 1.3:
                 self.entities.population.automation_multiplier = 1.3
+
+    def _process_storage_damage(self, game_days_dt: float):
+        """脱水状态下：库存人口和暴露人口的环境损耗
+
+        库存设施根据所在区域环境计算损耗率：
+        - 正常区域（温度-80~100, 辐射<10）：无损耗
+        - 极端温度区域：每天损失 0.5%~5%
+        - 高辐射区域：每天损失 0.5%~3%
+        没有活跃库存设施时，库存人口全部死亡。
+
+        暴露在环境中的活跃人口（未入库且非1%维持人员）额外受环境影响。
+        """
+        pop = self.entities.population
+
+        # 检查是否还有活跃的库存设施
+        active_storage_buildings = [
+            b for b in self.entities.buildings
+            if b.active and not b.destroyed and not b.under_construction and b.storage_capacity > 0
+        ]
+
+        if not active_storage_buildings and pop.stored_population > 0:
+            # 没有库存设施，库存人口全部死亡
+            pop.stored_population = 0
+            return
+
+        # 计算库存人口损耗
+        total_stored = pop.stored_population
+        if total_stored <= 0:
+            return
+
+        # 按库存设施的区域分配损耗
+        total_capacity = sum(b.storage_capacity for b in active_storage_buildings)
+        total_loss = 0.0
+
+        for building in active_storage_buildings:
+            if total_capacity <= 0:
+                break
+            # 按容量比例分配库存人口到该设施
+            fraction = building.storage_capacity / total_capacity
+            stored_here = total_stored * fraction
+
+            if building.zone_id < 0:
+                continue
+
+            zone = self.planet_zones.get_zone(building.zone_id)
+            if not zone:
+                continue
+
+            loss_rate = 0.0
+            # 极端温度损耗
+            if zone.temperature < -80:
+                excess = (-80 - zone.temperature) / 100.0
+                loss_rate += 0.005 + excess * 0.04  # 0.5% ~ 4.5%/天
+            elif zone.temperature > 100:
+                excess = (zone.temperature - 100) / 100.0
+                loss_rate += 0.005 + excess * 0.04
+            elif zone.temperature < -10:
+                # 轻微寒冷也有少量损耗
+                factor = (-10 - zone.temperature) / 70.0  # 0~1
+                loss_rate += factor * 0.002  # 最多 0.2%/天
+            elif zone.temperature > 60:
+                factor = (zone.temperature - 60) / 40.0
+                loss_rate += factor * 0.002
+
+            # 高辐射损耗
+            if zone.radiation > 5:
+                excess = (zone.radiation - 5) / 10.0
+                loss_rate += 0.003 + excess * 0.02  # 0.3% ~ 2.3%/天
+            elif zone.radiation > 2:
+                factor = (zone.radiation - 2) / 3.0
+                loss_rate += factor * 0.001  # 最多 0.1%/天
+
+            total_loss += stored_here * loss_rate * game_days_dt
+
+        if total_loss > 0:
+            pop.stored_population = max(0, int(pop.stored_population - total_loss))
+
+        # 暴露在环境中的活跃人口额外损耗（不是1%维持人员的那部分）
+        # 活跃人口 > 库存容量的人就是在暴露环境中
+        exposed = max(0, pop.total - max(1, int((pop.total + pop.stored_population) * 0.01)))
+        if exposed > 0:
+            avg_env = self.planet_zones.get_average_environment()
+            exposed_loss_rate = 0.0
+            temp = avg_env.get("temperature", 20)
+            rad = avg_env.get("radiation", 0)
+            if temp < -80 or temp > 100:
+                exposed_loss_rate = 0.1  # 极端环境10%/天
+            elif temp < -10 or temp > 60:
+                exposed_loss_rate = 0.02  # 恶劣环境2%/天
+            if rad > 5:
+                exposed_loss_rate += 0.05
+            elif rad > 2:
+                exposed_loss_rate += 0.01
+            if exposed_loss_rate > 0:
+                loss = int(exposed * exposed_loss_rate * game_days_dt)
+                if loss > 0:
+                    pop.total = max(1, pop.total - loss)
 
     def get_state(self) -> Dict[str, Any]:
         """获取完整游戏状态"""
@@ -144,6 +298,7 @@ class GameSimulator:
             "time": self.time,
             "paused": self.paused,
             "game_over": self.game_over,
+            "research_output_rate": dict(self.research_output_rate),
             "environment": {
                 "stars": [
                     {

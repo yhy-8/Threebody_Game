@@ -84,6 +84,8 @@ class PopulationManager:
     def __init__(self, initial_population: int = 100):
         self.total: int = initial_population
         self.breeders: int = 0  # 专门从事生育的人口
+        self.stored_population: int = 0  # 脱水库存中的人口
+        self.storage_capacity: int = 0   # 总库存容量（由库存设施提供，每帧重算）
 
         # 人口增长基础参数
         self.base_growth_per_breeder: float = 0.05  # 每个生育人口每天增长 0.05 人
@@ -99,18 +101,43 @@ class PopulationManager:
         """获取未分配人口"""
         return max(0, self.total - self.breeders - total_building_workers)
 
-    def update(self, dt_days: float, food_available: float) -> Dict[str, float]:
+    def get_storable_amount(self) -> int:
+        """当前可存入库存的人数"""
+        return max(0, self.storage_capacity - self.stored_population)
+
+    def store_population(self, count: int) -> Tuple[bool, str]:
+        """将人口存入脱水库存"""
+        available = self.get_storable_amount()
+        if count > available:
+            return False, f"库存容量不足（可存入 {available} 人）"
+        if count > self.total:
+            return False, f"活跃人口不足（当前 {self.total} 人）"
+        self.stored_population += count
+        self.total -= count
+        return True, ""
+
+    def retrieve_population(self, count: int) -> Tuple[bool, str]:
+        """从脱水库存取回人口"""
+        if count > self.stored_population:
+            return False, f"库存中只有 {self.stored_population} 人"
+        self.stored_population -= count
+        self.total += count
+        return True, ""
+
+    def update(self, dt_days: float, food_available: float, dehydrated: bool = False) -> Dict[str, float]:
         """更新人口增长
-        
+
         Args:
             dt_days: 游戏天数间隔
             food_available: 当前可用食物
-            
+            dehydrated: 是否处于脱水状态
+
         Returns:
             消耗信息 {"food_consumed": float, "growth": float}
         """
-        # 食物消耗
-        food_needed = self.total * self.food_per_person_per_day * dt_days
+        # 食物消耗（脱水状态消耗降为20%）
+        consumption_rate = 0.2 if dehydrated else 1.0
+        food_needed = self.total * self.food_per_person_per_day * dt_days * consumption_rate
         food_consumed = min(food_needed, food_available)
         food_satisfaction = food_consumed / max(food_needed, 0.001)
 
@@ -144,6 +171,8 @@ class PopulationManager:
         return {
             "total": self.total,
             "breeders": self.breeders,
+            "stored_population": self.stored_population,
+            "storage_capacity": self.storage_capacity,
             "automation_multiplier": self.automation_multiplier,
             "growth_accumulator": self._growth_accumulator,
         }
@@ -152,10 +181,12 @@ class PopulationManager:
         """反序列化"""
         self.total = data.get("total", 100)
         self.breeders = data.get("breeders", 0)
+        self.stored_population = data.get("stored_population", 0)
+        self.storage_capacity = data.get("storage_capacity", 0)
         # 向后兼容：将原来 assignments 里的 breeding 转化过来
         if "assignments" in data:
             self.breeders += data["assignments"].get("breeding", 0)
-            
+
         self.automation_multiplier = data.get("automation_multiplier", 1.0)
         self._growth_accumulator = data.get("growth_accumulator", 0.0)
 
@@ -189,17 +220,21 @@ class Building:
     cold_resistance: float = -80.0     # 温度低于此值时开始受损 (℃)
     radiation_resistance: float = 5.0  # 辐射超过此值时开始受损
 
+    # 库存容量（脱水仓/庇护所等提供的库存人口容量）
+    storage_capacity: int = 0
+
     # 状态
     active: bool = True       # 是否活跃（耐久为0时变为False）
     destroyed: bool = False   # 是否已被摧毁
 
-    def get_output(self, automation_multiplier: float = 1.0) -> dict:
+    def get_output(self, automation_multiplier: float = 1.0, zone_efficiency: float = 1.0) -> dict:
         """获取产出 — 由人力驱动，设施决定上限
 
-        产出 = min(assigned_workers, worker_capacity) × per_worker_output × 耐久度% × 自动化倍率
+        产出 = min(assigned_workers, worker_capacity) × per_worker_output × 耐久度% × 自动化倍率 × 区域效率
 
         Args:
             automation_multiplier: 自动化科技带来的效率倍率
+            zone_efficiency: 区域环境对工作效率的影响 (0.0~1.0)
         """
         if not self.active or self.destroyed or self.under_construction:
             return {}
@@ -215,7 +250,7 @@ class Building:
         durability_ratio = self.durability / self.max_durability if self.max_durability > 0 else 0
         output = {}
         for resource, per_worker in self.per_worker_output.items():
-            output[resource] = effective_workers * per_worker * durability_ratio * automation_multiplier
+            output[resource] = effective_workers * per_worker * durability_ratio * automation_multiplier * zone_efficiency
         return output
 
     def get_consumption(self) -> dict:
@@ -484,13 +519,14 @@ class EntityManager:
 
         return generation, consumption
 
-    def update(self, env_params: dict, zone_manager=None, dt: float = 0.016):
+    def update(self, env_params: dict, zone_manager=None, dt: float = 0.016, dehydrated: bool = False):
         """更新所有实体状态
 
         Args:
             env_params: 全球平均环境参数
             zone_manager: 行星区域管理器（用于逐区域计算建筑伤害）
             dt: 帧间隔（游戏天数）
+            dehydrated: 是否处于脱水状态
         """
         # 宏观环境对文明整体的影响
         heat = env_params.get("heat_level", 0.5)
@@ -500,6 +536,12 @@ class EntityManager:
             self.global_efficiency = max(0.3, self.global_efficiency - 0.02)
         else:
             self.global_efficiency = min(1.0, self.global_efficiency + 0.01)
+
+        # 重新计算库存总容量
+        self.population.storage_capacity = sum(
+            b.storage_capacity for b in self.buildings
+            if b.active and not b.destroyed and not b.under_construction
+        )
 
         # 建筑逐区域环境伤害（耐久度下降仅由环境伤害导致，不自然衰减）
         if zone_manager:
@@ -518,23 +560,28 @@ class EntityManager:
                 building.advance_construction(dt)
 
         # 建筑产出和消耗（人力驱动）
-        self._process_buildings(dt)
+        self._process_buildings(dt, zone_manager, dehydrated)
 
         # 人口更新（食物消耗 + 增长）
         food_available = self.get_resource("food")
-        pop_result = self.population.update(dt, food_available)
+        pop_result = self.population.update(dt, food_available, dehydrated=dehydrated)
         food_consumed = pop_result.get("food_consumed", 0.0)
         if food_consumed > 0:
             self.consume_resource("food", food_consumed)
 
-    def _process_buildings(self, dt: float = 1.0):
+    def _process_buildings(self, dt: float = 1.0, zone_manager=None, dehydrated: bool = False):
         """处理建筑产出和消耗 — 人力驱动模型
-        
+
         电力平衡检查：如果总发电量 < 总耗电量，所有建筑效率下降。
+        区域效率：建筑产出受所在区域温度影响的工作效率乘数。
+        脱水状态：非关键建筑产出降为10%。
         """
         # 计算电力平衡
         gen, cons = self.get_electricity_balance()
         power_ratio = min(1.0, gen / max(cons, 0.001)) if cons > 0 else 1.0
+
+        # 脱水状态下关键建筑类型（产出不受脱水影响）
+        dehydrate_exempt_types = {"storage_vault", "large_storage_vault", "shelter", "deep_shelter"}
 
         # 先扣消耗
         for building in self.buildings:
@@ -544,9 +591,21 @@ class EntityManager:
                 if resource in self.resources:
                     self.resources[resource].consume(daily_amount)
 
-        # 再加产出（受电力平衡影响）
+        # 再加产出（受电力平衡、区域效率、脱水影响）
         for building in self.buildings:
-            output = building.get_output(self.population.automation_multiplier)
+            # 区域效率
+            zone_eff = 1.0
+            if zone_manager and building.zone_id >= 0:
+                zone = zone_manager.get_zone(building.zone_id)
+                if zone:
+                    zone_eff = zone.get_work_efficiency()
+
+            output = building.get_output(self.population.automation_multiplier, zone_eff)
+
+            # 脱水产出惩罚
+            if dehydrated and building.building_type not in dehydrate_exempt_types:
+                output = {k: v * 0.1 for k, v in output.items()}
+
             for resource, amount in output.items():
                 daily_amount = amount * dt
                 # 如果是非电力建筑且需要电力，受 power_ratio 影响
@@ -580,6 +639,7 @@ class EntityManager:
                     "build_time": b.build_time,
                     "build_progress": b.build_progress,
                     "under_construction": b.under_construction,
+                    "storage_capacity": b.storage_capacity,
                 }
                 for b in self.buildings
             ],
@@ -617,5 +677,6 @@ class EntityManager:
                 build_time=b_data.get("build_time", 0.0),
                 build_progress=b_data.get("build_progress", 0.0),
                 under_construction=b_data.get("under_construction", False),
+                storage_capacity=b_data.get("storage_capacity", 0),
             )
             self.buildings.append(b)

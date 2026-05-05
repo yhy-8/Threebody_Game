@@ -515,7 +515,12 @@ class TechTreeScreen(Screen):
             color = RESEARCH_COLORS[rtype]
             amount = int(tech_tree.research_points.get(rtype, 0))
 
-            text = f"{name}: {amount}"
+            # 获取产出速率
+            rate = 0.0
+            if self.simulator and hasattr(self.simulator, 'research_output_rate'):
+                rate = self.simulator.research_output_rate.get(rtype, 0.0)
+
+            text = f"{name}: {amount}  (+{rate:.2f}/天)"
             surf = rp_font.render(text, True, color)
             screen.blit(surf, (x_pos, y_pos))
             y_pos += font_size + 6

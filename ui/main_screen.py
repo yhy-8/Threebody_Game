@@ -348,8 +348,10 @@ class MainScreen(Screen):
         scale = min(width / 1280, height / 720)
         font_size = max(16, int(22 * scale))
         small_font_size = max(13, int(17 * scale))
+        tiny_font_size = max(11, int(14 * scale))
         font = get_font(font_size)
         small_font = get_font(small_font_size)
+        tiny_font = get_font(tiny_font_size)
         y_offset = max(38, int(panel.rect.height * 0.13))
 
         # 尝试从模拟器获取数据
@@ -359,13 +361,17 @@ class MainScreen(Screen):
             env_params = state.get("environment", {}).get("params", {})
             policy = state.get("decision", {}).get("current_state", "normal")
             tech_count = len(state.get("technology", {}).get("unlocked", []))
+            research_rate = state.get("research_output_rate", {})
 
             buildings_count = entities.get('buildings_count', 0)
             avg_efficiency = entities.get('avg_efficiency', 1.0)
-            pop_total = entities.get('population', {}).get('total', 100)
+            pop_data = entities.get('population', {})
+            pop_total = pop_data.get('total', 100)
+            pop_stored = pop_data.get('stored_population', 0)
 
             items = [
                 ("人口总数", f"{pop_total} 人", ""),
+                ("库存人口", f"{pop_stored} 人", ""),
                 ("设施数量", f"{buildings_count} 座", ""),
                 ("工业效率", f"{avg_efficiency:.0%}", ""),
                 ("已解科技", f"{tech_count} 项", ""),
@@ -375,11 +381,13 @@ class MainScreen(Screen):
             # 使用默认数据
             items = [
                 ("人口总数", "100 人", ""),
+                ("库存人口", "0 人", ""),
                 ("设施数量", "0 座", ""),
                 ("工业效率", "100%", ""),
                 ("已解科技", "0 项", ""),
                 ("当前政策", "NORMAL", ""),
             ]
+            research_rate = {}
 
         for name, value, trend in items:
             # 名称
@@ -398,6 +406,23 @@ class MainScreen(Screen):
             screen.blit(trend_surf, (trend_x, panel.rect.y + y_offset + 3))
 
             y_offset += max(24, int(panel.rect.height * 0.09))
+
+        # 科研产出速率显示
+        if self.simulator and research_rate:
+            y_offset += 4
+            label_surf = tiny_font.render("科研产出/天:", True, (150, 170, 200))
+            screen.blit(label_surf, (panel.rect.x + 15, panel.rect.y + y_offset))
+            y_offset += tiny_font.get_height() + 3
+
+            rate_names = {"basic": "基础", "applied": "应用", "theoretical": "理论"}
+            rate_colors = {"basic": (120, 200, 255), "applied": (255, 200, 100), "theoretical": (200, 120, 255)}
+            for rtype, rate in research_rate.items():
+                name = rate_names.get(rtype, rtype)
+                color = rate_colors.get(rtype, (200, 200, 200))
+                text = f"  {name}: +{rate:.2f}/天"
+                surf = tiny_font.render(text, True, color)
+                screen.blit(surf, (panel.rect.x + 15, panel.rect.y + y_offset))
+                y_offset += tiny_font.get_height() + 2
 
     def _render_environment_content(self, screen: pygame.Surface):
         """渲染环境面板内容"""

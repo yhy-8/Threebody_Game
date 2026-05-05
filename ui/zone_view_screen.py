@@ -493,6 +493,7 @@ class ZoneViewScreen(Screen):
             (f"全球平均温度: {avg['temperature']:.1f}℃", self._temp_color(avg['temperature'])),
             (f"全球平均辐射: {avg['radiation']:.2f}", self._rad_color(avg['radiation'])),
             (f"总人口: {self.simulator.entities.population.total} | 闲置: {self.simulator.entities.get_idle_population()}", (200, 255, 200)),
+            (f"库存人口: {self.simulator.entities.population.stored_population}/{self.simulator.entities.population.storage_capacity}", (180, 200, 255)),
             (f"生育分配: {self.simulator.entities.population.breeders} 人", (255, 150, 200)),
         ]
 
@@ -529,6 +530,7 @@ class ZoneViewScreen(Screen):
         title_font = get_font(max(16, int(20 * scale)))
         font = get_font(max(13, int(16 * scale)))
         small_font = get_font(max(11, int(13 * scale)))
+        tiny_font = get_font(max(10, int(12 * scale)))
 
         x = panel_x + 10
         y = start_y
@@ -540,6 +542,9 @@ class ZoneViewScreen(Screen):
         y += title_font.get_height() + 6
 
         # 信息行
+        work_eff = zone.get_work_efficiency()
+        eff_color = (100, 255, 100) if work_eff > 0.8 else (255, 200, 50) if work_eff > 0.5 else (255, 100, 100)
+
         lines = [
             (f"纬度: {zone.lat_range[0]:.0f}° ~ {zone.lat_range[1]:.0f}°", (180, 200, 220)),
             (f"经度: {zone.lon_range[0]:.0f}° ~ {zone.lon_range[1]:.0f}°", (180, 200, 220)),
@@ -548,7 +553,7 @@ class ZoneViewScreen(Screen):
             (f"温度: {zone.temperature:.1f} ℃", self._temp_color(zone.temperature)),
             (f"辐射: {zone.radiation:.2f}", self._rad_color(zone.radiation)),
             (f"光照: {zone.light_intensity:.0%}", (255, 255, 150)),
-            (f"面积权重: {zone.area_weight:.2f}", (150, 150, 180)),
+            (f"工作效率: {work_eff:.0%}", eff_color),
         ]
 
         for text, color in lines:
@@ -557,13 +562,27 @@ class ZoneViewScreen(Screen):
                 screen.blit(surf, (x, y))
             y += font.get_height() + 2
 
+        # 库存人口（如果该区域有库存设施）
+        buildings_in_zone = self.simulator.entities.get_buildings_in_zone(zone.zone_id)
+        storage_buildings = [b for b in buildings_in_zone if b.storage_capacity > 0 and b.active and not b.destroyed]
+        if storage_buildings:
+            zone_storage_cap = sum(b.storage_capacity for b in storage_buildings)
+            # 按比例计算该区域的库存人口
+            total_cap = self.simulator.entities.population.storage_capacity
+            total_stored = self.simulator.entities.population.stored_population
+            zone_stored = int(total_stored * zone_storage_cap / total_cap) if total_cap > 0 else 0
+            stored_text = f"库存人口: {zone_stored}/{zone_storage_cap}"
+            stored_color = (100, 255, 150) if zone_stored < zone_storage_cap else (255, 200, 80)
+            surf = font.render(stored_text, True, stored_color)
+            screen.blit(surf, (x, y))
+            y += font.get_height() + 2
+
         # 建筑列表
         y += 6
         buildings_header = font.render("── 建筑 ──", True, (120, 150, 200))
         screen.blit(buildings_header, (x, y))
         y += font.get_height() + 4
 
-        buildings_in_zone = self.simulator.entities.get_buildings_in_zone(zone.zone_id)
         if not buildings_in_zone:
             empty_surf = small_font.render("暂无建筑", True, (100, 100, 120))
             screen.blit(empty_surf, (x, y))
@@ -584,10 +603,44 @@ class ZoneViewScreen(Screen):
                     color = (150, 255, 150)
 
                 workers = f"({b.assigned_workers}/{b.worker_capacity})" if b.worker_capacity > 0 else ""
-                b_text = f"• {b.name} [{status}] {workers}"
+                storage_info = f" [库存:{b.storage_capacity}人]" if b.storage_capacity > 0 else ""
+                b_text = f"• {b.name} [{status}] {workers}{storage_info}"
                 b_surf = small_font.render(b_text, True, color)
                 screen.blit(b_surf, (x, y))
                 y += small_font.get_height() + 2
+
+                # 产出和效率详情行
+                if b.active and not b.destroyed and not b.under_construction and (b.worker_capacity > 0 or b.building_type in {"storage_vault", "large_storage_vault", "shelter", "deep_shelter", "radiation_shield"}):
+                    # 计算效率
+                    durability_ratio = b.durability / b.max_durability if b.max_durability > 0 else 0
+                    zone_eff = zone.get_work_efficiency()
+                    auto_mult = self.simulator.entities.population.automation_multiplier
+                    gen, cons = self.simulator.entities.get_electricity_balance()
+                    power_ratio = min(1.0, gen / max(cons, 0.001)) if cons > 0 else 1.0
+
+                    total_eff = durability_ratio * zone_eff * auto_mult
+                    if b.per_worker_output:
+                        total_eff *= power_ratio
+                    eff_pct = total_eff * 100
+
+                    # 效率颜色
+                    eff_color = (100, 255, 100) if eff_pct > 80 else (255, 200, 50) if eff_pct > 50 else (255, 100, 100)
+
+                    # 产出文本
+                    output = b.get_output(auto_mult, zone_eff)
+                    output_parts = []
+                    for res, amt_per_day in output.items():
+                        display = RESOURCE_DISPLAY_NAMES.get(res, res)
+                        output_parts.append(f"{display}+{amt_per_day:.1f}")
+
+                    if output_parts:
+                        detail_text = f"  效率:{eff_pct:.0f}% 产出:{' '.join(output_parts)}/天"
+                    else:
+                        detail_text = f"  效率:{eff_pct:.0f}%"
+
+                    detail_surf = tiny_font.render(detail_text, True, eff_color)
+                    screen.blit(detail_surf, (x, y))
+                    y += tiny_font.get_height() + 2
 
             if len(buildings_in_zone) > 6:
                 more = small_font.render(f"  ...还有 {len(buildings_in_zone) - 6} 座", True, (120, 120, 140))

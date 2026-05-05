@@ -183,6 +183,13 @@ class DecisionScreen(Screen):
             state_y = int(60 * scale)
             screen.blit(state_surf, (int(20 * scale), state_y))
 
+            # 库存信息
+            pop = self.simulator.entities.population
+            storage_text = f"库存: {pop.stored_population}/{pop.storage_capacity} 人"
+            storage_color = (100, 255, 150) if pop.stored_population <= pop.storage_capacity else (255, 100, 100)
+            storage_surf = self.fonts['small'].render(storage_text, True, storage_color)
+            screen.blit(storage_surf, (int(20 * scale), state_y + self.fonts['small'].get_height() + 4))
+
         self.back_button.render(screen)
 
         # 渲染决策列表
