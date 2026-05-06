@@ -65,7 +65,7 @@ class TechTree:
     - 理论科研点: 需要「科学院」建筑 + 大量电力消耗
     """
 
-    def __init__(self):
+    def __init__(self, config: dict = None):
         self.nodes: Dict[str, TechNode] = {}
         # 科技点数池
         self.research_points: Dict[str, float] = {
@@ -77,10 +77,31 @@ class TechTree:
         self.researching_tech_id: Optional[str] = None
         # 当前研究已投入的各类科技点数 {point_type: accumulated}
         self.research_progress: Dict[str, float] = {}
-        self._init_default_techs()
+        self._config = config or {}
+        self._init_default_techs(config)
 
-    def _init_default_techs(self):
-        """初始化完整的科技树"""
+    def _init_default_techs(self, config: dict = None):
+        """初始化完整的科技树 — 优先从 config["technology"] 读取，否则使用硬编码默认值"""
+        tech_config = (config or {}).get("technology", {})
+
+        if tech_config:
+            for tech_id, tdata in tech_config.items():
+                self.add_node(TechNode(
+                    id=tech_id,
+                    name=tdata.get("name", tech_id),
+                    description=tdata.get("description", ""),
+                    effect_description=tdata.get("effect_description", ""),
+                    research_cost=tdata.get("research_cost", {}),
+                    resource_cost=tdata.get("resource_cost", {}),
+                    requirements=tdata.get("requirements", {}),
+                    prerequisites=tdata.get("prerequisites", []),
+                    tier=tdata.get("tier", 0),
+                    column=tdata.get("column", 0),
+                    category=tdata.get("category", "basic"),
+                ))
+            return
+
+        # 硬编码默认科技树（config缺失时使用）
 
         # ═══════════════════ Tier 0：起始科技（无前置）═══════════════
         self.add_node(TechNode(

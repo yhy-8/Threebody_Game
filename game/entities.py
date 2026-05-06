@@ -81,20 +81,21 @@ class PopulationManager:
     人口通过 '生育' 岗位增长；自动化科技可提高单人效率。
     """
 
-    def __init__(self, initial_population: int = 100):
+    def __init__(self, initial_population: int = 100, config: dict = None):
         self.total: int = initial_population
         self.breeders: int = 0  # 专门从事生育的人口
         self.stored_population: int = 0  # 脱水库存中的人口
         self.storage_capacity: int = 0   # 总库存容量（由库存设施提供，每帧重算）
 
-        # 人口增长基础参数
-        self.base_growth_per_breeder: float = 0.05  # 每个生育人口每天增长 0.05 人
-        self.natural_growth_rate: float = 0.001  # 闲置人口微量自然增长（每人每天）
-        # 自动化效率倍率（科技解锁后提升）
+        # 从配置读取人口参数（缺失时使用硬编码默认值）
+        pop_config = (config or {}).get("population", {})
+        self.base_growth_per_breeder: float = pop_config.get("base_growth_per_breeder", 0.05)
+        self.natural_growth_rate: float = pop_config.get("natural_growth_rate", 0.001)
         self.automation_multiplier: float = 1.0
-        # 食物消耗：每人每天消耗食物
-        self.food_per_person_per_day: float = 0.1
-        # 人口累积（用于非整数增长）
+        self.food_per_person_per_day: float = pop_config.get("food_per_person_per_day", 0.1)
+        self._starvation_threshold: float = pop_config.get("starvation_threshold", 0.5)
+        self._starvation_rate: float = pop_config.get("starvation_rate", 0.01)
+        self._dehydrate_food_rate: float = pop_config.get("dehydrate_food_consumption_rate", 0.2)
         self._growth_accumulator: float = 0.0
 
     def get_idle(self, total_building_workers: int) -> int:
@@ -135,15 +136,15 @@ class PopulationManager:
         Returns:
             消耗信息 {"food_consumed": float, "growth": float}
         """
-        # 食物消耗（脱水状态消耗降为20%）
-        consumption_rate = 0.2 if dehydrated else 1.0
+        # 食物消耗（脱水状态消耗降低）
+        consumption_rate = self._dehydrate_food_rate if dehydrated else 1.0
         food_needed = self.total * self.food_per_person_per_day * dt_days * consumption_rate
         food_consumed = min(food_needed, food_available)
         food_satisfaction = food_consumed / max(food_needed, 0.001)
 
         # 如果食物严重不足，人口减少
-        if food_satisfaction < 0.5:
-            starvation = (0.5 - food_satisfaction) * self.total * 0.01 * dt_days
+        if food_satisfaction < self._starvation_threshold:
+            starvation = (self._starvation_threshold - food_satisfaction) * self.total * self._starvation_rate * dt_days
             self.total = max(1, int(self.total - starvation))
 
         # 生育人口增长
@@ -280,13 +281,17 @@ class Building:
         if self.durability > 0:
             self.active = True
 
-    def apply_environment_damage(self, zone_temp: float, zone_radiation: float, dt: float):
+    def apply_environment_damage(self, zone_temp: float, zone_radiation: float, dt: float,
+                                  heat_coeff: float = 0.02, cold_coeff: float = 0.01, rad_coeff: float = 0.03):
         """根据所在区域的环境计算伤害
 
         Args:
             zone_temp: 区域温度 (℃)
             zone_radiation: 区域辐射度
             dt: 帧间隔（游戏天数）
+            heat_coeff: 高温伤害系数
+            cold_coeff: 低温伤害系数
+            rad_coeff: 辐射伤害系数
         """
         if self.under_construction:
             return
@@ -296,17 +301,17 @@ class Building:
         # 高温伤害
         if zone_temp > self.heat_resistance:
             excess = zone_temp - self.heat_resistance
-            damage += excess * 0.02 * dt
+            damage += excess * heat_coeff * dt
 
         # 低温伤害
         if zone_temp < self.cold_resistance:
             excess = self.cold_resistance - zone_temp
-            damage += excess * 0.01 * dt
+            damage += excess * cold_coeff * dt
 
         # 辐射伤害
         if zone_radiation > self.radiation_resistance:
             excess = zone_radiation - self.radiation_resistance
-            damage += excess * 0.03 * dt
+            damage += excess * rad_coeff * dt
 
         if damage > 0:
             self.take_damage(damage)
@@ -346,12 +351,13 @@ class EntityManager:
     def __init__(self, config: dict = None):
         self.buildings: List[Building] = []
         self.resources: dict = {}
-        
+        self._config = config or {}
+
         initial_pop = 100
         if config and "initial_entities" in config:
             initial_pop = config["initial_entities"].get("population", 100)
-            
-        self.population: PopulationManager = PopulationManager(initial_pop)
+
+        self.population: PopulationManager = PopulationManager(initial_pop, config=config)
         self.global_efficiency = 1.0
         self._init_defaults(config)
 
@@ -545,13 +551,18 @@ class EntityManager:
 
         # 建筑逐区域环境伤害（耐久度下降仅由环境伤害导致，不自然衰减）
         if zone_manager:
+            damage_config = self._config.get("damage_rates", {})
+            heat_coeff = damage_config.get("heat_damage_coefficient", 0.02)
+            cold_coeff = damage_config.get("cold_damage_coefficient", 0.01)
+            rad_coeff = damage_config.get("radiation_damage_coefficient", 0.03)
             for building in self.buildings:
                 if building.destroyed or building.zone_id < 0:
                     continue
                 zone = zone_manager.get_zone(building.zone_id)
                 if zone:
                     building.apply_environment_damage(
-                        zone.temperature, zone.radiation, dt
+                        zone.temperature, zone.radiation, dt,
+                        heat_coeff, cold_coeff, rad_coeff
                     )
 
         # 建造进度推进
@@ -581,7 +592,10 @@ class EntityManager:
         power_ratio = min(1.0, gen / max(cons, 0.001)) if cons > 0 else 1.0
 
         # 脱水状态下关键建筑类型（产出不受脱水影响）
-        dehydrate_exempt_types = {"storage_vault", "large_storage_vault", "shelter", "deep_shelter"}
+        dehydrate_config = self._config.get("dehydrate", {})
+        dehydrate_exempt_types = set(dehydrate_config.get("exempt_types",
+            ["storage_vault", "large_storage_vault", "shelter", "deep_shelter"]))
+        dehydrate_output_mult = dehydrate_config.get("output_multiplier", 0.1)
 
         # 先扣消耗
         for building in self.buildings:
@@ -604,7 +618,7 @@ class EntityManager:
 
             # 脱水产出惩罚
             if dehydrated and building.building_type not in dehydrate_exempt_types:
-                output = {k: v * 0.1 for k, v in output.items()}
+                output = {k: v * dehydrate_output_mult for k, v in output.items()}
 
             for resource, amount in output.items():
                 daily_amount = amount * dt

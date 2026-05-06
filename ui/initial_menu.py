@@ -63,6 +63,7 @@ class MenuButton:
         self.font_size = font_size
         self.hovered = False
         self.clicked = False
+        self.selected = False
         self.animation_offset = 0.0
 
         from render.ui import get_font
@@ -98,7 +99,10 @@ class MenuButton:
         rect = pygame.Rect(x, self.rect.y, self.rect.width, self.rect.height)
 
         # 颜色
-        if self.clicked:
+        if self.selected:
+            bg_color = (80, 120, 180)
+            border_color = (150, 180, 255)
+        elif self.clicked:
             bg_color = (80, 90, 140)
             border_color = (150, 160, 220)
         elif self.hovered:

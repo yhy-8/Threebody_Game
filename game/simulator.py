@@ -14,10 +14,15 @@ class GameSimulator:
     def __init__(self, config: dict = None):
         self._config = config or {}
         self._env_config = self._config.get("environment", {})
+        self._research_config = self._config.get("research", {})
+        self._storage_damage_config = self._config.get("storage_damage", {})
+        sim_config = self._config.get("simulation", {})
+        self._time_scale_min = sim_config.get("time_scale_min", 0.1)
+        self._time_scale_max = sim_config.get("time_scale_max", 10.0)
         self.environment = ThreeBodySimulation()
         self.entities = EntityManager(config)
-        self.tech_tree = TechTree()
-        self.decision_manager = DecisionManager()
+        self.tech_tree = TechTree(config)
+        self.decision_manager = DecisionManager(config)
         self.planet_zones = PlanetZoneManager(self._env_config)
         self.time = 0.0
         self.paused = False
@@ -34,12 +39,17 @@ class GameSimulator:
 
     def reset(self, config: dict = None):
         """重置游戏状态 - 用于开始新游戏（不重置 universe_name，由外部设置）"""
-        self.environment = ThreeBodySimulation()
-        self.entities = EntityManager(config)
-        self.tech_tree = TechTree()
-        self.decision_manager = DecisionManager()
         self._config = config or {}
         self._env_config = self._config.get("environment", {})
+        self._research_config = self._config.get("research", {})
+        self._storage_damage_config = self._config.get("storage_damage", {})
+        sim_config = self._config.get("simulation", {})
+        self._time_scale_min = sim_config.get("time_scale_min", 0.1)
+        self._time_scale_max = sim_config.get("time_scale_max", 10.0)
+        self.environment = ThreeBodySimulation()
+        self.entities = EntityManager(config)
+        self.tech_tree = TechTree(config)
+        self.decision_manager = DecisionManager(config)
         self.planet_zones = PlanetZoneManager(self._env_config)
         self.time = 0.0
         self.paused = False
@@ -113,18 +123,25 @@ class GameSimulator:
     def _process_research_output(self, game_days_dt: float):
         """处理研究建筑的科技点数产出"""
         dehydrated = self.decision_manager.current_state.value == "dehydrated"
-        dehydrate_mult = 0.1 if dehydrated else 1.0
+        dehydrate_mult = self._research_config.get("dehydrate_multiplier", 0.1) if dehydrated else 1.0
+        pop_divisor = self._research_config.get("basic_population_divisor", 500.0)
+        institute_output = self._research_config.get("institute_output_per_day", 1.0)
+        lab_output = self._research_config.get("laboratory_output_per_day", 2.0)
+        academy_output = self._research_config.get("academy_output_per_day", 1.0)
+        alpha = self._research_config.get("ema_alpha", 0.05)
+        auto_mult = self._research_config.get("automation_multiplier", 1.3)
 
         # 累计本帧产出（用于 UI 显示产出速率）
         frame_output = {RESEARCH_BASIC: 0.0, RESEARCH_APPLIED: 0.0, RESEARCH_THEORETICAL: 0.0}
 
-        # 基础科研：人口 / 500 每天产出1点基础科研
+        # 基础科研：人口 / divisor 每天产出1点基础科研
         pop = self.entities.get_resource("population")
-        basic_output = (pop / 500.0) * dehydrate_mult * game_days_dt
+        basic_rate = pop / pop_divisor
+        basic_output = basic_rate * dehydrate_mult * game_days_dt
         self.tech_tree.produce_research(RESEARCH_BASIC, basic_output)
-        frame_output[RESEARCH_BASIC] += (pop / 500.0) * dehydrate_mult
+        frame_output[RESEARCH_BASIC] += basic_rate * dehydrate_mult
 
-        # 研究院：每座活跃研究院每天产出1点基础科研（受工人饱和度、耐久度、区域效率影响）
+        # 研究院：每座活跃研究院每天产出 institute_output 点基础科研
         institutes = self.entities.get_buildings_by_type("research_institute")
         for inst in institutes:
             durability_ratio = inst.durability / inst.max_durability if inst.max_durability > 0 else 0
@@ -135,11 +152,11 @@ class GameSimulator:
                 if zone:
                     zone_eff = zone.get_work_efficiency()
             efficiency = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
-            output = 1.0 * efficiency * game_days_dt
+            output = institute_output * efficiency * game_days_dt
             self.tech_tree.produce_research(RESEARCH_BASIC, output)
-            frame_output[RESEARCH_BASIC] += 1.0 * efficiency
+            frame_output[RESEARCH_BASIC] += institute_output * efficiency
 
-        # 应用科研：每座活跃的实验室每天产出2点（受工人饱和度、耐久度、区域效率影响）
+        # 应用科研：每座活跃的实验室每天产出 lab_output 点
         labs = self.entities.get_buildings_by_type("laboratory")
         for lab in labs:
             durability_ratio = lab.durability / lab.max_durability if lab.max_durability > 0 else 0
@@ -150,11 +167,11 @@ class GameSimulator:
                 if zone:
                     zone_eff = zone.get_work_efficiency()
             efficiency = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
-            output = 2.0 * efficiency * game_days_dt
+            output = lab_output * efficiency * game_days_dt
             self.tech_tree.produce_research(RESEARCH_APPLIED, output)
-            frame_output[RESEARCH_APPLIED] += 2.0 * efficiency
+            frame_output[RESEARCH_APPLIED] += lab_output * efficiency
 
-        # 理论科研：每座活跃的科学院每天产出1点（受工人饱和度、耐久度、区域效率影响）
+        # 理论科研：每座活跃的科学院每天产出 academy_output 点
         academies = self.entities.get_buildings_by_type("academy")
         for academy in academies:
             durability_ratio = academy.durability / academy.max_durability if academy.max_durability > 0 else 0
@@ -165,12 +182,11 @@ class GameSimulator:
                 if zone:
                     zone_eff = zone.get_work_efficiency()
             efficiency = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
-            output = 1.0 * efficiency * game_days_dt
+            output = academy_output * efficiency * game_days_dt
             self.tech_tree.produce_research(RESEARCH_THEORETICAL, output)
-            frame_output[RESEARCH_THEORETICAL] += 1.0 * efficiency
+            frame_output[RESEARCH_THEORETICAL] += academy_output * efficiency
 
         # 更新产出速率（指数移动平均，平滑显示）
-        alpha = 0.05
         for rtype in self.research_output_rate:
             self.research_output_rate[rtype] = (
                 alpha * frame_output[rtype]
@@ -180,21 +196,13 @@ class GameSimulator:
         # 检查是否有研究刚完成并触发特殊效果
         if not self.tech_tree.researching_tech_id:
             auto_node = self.tech_tree.get_node("automation")
-            if auto_node and auto_node.unlocked and self.entities.population.automation_multiplier < 1.3:
-                self.entities.population.automation_multiplier = 1.3
+            if auto_node and auto_node.unlocked and self.entities.population.automation_multiplier < auto_mult:
+                self.entities.population.automation_multiplier = auto_mult
 
     def _process_storage_damage(self, game_days_dt: float):
-        """脱水状态下：库存人口和暴露人口的环境损耗
-
-        库存设施根据所在区域环境计算损耗率：
-        - 正常区域（温度-80~100, 辐射<10）：无损耗
-        - 极端温度区域：每天损失 0.5%~5%
-        - 高辐射区域：每天损失 0.5%~3%
-        没有活跃库存设施时，库存人口全部死亡。
-
-        暴露在环境中的活跃人口（未入库且非1%维持人员）额外受环境影响。
-        """
+        """脱水状态下：库存人口和暴露人口的环境损耗"""
         pop = self.entities.population
+        sdc = self._storage_damage_config
 
         # 检查是否还有活跃的库存设施
         active_storage_buildings = [
@@ -203,23 +211,32 @@ class GameSimulator:
         ]
 
         if not active_storage_buildings and pop.stored_population > 0:
-            # 没有库存设施，库存人口全部死亡
             pop.stored_population = 0
             return
 
-        # 计算库存人口损耗
         total_stored = pop.stored_population
         if total_stored <= 0:
             return
 
-        # 按库存设施的区域分配损耗
         total_capacity = sum(b.storage_capacity for b in active_storage_buildings)
         total_loss = 0.0
+
+        ext_cold = sdc.get("extreme_cold_threshold", -80)
+        ext_heat = sdc.get("extreme_heat_threshold", 100)
+        ext_base = sdc.get("extreme_base_loss_rate", 0.005)
+        ext_coeff = sdc.get("extreme_excess_coefficient", 0.04)
+        mild_cold = sdc.get("mild_cold_threshold", -10)
+        mild_heat = sdc.get("mild_heat_threshold", 60)
+        mild_coeff = sdc.get("mild_loss_coefficient", 0.002)
+        rad_high = sdc.get("radiation_high_threshold", 5)
+        rad_low = sdc.get("radiation_low_threshold", 2)
+        rad_high_base = sdc.get("radiation_high_base_rate", 0.003)
+        rad_high_coeff = sdc.get("radiation_high_excess_coefficient", 0.02)
+        rad_low_coeff = sdc.get("radiation_low_coefficient", 0.001)
 
         for building in active_storage_buildings:
             if total_capacity <= 0:
                 break
-            # 按容量比例分配库存人口到该设施
             fraction = building.storage_capacity / total_capacity
             stored_here = total_stored * fraction
 
@@ -231,50 +248,46 @@ class GameSimulator:
                 continue
 
             loss_rate = 0.0
-            # 极端温度损耗
-            if zone.temperature < -80:
-                excess = (-80 - zone.temperature) / 100.0
-                loss_rate += 0.005 + excess * 0.04  # 0.5% ~ 4.5%/天
-            elif zone.temperature > 100:
-                excess = (zone.temperature - 100) / 100.0
-                loss_rate += 0.005 + excess * 0.04
-            elif zone.temperature < -10:
-                # 轻微寒冷也有少量损耗
-                factor = (-10 - zone.temperature) / 70.0  # 0~1
-                loss_rate += factor * 0.002  # 最多 0.2%/天
-            elif zone.temperature > 60:
-                factor = (zone.temperature - 60) / 40.0
-                loss_rate += factor * 0.002
+            if zone.temperature < ext_cold:
+                excess = (ext_cold - zone.temperature) / 100.0
+                loss_rate += ext_base + excess * ext_coeff
+            elif zone.temperature > ext_heat:
+                excess = (zone.temperature - ext_heat) / 100.0
+                loss_rate += ext_base + excess * ext_coeff
+            elif zone.temperature < mild_cold:
+                factor = (mild_cold - zone.temperature) / 70.0
+                loss_rate += factor * mild_coeff
+            elif zone.temperature > mild_heat:
+                factor = (zone.temperature - mild_heat) / 40.0
+                loss_rate += factor * mild_coeff
 
-            # 高辐射损耗
-            if zone.radiation > 5:
-                excess = (zone.radiation - 5) / 10.0
-                loss_rate += 0.003 + excess * 0.02  # 0.3% ~ 2.3%/天
-            elif zone.radiation > 2:
-                factor = (zone.radiation - 2) / 3.0
-                loss_rate += factor * 0.001  # 最多 0.1%/天
+            if zone.radiation > rad_high:
+                excess = (zone.radiation - rad_high) / 10.0
+                loss_rate += rad_high_base + excess * rad_high_coeff
+            elif zone.radiation > rad_low:
+                factor = (zone.radiation - rad_low) / 3.0
+                loss_rate += factor * rad_low_coeff
 
             total_loss += stored_here * loss_rate * game_days_dt
 
         if total_loss > 0:
             pop.stored_population = max(0, int(pop.stored_population - total_loss))
 
-        # 暴露在环境中的活跃人口额外损耗（不是1%维持人员的那部分）
-        # 活跃人口 > 库存容量的人就是在暴露环境中
+        # 暴露人口损耗
         exposed = max(0, pop.total - max(1, int((pop.total + pop.stored_population) * 0.01)))
         if exposed > 0:
             avg_env = self.planet_zones.get_average_environment()
             exposed_loss_rate = 0.0
             temp = avg_env.get("temperature", 20)
             rad = avg_env.get("radiation", 0)
-            if temp < -80 or temp > 100:
-                exposed_loss_rate = 0.1  # 极端环境10%/天
-            elif temp < -10 or temp > 60:
-                exposed_loss_rate = 0.02  # 恶劣环境2%/天
-            if rad > 5:
-                exposed_loss_rate += 0.05
-            elif rad > 2:
-                exposed_loss_rate += 0.01
+            if temp < ext_cold or temp > ext_heat:
+                exposed_loss_rate = sdc.get("exposed_extreme_loss_rate", 0.1)
+            elif temp < mild_cold or temp > mild_heat:
+                exposed_loss_rate = sdc.get("exposed_harsh_loss_rate", 0.02)
+            if rad > rad_high:
+                exposed_loss_rate += sdc.get("exposed_radiation_high_rate", 0.05)
+            elif rad > rad_low:
+                exposed_loss_rate += sdc.get("exposed_radiation_low_rate", 0.01)
             if exposed_loss_rate > 0:
                 loss = int(exposed * exposed_loss_rate * game_days_dt)
                 if loss > 0:
@@ -407,7 +420,7 @@ class GameSimulator:
 
     def set_time_scale(self, scale: float):
         """设置时间流逝速度"""
-        self.environment.time_scale = max(0.1, min(10.0, scale))
+        self.environment.time_scale = max(self._time_scale_min, min(self._time_scale_max, scale))
 
     def _init_zone_temperatures(self):
         """在游戏开始时校准 light_to_temp_scale 并将区域温度初始化

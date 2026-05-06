@@ -20,6 +20,9 @@ class MainScreen(Screen):
         self.labels: List[Label] = []  # 标签
         self.showing_menu = False  # 是否显示游戏菜单
         self.simulator = None  # 游戏模拟器引用，由外部注入
+        self.speed_options = [1, 2, 3, 5]  # 可用速度倍率
+        self.speed_buttons: List[MenuButton] = []
+        self.current_speed_index = 0  # 当前速度选项索引
         self.setup_ui()
         self.generate_stars()
 
@@ -63,6 +66,19 @@ class MainScreen(Screen):
             font_size=btn_font_size
         )
         x += btn_w + gap
+
+        # 速度切换按钮
+        speed_btn_w = max(35, int(42 * scale))
+        self.speed_buttons = []
+        for i, speed in enumerate(self.speed_options):
+            btn = MenuButton(
+                x, int(15 * scale), speed_btn_w, btn_h,
+                f"{speed}x",
+                callback=lambda s=speed, idx=i: self.on_speed_clicked(s, idx),
+                font_size=int(btn_font_size * 0.85)
+            )
+            self.speed_buttons.append(btn)
+            x += speed_btn_w + gap
 
         # 科技树按钮
         self.tech_button = MenuButton(
@@ -133,6 +149,57 @@ class MainScreen(Screen):
             self.simulator.toggle_pause()
             self.pause_button.text = "继续" if self.simulator.paused else "暂停"
 
+    def on_speed_clicked(self, speed: int, index: int):
+        """设置游戏速度"""
+        if self.simulator:
+            self.simulator.set_time_scale(float(speed))
+            self.current_speed_index = index
+            self._update_speed_button_highlight()
+            # 同步更新全局设置以避免被主循环覆盖
+            if self.screen_manager and 'settings' in self.screen_manager.global_state:
+                settings = self.screen_manager.global_state['settings']
+                if isinstance(settings, dict):
+                    settings['time_scale'] = float(speed)
+
+    def _update_speed_button_highlight(self):
+        """更新速度按钮高亮"""
+        for i, btn in enumerate(self.speed_buttons):
+            btn.selected = (i == self.current_speed_index)
+
+    def _increase_speed(self):
+        if self.current_speed_index < len(self.speed_options) - 1:
+            self.current_speed_index += 1
+            speed = self.speed_options[self.current_speed_index]
+            if self.simulator:
+                self.simulator.set_time_scale(float(speed))
+            self._update_speed_button_highlight()
+            self._sync_speed_to_settings(float(speed))
+
+    def _decrease_speed(self):
+        if self.current_speed_index > 0:
+            self.current_speed_index -= 1
+            speed = self.speed_options[self.current_speed_index]
+            if self.simulator:
+                self.simulator.set_time_scale(float(speed))
+            self._update_speed_button_highlight()
+            self._sync_speed_to_settings(float(speed))
+
+    def _set_speed_by_index(self, index: int):
+        if 0 <= index < len(self.speed_options):
+            self.current_speed_index = index
+            speed = self.speed_options[index]
+            if self.simulator:
+                self.simulator.set_time_scale(float(speed))
+            self._update_speed_button_highlight()
+            self._sync_speed_to_settings(float(speed))
+
+    def _sync_speed_to_settings(self, speed: float):
+        """同步速度到全局设置以防止主循环覆盖"""
+        if self.screen_manager and 'settings' in self.screen_manager.global_state:
+            settings = self.screen_manager.global_state['settings']
+            if isinstance(settings, dict):
+                settings['time_scale'] = speed
+
     def on_menu_clicked(self):
         """点击菜单按钮"""
         # 切换到游戏菜单
@@ -178,6 +245,16 @@ class MainScreen(Screen):
             else:
                 self.starmap_button.text = "星图"
 
+        # 同步速度按钮与模拟器当前速度
+        if self.simulator and self.speed_buttons:
+            current_scale = self.simulator.environment.time_scale
+            self.current_speed_index = 0
+            for i, speed in enumerate(self.speed_options):
+                if abs(current_scale - speed) < 0.1:
+                    self.current_speed_index = i
+                    break
+            self._update_speed_button_highlight()
+
     def update(self, dt: float):
         """更新界面"""
         super().update(dt)
@@ -193,6 +270,8 @@ class MainScreen(Screen):
         # 更新按钮
         self.menu_button.update(dt)
         self.pause_button.update(dt)
+        for btn in self.speed_buttons:
+            btn.update(dt)
         self.tech_button.update(dt)
         self.policy_button.update(dt)
         self.zone_button.update(dt)
@@ -208,6 +287,9 @@ class MainScreen(Screen):
             return True
         if self.pause_button.handle_event(event):
             return True
+        for btn in self.speed_buttons:
+            if btn.handle_event(event):
+                return True
         if self.tech_button.handle_event(event):
             return True
         if self.policy_button.handle_event(event):
@@ -225,6 +307,25 @@ class MainScreen(Screen):
                 return True
             if event.key == pygame.K_ESCAPE:
                 self.screen_manager.switch_to(ScreenType.GAME_MENU)
+                return True
+            # 速度快捷键
+            if event.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
+                self._increase_speed()
+                return True
+            if event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+                self._decrease_speed()
+                return True
+            if event.key == pygame.K_1:
+                self._set_speed_by_index(0)
+                return True
+            if event.key == pygame.K_2:
+                self._set_speed_by_index(1)
+                return True
+            if event.key == pygame.K_3:
+                self._set_speed_by_index(2)
+                return True
+            if event.key == pygame.K_5:
+                self._set_speed_by_index(3)
                 return True
 
         return False
@@ -265,11 +366,13 @@ class MainScreen(Screen):
         # 渲染按钮
         self.menu_button.render(screen)
         self.pause_button.render(screen)
+        for btn in self.speed_buttons:
+            btn.render(screen)
         self.tech_button.render(screen)
         self.policy_button.render(screen)
         self.zone_button.render(screen)
         self.starmap_button.render(screen)
-        
+
         # 渲染游戏时间和说明
         if self.simulator and 'normal' in self.fonts:
             time_text = f"第 {int(self.simulator.time)} 天"
@@ -278,10 +381,17 @@ class MainScreen(Screen):
             time_rect = time_surf.get_rect(center=(width // 2, time_y))
             screen.blit(time_surf, time_rect)
 
+            # 速度指示器
+            speed = self.simulator.environment.time_scale
+            if speed != 1.0:
+                speed_text = f"({speed:.1f}x)"
+                speed_surf = self.fonts['normal'].render(speed_text, True, (255, 200, 100))
+                screen.blit(speed_surf, (time_rect.right + 10, time_rect.y))
+
         # 渲染底部提示
         if 'tiny' in self.fonts:
             hint = self.fonts['tiny'].render(
-                "ESC打开菜单 | 点击星图按钮进入3D视图",
+                "ESC菜单 | 空格暂停 | +/-/1235调速 | 星图按钮进3D视图",
                 True, (100, 120, 150)
             )
             hint_rect = hint.get_rect(center=(width // 2, height - 20))

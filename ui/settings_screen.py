@@ -343,7 +343,7 @@ class SettingsScreen(Screen):
             self.sliders = [
                 SettingSlider(
                     content_x, content_y, content_width, slider_height,
-                    0.1, 5.0, s.time_scale,
+                    0.1, 10.0, s.time_scale,
                     "时间流逝速度", decimals=1, suffix="x",
                     on_change=lambda v: setattr(self.settings, 'time_scale', v)
                 ),
@@ -475,6 +475,8 @@ class SettingsScreen(Screen):
         """应用设置"""
         self.save_settings()
         self.apply_display_settings()
+        # 通知主循环从settings同步time_scale
+        self.screen_manager.global_state['_settings_apply_pending'] = True
         print("设置已应用并保存")
 
     def on_back(self):
