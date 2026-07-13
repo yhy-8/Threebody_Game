@@ -11,50 +11,201 @@ grow_vertical = 2
 theme = ExtResource("2_theme")
 script = ExtResource("1_script")
 
-[node name="Toolbar" type="HBoxContainer" parent="."]
-layout_mode = 1
-anchors_preset = 2
-anchor_right = 1.0
-offset_bottom = 44.0
-
-[node name="BackButton" type="Button" parent="Toolbar"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "返回"
-
-[node name="PauseButton" type="Button" parent="Toolbar"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "暂停/继续"
-
-[node name="LockButton" type="Button" parent="Toolbar"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "锁定行星"
-
-[node name="RightSpacer" type="Control" parent="Toolbar"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="HelpButton" type="Button" parent="Toolbar"]
-layout_mode = 2
-text = "帮助(?)"
-
 [node name="Viewport3D" type="SubViewportContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
-anchor_top = 0.06
 grow_horizontal = 2
 grow_vertical = 2
 stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="Viewport3D"]
 handle_input_locally = false
+render_target_update_mode = 4
 
 [node name="StarMap3D" type="Node3D" parent="Viewport3D/SubViewport"]
+unique_name_in_owner = true
+
+[node name="CelestialBodies" type="Node3D" parent="Viewport3D/SubViewport/StarMap3D"]
+unique_name_in_owner = true
+
+[node name="Trails" type="Node3D" parent="Viewport3D/SubViewport/StarMap3D"]
 unique_name_in_owner = true
 
 [node name="Camera3D" type="Camera3D" parent="Viewport3D/SubViewport/StarMap3D"]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 500)
 fov = 60.0
+
+[node name="Toolbar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 24.0
+offset_top = 16.0
+offset_right = -24.0
+offset_bottom = 72.0
+theme_override_constants/separation = 10
+
+[node name="BackButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(120, 52)
+text = "← 返回"
+
+[node name="PauseButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "暂停"
+custom_minimum_size = Vector2(100, 52)
+
+[node name="LockButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "锁定行星"
+custom_minimum_size = Vector2(130, 52)
+
+[node name="RightSpacer" type="Control" parent="Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HelpButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "帮助 (?)"
+custom_minimum_size = Vector2(110, 52)
+
+[node name="InfoPanel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -58.0
+offset_right = -24.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="InfoLabel" type="Label" parent="InfoPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.72, 0.78, 0.96, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="HelpPanel" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -340.0
+offset_top = -240.0
+offset_right = 340.0
+offset_bottom = 240.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HelpVBox" type="VBoxContainer" parent="HelpPanel"]
+layout_mode = 1
+anchors_preset = 15
+offset_left = 24.0
+offset_top = 20.0
+offset_right = -24.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HelpTitle" type="Label" parent="HelpPanel/HelpVBox"]
+layout_mode = 2
+text = "3D 星图操作"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="HelpText" type="Label" parent="HelpPanel/HelpVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "左键拖拽：旋转视角\n鼠标滚轮 / W S：拉近拉远\nA D / 方向键：水平环绕\nQ E：垂直俯仰\n空格：暂停 / 继续\n\n研发望远镜解锁星图；计算机技术和混沌预测模型会逐步延长预测轨迹。"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CloseHelpButton" type="Button" parent="HelpPanel/HelpVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "关闭"
+custom_minimum_size = Vector2(0, 56)
+
+[node name="GameOverOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 30
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="RedOverlay" type="ColorRect" parent="GameOverOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.45, 0, 0, 0.78)
+
+[node name="GameOverPanel" type="Panel" parent="GameOverOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -320.0
+offset_top = -190.0
+offset_right = 320.0
+offset_bottom = 190.0
+
+[node name="GameOverTitle" type="Label" parent="GameOverOverlay/GameOverPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 48.0
+offset_bottom = 112.0
+text = "游戏结束"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.28, 0.28, 1)
+theme_override_font_sizes/font_size = 42
+
+[node name="GameOverReason" type="Label" parent="GameOverOverlay/GameOverPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 132.0
+offset_bottom = 184.0
+text = "天体发生碰撞，文明毁灭"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.76, 0.76, 1)
+theme_override_font_sizes/font_size = 20
+
+[node name="RestartButton" type="Button" parent="GameOverOverlay/GameOverPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -118.0
+offset_right = 150.0
+offset_bottom = -58.0
+text = "开始新游戏"

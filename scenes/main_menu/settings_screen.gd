@@ -10,6 +10,7 @@ var time_scale_val: float = 1.0
 var auto_save_interval: int = 5
 var enable_tutorial: bool = true
 var show_notifications: bool = true
+var developer_mode: bool = false
 var fullscreen: bool = false
 var vsync: bool = true
 var quality_level: int = 2
@@ -44,6 +45,12 @@ func _ready() -> void:
 	_switch_tab(Tab.GAME)
 
 
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		_on_back()
+
+
 func _switch_tab(tab: Tab) -> void:
 	current_tab = tab
 	for child in tab_content.get_children():
@@ -68,11 +75,11 @@ func _refresh_tab_highlight() -> void:
 
 func _make_slider(label: String, min_v: float, max_v: float, value: float, decimals: int, suffix: String, callback: Callable) -> HBoxContainer:
 	var hbox := HBoxContainer.new()
-	hbox.custom_minimum_size = Vector2(0, 50)
+	hbox.custom_minimum_size = Vector2(0, 56)
 
 	var lbl := Label.new()
 	lbl.text = label
-	lbl.custom_minimum_size = Vector2(160, 0)
+	lbl.custom_minimum_size = Vector2(200, 0)
 	hbox.add_child(lbl)
 
 	var slider := HSlider.new()
@@ -86,7 +93,7 @@ func _make_slider(label: String, min_v: float, max_v: float, value: float, decim
 
 	var val_lbl := Label.new()
 	val_lbl.name = "ValueLabel"
-	val_lbl.custom_minimum_size = Vector2(80, 0)
+	val_lbl.custom_minimum_size = Vector2(110, 0)
 	val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	var fmt := "%." + str(decimals) + "f%s"
 	val_lbl.text = fmt % [value, suffix]
@@ -100,17 +107,21 @@ func _make_checkbox(label: String, checked: bool, callback: Callable) -> CheckBo
 	var cb := CheckBox.new()
 	cb.text = label
 	cb.button_pressed = checked
-	cb.custom_minimum_size = Vector2(0, 40)
+	cb.custom_minimum_size = Vector2(0, 48)
 	cb.toggled.connect(func(v: bool): callback.call(v))
 	return cb
 
 
 func _build_game_tab() -> void:
 	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
 	vbox.add_child(_make_slider("时间流逝速度", 0.1, 10.0, time_scale_val, 1, "x", func(v): time_scale_val = v))
 	vbox.add_child(_make_slider("自动保存间隔", 1.0, 30.0, float(auto_save_interval), 0, "分钟", func(v): auto_save_interval = int(v)))
 	vbox.add_child(_make_checkbox("启用教程提示", enable_tutorial, func(v): enable_tutorial = v))
 	vbox.add_child(_make_checkbox("显示通知消息", show_notifications, func(v): show_notifications = v))
+	var developer_toggle := _make_checkbox("开发者模式（显示调试工具并绕过界面门槛）", developer_mode, func(v): developer_mode = v)
+	developer_toggle.tooltip_text = "开关本身不修改当前局；开发者工具执行的数值或科技修改会随存档保存"
+	vbox.add_child(developer_toggle)
 	tab_content.add_child(vbox)
 
 
@@ -162,6 +173,7 @@ func _load_settings() -> void:
 	auto_save_interval = data.get("auto_save_interval", 5)
 	enable_tutorial = data.get("enable_tutorial", true)
 	show_notifications = data.get("show_notifications", true)
+	developer_mode = data.get("developer_mode", false)
 	fullscreen = data.get("fullscreen", false)
 	vsync = data.get("vsync", true)
 	quality_level = data.get("quality_level", 2)
@@ -184,6 +196,7 @@ func _save_settings() -> void:
 		"auto_save_interval": auto_save_interval,
 		"enable_tutorial": enable_tutorial,
 		"show_notifications": show_notifications,
+		"developer_mode": developer_mode,
 		"fullscreen": fullscreen,
 		"vsync": vsync,
 		"quality_level": quality_level,
@@ -208,6 +221,7 @@ func _save_settings() -> void:
 
 func _on_apply() -> void:
 	_save_settings()
+	GameState.set_developer_mode(developer_mode)
 	if fullscreen:
 		get_window().mode = Window.MODE_FULLSCREEN
 	else:
@@ -219,4 +233,5 @@ func _on_apply() -> void:
 
 
 func _on_back() -> void:
-	get_tree().change_scene_to_file("res://scenes/main_menu/initial_menu.tscn")
+	var return_scene := "res://scenes/game/game_menu.tscn" if GameState.game_started else "res://scenes/main_menu/initial_menu.tscn"
+	get_tree().change_scene_to_file(return_scene)

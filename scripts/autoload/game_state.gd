@@ -3,6 +3,9 @@ extends Node
 
 signal state_updated()
 signal research_completed(tech_id: String, tech_name: String)
+signal developer_mode_changed(enabled: bool)
+
+const SETTINGS_PATH := "res://settings.json"
 
 # Preload all simulation scripts — their return values are GDScript resources used for .new()
 const ThreeBodySimScript = preload("res://scripts/simulation/three_body.gd")
@@ -26,6 +29,7 @@ var game_over: bool = false
 var game_started: bool = false
 var universe_name: String = "未命名宇宙"
 var last_autosave_day: int = -1
+var developer_mode: bool = false
 
 # ── 配置 ────────────────────────────────────────────
 var config: Dictionary = {}
@@ -42,6 +46,16 @@ var research_output_rate: Dictionary = {
 	"theoretical": 0.0,
 }
 var current_screen: String = ""
+
+
+func _ready() -> void:
+	_load_runtime_settings()
+
+
+func _process(p_delta: float) -> void:
+	# GameState is an Autoload, so the simulation keeps advancing while the
+	# player browses the technology, policy, zone, and starmap scenes.
+	update(min(p_delta, 0.1))
 
 
 func new_game(p_universe_name: String, p_config: Dictionary = {}) -> void:
@@ -92,6 +106,82 @@ func set_time_scale(p_scale: float) -> void:
 	EventBus.time_scale_changed.emit(time_scale)
 
 
+func set_developer_mode(p_enabled: bool) -> void:
+	if developer_mode == p_enabled:
+		return
+	developer_mode = p_enabled
+	developer_mode_changed.emit(developer_mode)
+	state_updated.emit()
+
+
+func can_access_starmap() -> bool:
+	return developer_mode or (tech_tree != null and tech_tree.is_unlocked("telescope"))
+
+
+func apply_developer_values(p_values: Dictionary) -> bool:
+	if not developer_mode or not game_started or entities == null or tech_tree == null:
+		return false
+
+	var population_values: Dictionary = p_values.get("population", {})
+	entities.population.total = maxi(0, int(population_values.get("total", entities.population.total)))
+	entities.population.stored_population = maxi(0, int(population_values.get("stored", entities.population.stored_population)))
+	entities.population.breeders = clampi(
+		int(population_values.get("breeders", entities.population.breeders)),
+		0,
+		entities.population.total,
+	)
+
+	var resource_values: Dictionary = p_values.get("resources", {})
+	for resource_id in resource_values:
+		if entities.resources.has(resource_id):
+			entities.resources[resource_id].amount = maxf(0.0, float(resource_values[resource_id]))
+
+	var research_values: Dictionary = p_values.get("research", {})
+	for research_id in research_values:
+		if tech_tree.research_points.has(research_id):
+			tech_tree.research_points[research_id] = maxf(0.0, float(research_values[research_id]))
+
+	state_updated.emit()
+	return true
+
+
+func developer_fill_resources(p_amount: float = 100000.0) -> bool:
+	if not developer_mode or entities == null:
+		return false
+	for resource in entities.resources.values():
+		resource.amount = maxf(0.0, p_amount)
+	state_updated.emit()
+	return true
+
+
+func developer_unlock_all_technologies() -> bool:
+	if not developer_mode or tech_tree == null:
+		return false
+	for tech_node in tech_tree.nodes.values():
+		tech_node.unlocked = true
+		tech_node.researching = false
+	tech_tree.researching_tech_id = ""
+	tech_tree.research_progress.clear()
+	state_updated.emit()
+	return true
+
+
+func _load_runtime_settings() -> void:
+	if not FileAccess.file_exists(SETTINGS_PATH):
+		return
+	var file := FileAccess.open(SETTINGS_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var json := JSON.new()
+	var error := json.parse(file.get_as_text())
+	file.close()
+	if error != OK:
+		return
+	var data = json.get_data()
+	if data is Dictionary:
+		developer_mode = data.get("developer_mode", false)
+
+
 func update(p_dt: float) -> void:
 	if paused or game_over or not game_started:
 		return
@@ -104,6 +194,12 @@ func update(p_dt: float) -> void:
 
 	environment.time_scale = time_scale
 	environment.update(p_dt)
+	if environment.has_collision():
+		game_over = true
+		paused = true
+		EventBus.game_over.emit("天体发生碰撞，文明毁灭")
+		state_updated.emit()
+		return
 
 	var stars_data: Array = environment.get_stars_data()
 	var planet_position: Vector3 = environment.get_planet_position()
@@ -122,6 +218,7 @@ func update(p_dt: float) -> void:
 	}
 
 	var game_days_dt: float = p_dt * time_scale
+	entities.set_policy_effects(decision_manager.active_policies)
 	entities.update(env_params, planet_zones, game_days_dt, dehydrated)
 
 	_process_research_output(game_days_dt)
@@ -140,6 +237,13 @@ func _process_research_output(p_game_days_dt: float) -> void:
 	if decision_manager != null:
 		dehydrated = (decision_manager.current_state == decision_manager.CivilizationState.DEHYDRATED)
 	var dehydrate_mult: float = _research_config.get("dehydrate_multiplier", 0.1) if dehydrated else 1.0
+	var policy_research_mult: float = 1.0
+	if decision_manager != null:
+		if "rationing" in decision_manager.active_policies:
+			policy_research_mult *= 0.8
+		if "industrial_drive" in decision_manager.active_policies:
+			policy_research_mult *= 2.5
+	dehydrate_mult *= policy_research_mult
 	var pop_divisor: float = _research_config.get("basic_population_divisor", 500.0)
 	var institute_output: float = _research_config.get("institute_output_per_day", 1.0)
 	var lab_output: float = _research_config.get("laboratory_output_per_day", 2.0)

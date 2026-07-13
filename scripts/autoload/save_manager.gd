@@ -1,9 +1,25 @@
 extends Node
 ## 存档管理 — 存档扫描/加载/保存/删除
 
-const SAVE_DIR := "res://saves/"
+const SAVE_DIRECTORY := "res://saves/"
 
 var _current_save_path: String = ""
+
+
+func ensure_save_directory() -> bool:
+	var absolute_dir := get_save_directory()
+	var ready := DirAccess.dir_exists_absolute(absolute_dir)
+	if not ready:
+		ready = DirAccess.make_dir_recursive_absolute(absolute_dir) == OK
+	return ready
+
+
+func get_save_directory() -> String:
+	return ProjectSettings.globalize_path(SAVE_DIRECTORY)
+
+
+func get_current_save_path() -> String:
+	return _current_save_path
 
 
 class SaveInfo:
@@ -27,14 +43,17 @@ class SaveInfo:
 ## 返回 {universe_name: [SaveInfo, ...]}
 func scan_saves() -> Dictionary:
 	var saves := {}
-	var dir := DirAccess.open(SAVE_DIR)
+	if not ensure_save_directory():
+		return saves
+	var save_dir := get_save_directory()
+	var dir := DirAccess.open(save_dir)
 	if dir == null:
 		return saves
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
 	while file_name != "":
 		if not dir.current_is_dir() and file_name.ends_with(".sav"):
-			var path := SAVE_DIR.path_join(file_name)
+			var path := save_dir.path_join(file_name)
 			var info := _read_save_info(path)
 			if info != null:
 				var uni_name := info.universe_name
@@ -66,14 +85,15 @@ func scan_universes() -> Array:
 
 func universe_exists(name: String) -> bool:
 	var normalized := name.to_lower().strip_edges()
-	var dir := DirAccess.open(SAVE_DIR)
+	var save_dir := get_save_directory()
+	var dir := DirAccess.open(save_dir)
 	if dir == null:
 		return false
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
 	while file_name != "":
 		if not dir.current_is_dir() and file_name.ends_with(".sav"):
-			var path := SAVE_DIR.path_join(file_name)
+			var path := save_dir.path_join(file_name)
 			var info := _read_save_info(path)
 			if info != null and info.universe_name.to_lower().strip_edges() == normalized:
 				dir.list_dir_end()
@@ -94,27 +114,60 @@ func find_latest_save() -> SaveInfo:
 
 
 func save_game(simulator, save_name: String, universe_name: String) -> bool:
-	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
-	var path := SAVE_DIR.path_join(universe_name + ".sav")
-	# TODO: Phase 5 — 序列化 simulator 状态
+	var source = simulator if simulator != null else GameState
+	if source == null or not source.has_method("to_dict"):
+		return false
+	if not ensure_save_directory():
+		return false
+	var safe_universe := universe_name.validate_filename()
+	var safe_save := save_name.validate_filename()
+	var save_time := Time.get_datetime_string_from_system(false, true)
+	var timestamp := save_time.replace("-", "").replace(":", "").replace(" ", "_")
+	var path := get_save_directory().path_join("%s__%s__%s.sav" % [safe_universe, timestamp, safe_save])
+	var data: Dictionary = {
+		"save_name": save_name,
+		"universe_name": universe_name,
+		"save_time": save_time,
+		"game_day": source.game_time,
+		"is_legacy": false,
+		"state": source.to_dict(),
+	}
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify(data, "\t"))
+	file.close()
+	_current_save_path = path
 	return true
 
 
-func load_game(filepath: String, _simulator = null) -> bool:
+func load_game(filepath: String, simulator = null) -> bool:
 	if not FileAccess.file_exists(filepath):
 		return false
-	# TODO: Phase 5 — 反序列化到 simulator
-	var info := _read_save_info(filepath)
-	if info != null:
-		EventBus.game_loaded.emit(info.universe_name)
-		return true
-	return false
+	var file := FileAccess.open(filepath, FileAccess.READ)
+	if file == null:
+		return false
+	var json := JSON.new()
+	var error := json.parse(file.get_as_text())
+	file.close()
+	if error != OK:
+		return false
+	var data = json.get_data()
+	if not data is Dictionary or not data.has("state"):
+		return false
+	var target = simulator if simulator != null else GameState
+	if target == null or not target.has_method("from_dict"):
+		return false
+	target.from_dict(data["state"])
+	_current_save_path = filepath
+	EventBus.game_loaded.emit(data.get("universe_name", target.universe_name))
+	return true
 
 
 func delete_save(filepath: String) -> bool:
 	if not FileAccess.file_exists(filepath):
 		return false
-	return DirAccess.remove_absolute(filepath)
+	return DirAccess.remove_absolute(filepath) == OK
 
 
 func delete_universe(universe_name: String) -> bool:

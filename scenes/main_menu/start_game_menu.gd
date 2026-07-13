@@ -145,6 +145,9 @@ func _on_cancel_name() -> void:
 
 func _do_start_new_game(universe_name: String) -> void:
 	GameState.new_game(universe_name)
+	if not SaveManager.save_game(GameState, "初始存档", universe_name):
+		_show_message("创建存档失败：%s" % SaveManager.get_save_directory(), Color(1.0, 0.39, 0.39))
+		return
 	get_tree().change_scene_to_file("res://scenes/game/main_screen.tscn")
 
 

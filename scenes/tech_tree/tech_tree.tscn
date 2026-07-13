@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scenes/tech_tree/tech_tree.gd" id="1_script"]
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://scenes/tech_tree/tech_tree_canvas.gd" id="3_canvas"]
 
 [node name="TechTree" type="Control"]
 layout_mode = 3
@@ -16,48 +17,121 @@ layout_mode = 1
 anchors_preset = 15
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.02, 0.02, 0.06, 1.0)
+mouse_filter = 2
+color = Color(0.02, 0.025, 0.065, 1)
 
 [node name="Toolbar" type="HBoxContainer" parent="."]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 44.0
+offset_left = 24.0
+offset_top = 16.0
+offset_right = -24.0
+offset_bottom = 72.0
+theme_override_constants/separation = 10
 
 [node name="BackButton" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "返回"
-
-[node name="RightSpacer" type="Control" parent="Toolbar"]
-layout_mode = 2
-size_flags_horizontal = 3
+custom_minimum_size = Vector2(120, 52)
+text = "← 返回"
 
 [node name="TitleLabel" type="Label" parent="Toolbar"]
 layout_mode = 2
+size_flags_horizontal = 3
 text = "科技树"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 26
 
-[node name="ResearchPointsPanel" type="Panel" parent="."]
+[node name="HintLabel" type="Label" parent="Toolbar"]
+layout_mode = 2
+text = "左键研发  |  滚轮缩放  |  右键拖拽"
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.62, 0.69, 0.86, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="ResearchPanel" type="Panel" parent="."]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
-offset_top = 46.0
-offset_bottom = 74.0
+offset_left = 24.0
+offset_top = 84.0
+offset_right = -24.0
+offset_bottom = 140.0
 
-[node name="PointsHBox" type="HBoxContainer" parent="ResearchPointsPanel"]
-unique_name_in_owner = true
+[node name="ResearchHBox" type="HBoxContainer" parent="ResearchPanel"]
 layout_mode = 1
 anchors_preset = 15
+offset_left = 16.0
+offset_right = -16.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/separation = 20
 
-[node name="ScrollContainer" type="ScrollContainer" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_top = 0.1
-grow_vertical = 2
-
-[node name="TechTreeContainer" type="Control" parent="ScrollContainer"]
+[node name="PointsLabel" type="Label" parent="ResearchPanel/ResearchHBox"]
 unique_name_in_owner = true
 layout_mode = 2
-custom_minimum_size = Vector2(1600, 800)
+size_flags_horizontal = 3
+text = "基础科研 0    应用科研 0    理论科研 0"
+vertical_alignment = 1
+
+[node name="ResearchLabel" type="Label" parent="ResearchPanel/ResearchHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "当前未研究任何科技"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="TechTreeContainer" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+offset_left = 24.0
+offset_top = 152.0
+offset_right = -24.0
+offset_bottom = -72.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 2
+script = ExtResource("3_canvas")
+
+[node name="MessageLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -32.0
+offset_left = 24.0
+offset_right = -24.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.7, 0.76, 0.95, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="TooltipPanel" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(360, 300)
+offset_right = 360.0
+offset_bottom = 300.0
+mouse_filter = 2
+
+[node name="TooltipLabel" type="RichTextLabel" parent="TooltipPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+offset_left = 12.0
+offset_top = 10.0
+offset_right = -12.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+bbcode_enabled = true
+fit_content = true

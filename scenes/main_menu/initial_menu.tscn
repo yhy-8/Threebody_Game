@@ -4,7 +4,7 @@
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
 
 [sub_resource type="LabelSettings" id="1_label_title"]
-font_size = 48
+font_size = 56
 font_color = Color(0.863, 0.902, 1.0, 1.0)
 
 [sub_resource type="LabelSettings" id="2_label_subtitle"]
@@ -36,9 +36,9 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -300.0
-offset_top = 120.0
+offset_top = 110.0
 offset_right = 300.0
-offset_bottom = 180.0
+offset_bottom = 184.0
 text = "三体文明"
 horizontal_alignment = 1
 label_settings = SubResource("1_label_title")
@@ -62,25 +62,25 @@ anchors_preset = 8
 anchor_left = 0.5
 anchor_right = 0.5
 anchor_top = 0.42
-offset_left = -180.0
-offset_right = 180.0
-offset_bottom = 400.0
-theme_override_constants/separation = 14
+offset_left = -210.0
+offset_right = 210.0
+offset_bottom = 430.0
+theme_override_constants/separation = 16
 
 [node name="StartGameBtn" type="Button" parent="MainVBox"]
 layout_mode = 2
 text = "开始游戏"
-custom_minimum_size = Vector2(360, 56)
+custom_minimum_size = Vector2(420, 64)
 
 [node name="SettingsBtn" type="Button" parent="MainVBox"]
 layout_mode = 2
 text = "设置"
-custom_minimum_size = Vector2(360, 56)
+custom_minimum_size = Vector2(420, 64)
 
 [node name="QuitBtn" type="Button" parent="MainVBox"]
 layout_mode = 2
 text = "退出"
-custom_minimum_size = Vector2(360, 56)
+custom_minimum_size = Vector2(420, 64)
 
 [node name="VersionLabel" type="Label" parent="."]
 layout_mode = 1
@@ -88,7 +88,9 @@ anchors_preset = 3
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -100.0
-offset_top = -30.0
+offset_left = -140.0
+offset_top = -42.0
+offset_right = -24.0
+offset_bottom = -18.0
 text = "v0.1.0-alpha"
 label_settings = SubResource("3_label_version")

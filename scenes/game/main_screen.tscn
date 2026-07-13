@@ -4,8 +4,8 @@
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
 
 [sub_resource type="LabelSettings" id="1_hint_settings"]
-font_size = 10
-font_color = Color(0.3, 0.3, 0.5, 1.0)
+font_size = 16
+font_color = Color(0.68, 0.74, 0.92, 1.0)
 
 [node name="MainScreen" type="Control"]
 layout_mode = 3
@@ -24,48 +24,66 @@ color = Color(0.02, 0.02, 0.06, 1.0)
 
 [node name="Toolbar" type="HBoxContainer" parent="."]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 44.0
+offset_left = 24.0
+offset_top = 16.0
+offset_right = -24.0
+offset_bottom = 72.0
+theme_override_constants/separation = 8
 
 [node name="MenuButton" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "菜单"
-custom_minimum_size = Vector2(70, 36)
+custom_minimum_size = Vector2(90, 52)
 
 [node name="PauseButton" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(110, 52)
 text = "暂停/继续"
 
 [node name="SpeedSpacer" type="Control" parent="Toolbar"]
 layout_mode = 2
 custom_minimum_size = Vector2(10, 0)
 
-[node name="Speed1x" type="Button" parent="Toolbar"]
+[node name="SpeedLabel" type="Label" parent="Toolbar"]
+layout_mode = 2
+text = "速度"
+
+[node name="SpeedSlider" type="HSlider" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(220, 52)
+max_value = 3.0
+step = 1.0
+tick_count = 4
+ticks_on_borders = true
+
+[node name="SpeedValueLabel" type="Label" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(52, 52)
 text = "1x"
-custom_minimum_size = Vector2(40, 36)
+vertical_alignment = 1
 
-[node name="Speed2x" type="Button" parent="Toolbar"]
+[node name="DeveloperModeLabel" type="Label" parent="Toolbar"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-text = "2x"
-custom_minimum_size = Vector2(40, 36)
+custom_minimum_size = Vector2(112, 52)
+text = "开发者模式"
+vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.76, 0.3, 1)
+theme_override_font_sizes/font_size = 16
 
-[node name="Speed3x" type="Button" parent="Toolbar"]
+[node name="DeveloperToolsButton" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-text = "3x"
-custom_minimum_size = Vector2(40, 36)
-
-[node name="Speed5x" type="Button" parent="Toolbar"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "5x"
-custom_minimum_size = Vector2(40, 36)
+custom_minimum_size = Vector2(120, 52)
+text = "开发者工具"
 
 [node name="RightSpacer" type="Control" parent="Toolbar"]
 layout_mode = 2
@@ -95,10 +113,13 @@ text = "星图"
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
-anchor_top = 0.06
-anchor_bottom = 0.94
+offset_left = 24.0
+offset_top = 88.0
+offset_right = -24.0
+offset_bottom = -72.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/separation = 18
 
 [node name="ResourcePanel" type="Panel" parent="PanelContainer"]
 layout_mode = 2
@@ -106,18 +127,23 @@ size_flags_horizontal = 3
 
 [node name="ResourceTitle" type="Label" parent="PanelContainer/ResourcePanel"]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
 offset_top = 8.0
-offset_bottom = 28.0
+offset_bottom = 42.0
 text = "— 资源 —"
 horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 20
 
 [node name="ResourceList" type="VBoxContainer" parent="PanelContainer/ResourcePanel"]
 unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
-anchor_top = 0.08
+offset_left = 20.0
+offset_top = 56.0
+offset_right = -20.0
+offset_bottom = -20.0
 grow_vertical = 2
 
 [node name="CivilizationPanel" type="Panel" parent="PanelContainer"]
@@ -126,12 +152,14 @@ size_flags_horizontal = 3
 
 [node name="CivTitle" type="Label" parent="PanelContainer/CivilizationPanel"]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
 offset_top = 8.0
-offset_bottom = 28.0
+offset_bottom = 42.0
 text = "— 文明 —"
 horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 20
 
 [node name="EnvironmentPanel" type="Panel" parent="PanelContainer"]
 layout_mode = 2
@@ -139,20 +167,142 @@ size_flags_horizontal = 3
 
 [node name="EnvTitle" type="Label" parent="PanelContainer/EnvironmentPanel"]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
 offset_top = 8.0
-offset_bottom = 28.0
+offset_bottom = 42.0
 text = "— 环境 —"
 horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 20
 
-[node name="HintLabel" type="Label" parent="."]
+[node name="HintPanel" type="PanelContainer" parent="."]
 layout_mode = 1
-anchors_preset = 3
-anchor_left = 1.0
+anchors_preset = 12
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -420.0
-offset_top = -24.0
-text = "ESC菜单 | 空格暂停 | +/-/1235调速 | 星图按钮进3D视图"
+offset_left = 24.0
+offset_top = -58.0
+offset_right = -24.0
+offset_bottom = -16.0
+
+[node name="HintLabel" type="Label" parent="HintPanel"]
+layout_mode = 2
+text = "Esc 菜单  |  空格 暂停  |  +/- 或 1/2/3/5 调速  |  顶部入口切换游戏界面"
+horizontal_alignment = 1
+vertical_alignment = 1
 label_settings = SubResource("1_hint_settings")
+
+[node name="DeveloperOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 20
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="DeveloperOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.72)
+
+[node name="DeveloperPanel" type="Panel" parent="DeveloperOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -420.0
+offset_right = 400.0
+offset_bottom = 420.0
+
+[node name="Title" type="Label" parent="DeveloperOverlay/DeveloperPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 32.0
+offset_top = 24.0
+offset_right = -80.0
+offset_bottom = 68.0
+text = "开发者工具"
+vertical_alignment = 1
+theme_override_colors/font_color = Color(1, 0.78, 0.34, 1)
+theme_override_font_sizes/font_size = 28
+
+[node name="CloseButton" type="Button" parent="DeveloperOverlay/DeveloperPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -68.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 68.0
+text = "×"
+
+[node name="Description" type="Label" parent="DeveloperOverlay/DeveloperPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 32.0
+offset_top = 74.0
+offset_right = -32.0
+offset_bottom = 104.0
+text = "直接修改当前测试局；保存游戏时这些数值会一并写入存档。"
+theme_override_colors/font_color = Color(0.62, 0.69, 0.86, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="Scroll" type="ScrollContainer" parent="DeveloperOverlay/DeveloperPanel"]
+layout_mode = 1
+anchors_preset = 15
+offset_left = 32.0
+offset_top = 120.0
+offset_right = -32.0
+offset_bottom = -112.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="DeveloperFields" type="GridContainer" parent="DeveloperOverlay/DeveloperPanel/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 2
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 10
+
+[node name="ActionBar" type="HBoxContainer" parent="DeveloperOverlay/DeveloperPanel"]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = -88.0
+offset_right = -32.0
+offset_bottom = -28.0
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="ApplyDeveloperButton" type="Button" parent="DeveloperOverlay/DeveloperPanel/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(180, 56)
+text = "应用数值"
+
+[node name="FillResourcesButton" type="Button" parent="DeveloperOverlay/DeveloperPanel/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(180, 56)
+text = "资源各 100000"
+
+[node name="UnlockTechButton" type="Button" parent="DeveloperOverlay/DeveloperPanel/ActionBar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(180, 56)
+text = "解锁全部科技"

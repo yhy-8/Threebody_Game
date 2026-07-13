@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scenes/zone_view/zone_view.gd" id="1_script"]
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://scenes/zone_view/zone_map.gd" id="3_map"]
 
 [node name="ZoneView" type="Control"]
 layout_mode = 3
@@ -16,73 +17,166 @@ layout_mode = 1
 anchors_preset = 15
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.02, 0.02, 0.06, 1.0)
+mouse_filter = 2
+color = Color(0.02, 0.025, 0.06, 1)
 
 [node name="Toolbar" type="HBoxContainer" parent="."]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 44.0
+offset_left = 24.0
+offset_top = 16.0
+offset_right = -24.0
+offset_bottom = 72.0
+theme_override_constants/separation = 10
 
 [node name="BackButton" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "返回"
+custom_minimum_size = Vector2(120, 52)
+text = "← 返回"
 
 [node name="ModeTemp" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
+toggle_mode = true
+button_pressed = true
 text = "温度"
+custom_minimum_size = Vector2(90, 52)
 
 [node name="ModeRadiation" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
+toggle_mode = true
 text = "辐射"
+custom_minimum_size = Vector2(90, 52)
 
 [node name="ModeLight" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
+toggle_mode = true
 text = "光照"
-
-[node name="RightSpacer" type="Control" parent="Toolbar"]
-layout_mode = 2
-size_flags_horizontal = 3
+custom_minimum_size = Vector2(90, 52)
 
 [node name="TitleLabel" type="Label" parent="Toolbar"]
 layout_mode = 2
-text = "区域浏览"
+size_flags_horizontal = 3
+text = "行星区域 / 建筑"
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 26
 
 [node name="SplitContainer" type="HSplitContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
-anchor_top = 0.06
+offset_left = 24.0
+offset_top = 88.0
+offset_right = -24.0
+offset_bottom = -72.0
+grow_horizontal = 2
+grow_vertical = 2
+split_offset = 300
+
+[node name="MapPanel" type="Panel" parent="SplitContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+stretch_ratio = 1.8
+clip_contents = true
+
+[node name="ZoneMap" type="Control" parent="SplitContainer/MapPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+offset_left = 8.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3_map")
+
+[node name="DetailPanel" type="Panel" parent="SplitContainer"]
+custom_minimum_size = Vector2(480, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DetailScroll" type="ScrollContainer" parent="SplitContainer/DetailPanel"]
+layout_mode = 1
+anchors_preset = 15
+offset_left = 18.0
+offset_top = 18.0
+offset_right = -18.0
+offset_bottom = -18.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="DetailVBox" type="VBoxContainer" parent="SplitContainer/DetailPanel/DetailScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="MessageLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -58.0
+offset_right = -24.0
+offset_bottom = -16.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "点击区域查看详情 | Tab 切换模式 | Shift 5倍 | Ctrl 填满/清空"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.7, 0.76, 0.95, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="BuildOverlay" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+offset_left = 220.0
+offset_top = 100.0
+offset_right = -220.0
+offset_bottom = -100.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="GridPanel" type="Panel" parent="SplitContainer"]
+[node name="BuildVBox" type="VBoxContainer" parent="BuildOverlay"]
+layout_mode = 1
+anchors_preset = 15
+offset_left = 28.0
+offset_top = 24.0
+offset_right = -28.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="BuildTitle" type="Label" parent="BuildOverlay/BuildVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "建造新建筑"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="BuildScroll" type="ScrollContainer" parent="BuildOverlay/BuildVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="BuildList" type="VBoxContainer" parent="BuildOverlay/BuildVBox/BuildScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 6
 
-[node name="GridTitle" type="Label" parent="SplitContainer/GridPanel"]
-layout_mode = 1
-anchors_preset = 2
-anchor_right = 1.0
-offset_top = 4.0
-offset_bottom = 24.0
-text = "行星区域网格 (12x6)"
-horizontal_alignment = 1
-
-[node name="DetailPanel" type="Panel" parent="SplitContainer"]
+[node name="CloseBuildButton" type="Button" parent="BuildOverlay/BuildVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="DetailTitle" type="Label" parent="SplitContainer/DetailPanel"]
-layout_mode = 1
-anchors_preset = 2
-anchor_right = 1.0
-offset_top = 4.0
-offset_bottom = 24.0
-text = "区域详情"
-horizontal_alignment = 1
+text = "关闭列表"
+custom_minimum_size = Vector2(0, 56)

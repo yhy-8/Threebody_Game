@@ -4,12 +4,12 @@
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
 
 [sub_resource type="LabelSettings" id="1_settings_title"]
-font_size = 30
+font_size = 36
 font_color = Color(0.863, 0.902, 1.0, 1.0)
 
 [sub_resource type="LabelSettings" id="2_hint"]
-font_size = 12
-font_color = Color(0.471, 0.51, 0.588, 1.0)
+font_size = 16
+font_color = Color(0.65, 0.71, 0.88, 1.0)
 
 [node name="SettingsScreen" type="Control"]
 layout_mode = 3
@@ -31,10 +31,10 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -100.0
-offset_top = 30.0
-offset_right = 100.0
-offset_bottom = 70.0
+offset_left = -160.0
+offset_top = 36.0
+offset_right = 160.0
+offset_bottom = 90.0
 text = "设置"
 horizontal_alignment = 1
 label_settings = SubResource("1_settings_title")
@@ -44,10 +44,10 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -300.0
-offset_top = 90.0
-offset_right = 300.0
-offset_bottom = 135.0
+offset_left = -440.0
+offset_top = 110.0
+offset_right = 440.0
+offset_bottom = 166.0
 alignment = 1
 theme_override_constants/separation = 8
 
@@ -55,35 +55,35 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 text = "游戏"
-custom_minimum_size = Vector2(110, 42)
+custom_minimum_size = Vector2(180, 52)
 
 [node name="TabDisplayBtn" type="Button" parent="TabBar"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "显示"
-custom_minimum_size = Vector2(110, 42)
+custom_minimum_size = Vector2(180, 52)
 
 [node name="TabAudioBtn" type="Button" parent="TabBar"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "音频"
-custom_minimum_size = Vector2(110, 42)
+custom_minimum_size = Vector2(180, 52)
 
 [node name="TabControlsBtn" type="Button" parent="TabBar"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "控制"
-custom_minimum_size = Vector2(110, 42)
+custom_minimum_size = Vector2(180, 52)
 
 [node name="ContentPanel" type="Panel" parent="."]
 layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -280.0
-offset_top = 145.0
-offset_right = 280.0
-offset_bottom = 520.0
+offset_left = -480.0
+offset_top = 188.0
+offset_right = 480.0
+offset_bottom = 800.0
 
 [node name="TabContent" type="MarginContainer" parent="ContentPanel"]
 unique_name_in_owner = true
@@ -105,10 +105,10 @@ layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
-offset_left = -140.0
-offset_top = 545.0
-offset_right = 140.0
-offset_bottom = 595.0
+offset_left = -190.0
+offset_top = 828.0
+offset_right = 190.0
+offset_bottom = 888.0
 alignment = 1
 theme_override_constants/separation = 30
 
@@ -116,13 +116,13 @@ theme_override_constants/separation = 30
 unique_name_in_owner = true
 layout_mode = 2
 text = "应用"
-custom_minimum_size = Vector2(120, 46)
+custom_minimum_size = Vector2(160, 54)
 
 [node name="BackBtn" type="Button" parent="BottomBar"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "返回"
-custom_minimum_size = Vector2(120, 46)
+custom_minimum_size = Vector2(160, 54)
 
 [node name="HintLabel" type="Label" parent="."]
 layout_mode = 1
@@ -130,9 +130,10 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -200.0
-offset_top = -30.0
-offset_right = 200.0
+offset_left = -360.0
+offset_top = -54.0
+offset_right = 360.0
+offset_bottom = -18.0
 text = "* 部分设置需要重启游戏才能生效"
 horizontal_alignment = 1
 label_settings = SubResource("2_hint")

@@ -190,6 +190,16 @@ func update(dt: float) -> void:
 		star.position += avg_v * dt
 
 
+func has_collision() -> bool:
+	for first_index in range(stars.size()):
+		var first: StarData = stars[first_index] as StarData
+		for second_index in range(first_index + 1, stars.size()):
+			var second: StarData = stars[second_index] as StarData
+			if first.position.distance_to(second.position) < first.radius + second.radius:
+				return true
+	return false
+
+
 func get_environment_params() -> Dictionary:
 	var planet: StarData = null
 	for star in stars:

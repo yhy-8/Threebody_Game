@@ -69,6 +69,8 @@ class PopulationManager:
 	var _starvation_rate: float
 	var _dehydrate_food_rate: float
 	var _growth_accumulator: float
+	var policy_growth_multiplier: float
+	var policy_food_multiplier: float
 
 	func _init(p_initial_population: int = 100, p_config: Dictionary = {}) -> void:
 		total = p_initial_population
@@ -85,6 +87,8 @@ class PopulationManager:
 		_starvation_threshold = pop_config.get("starvation_threshold", 0.5)
 		_starvation_rate = pop_config.get("starvation_rate", 0.01)
 		_dehydrate_food_rate = pop_config.get("dehydrate_food_consumption_rate", 0.2)
+		policy_growth_multiplier = 1.0
+		policy_food_multiplier = 1.0
 
 	func get_idle(p_total_building_workers: int) -> int:
 		return max(0, total - breeders - p_total_building_workers)
@@ -114,7 +118,7 @@ class PopulationManager:
 
 	func update(p_dt_days: float, p_food_available: float, p_dehydrated: bool = false) -> Dictionary:
 		var consumption_rate: float = _dehydrate_food_rate if p_dehydrated else 1.0
-		var food_needed: float = total * food_per_person_per_day * p_dt_days * consumption_rate
+		var food_needed: float = total * food_per_person_per_day * p_dt_days * consumption_rate * policy_food_multiplier
 		var food_consumed: float = min(food_needed, p_food_available)
 		var food_satisfaction: float = food_consumed / max(food_needed, 0.001)
 
@@ -122,9 +126,9 @@ class PopulationManager:
 			var starvation: float = (_starvation_threshold - food_satisfaction) * total * _starvation_rate * p_dt_days
 			total = max(1, int(total - starvation))
 
-		var growth: float = breeders * base_growth_per_breeder * p_dt_days * food_satisfaction
+		var growth: float = breeders * base_growth_per_breeder * p_dt_days * food_satisfaction * policy_growth_multiplier
 		var idle: int = max(0, total - breeders)
-		growth += idle * natural_growth_rate * p_dt_days * food_satisfaction
+		growth += idle * natural_growth_rate * p_dt_days * food_satisfaction * policy_growth_multiplier
 
 		_growth_accumulator += growth
 		var int_growth: int = int(_growth_accumulator)
@@ -148,6 +152,8 @@ class PopulationManager:
 			"storage_capacity": storage_capacity,
 			"automation_multiplier": automation_multiplier,
 			"growth_accumulator": _growth_accumulator,
+			"policy_growth_multiplier": policy_growth_multiplier,
+			"policy_food_multiplier": policy_food_multiplier,
 		}
 		return result
 
@@ -161,6 +167,8 @@ class PopulationManager:
 			breeders += assignments.get("breeding", 0)
 		automation_multiplier = data.get("automation_multiplier", 1.0)
 		_growth_accumulator = data.get("growth_accumulator", 0.0)
+		policy_growth_multiplier = data.get("policy_growth_multiplier", 1.0)
+		policy_food_multiplier = data.get("policy_food_multiplier", 1.0)
 
 
 # ── GameBuilding ──────────────────────────────────────
@@ -294,6 +302,11 @@ var buildings: Array = []
 var resources: Dictionary = {}
 var population: PopulationManager
 var global_efficiency: float = 1.0
+var policy_efficiency_multiplier: float = 1.0
+var policy_output_multiplier: float = 1.0
+var social_stability: float = 1.0
+var population_health: float = 1.0
+var _active_policy_ids: Array = []
 var _config: Dictionary = {}
 var _next_building_id: int = 1
 
@@ -431,6 +444,14 @@ func get_idle_population() -> int:
 	return population.get_idle(get_total_building_workers())
 
 
+func set_policy_effects(p_policy_ids: Array) -> void:
+	_active_policy_ids = p_policy_ids.duplicate()
+	population.policy_growth_multiplier = 3.0 if "boom" in _active_policy_ids else 1.0
+	population.policy_food_multiplier = 0.5 if "rationing" in _active_policy_ids else 1.0
+	policy_efficiency_multiplier = 0.8 if "rationing" in _active_policy_ids else 1.0
+	policy_output_multiplier = 2.5 if "industrial_drive" in _active_policy_ids else 1.0
+
+
 func assign_worker_to_building(p_building_id: int, p_count: int) -> Dictionary:
 	var b: GameBuilding = get_building(p_building_id)
 	if b == null:
@@ -480,11 +501,15 @@ func unassign_breeders(p_count: int) -> Dictionary:
 func get_electricity_balance() -> Dictionary:
 	var generation: float = 0.0
 	var consumption: float = 0.0
+	var effective_automation := (
+		population.automation_multiplier * global_efficiency
+		* policy_efficiency_multiplier * policy_output_multiplier
+	)
 	for b in buildings:
 		var building: GameBuilding = b as GameBuilding
 		if not building.active or building.destroyed:
 			continue
-		var output: Dictionary = building.get_output(population.automation_multiplier)
+		var output: Dictionary = building.get_output(effective_automation)
 		generation += output.get("electricity", 0.0)
 		var cons: Dictionary = building.get_consumption()
 		consumption += cons.get("electricity", 0.0)
@@ -501,6 +526,16 @@ func update(p_env_params: Dictionary, p_zone_manager = null, p_dt: float = 0.016
 		global_efficiency = max(0.3, global_efficiency - 0.02)
 	else:
 		global_efficiency = min(1.0, global_efficiency + 0.01)
+
+	if "rationing" in _active_policy_ids:
+		social_stability = max(0.35, social_stability - 0.01 * p_dt)
+	if "industrial_drive" in _active_policy_ids:
+		social_stability = max(0.2, social_stability - 0.015 * p_dt)
+		population_health = max(0.25, population_health - 0.012 * p_dt)
+	if "rationing" not in _active_policy_ids and "industrial_drive" not in _active_policy_ids:
+		social_stability = min(1.0, social_stability + 0.003 * p_dt)
+	if "industrial_drive" not in _active_policy_ids:
+		population_health = min(1.0, population_health + 0.002 * p_dt)
 
 	population.storage_capacity = 0
 	for b in buildings:
@@ -562,7 +597,11 @@ func _process_buildings(p_dt: float, p_zone_manager = null, p_dehydrated: bool =
 			if zone != null:
 				zone_eff = zone.get_work_efficiency()
 
-		var output: Dictionary = building.get_output(population.automation_multiplier, zone_eff)
+		var effective_automation := (
+			population.automation_multiplier * global_efficiency
+			* policy_efficiency_multiplier * policy_output_multiplier
+		)
+		var output: Dictionary = building.get_output(effective_automation, zone_eff)
 
 		if p_dehydrated and building.building_type not in exempt_types:
 			var adjusted: Dictionary = {}
@@ -614,6 +653,9 @@ func get_state() -> Dictionary:
 		"resources": resources_data,
 		"population": population.get_state(),
 		"avg_efficiency": global_efficiency,
+		"social_stability": social_stability,
+		"population_health": population_health,
+		"active_policy_ids": _active_policy_ids.duplicate(),
 		"buildings": buildings_data,
 	}
 	return result
@@ -622,6 +664,9 @@ func get_state() -> Dictionary:
 func load_state(data: Dictionary) -> void:
 	buildings.clear()
 	global_efficiency = data.get("avg_efficiency", 1.0)
+	social_stability = data.get("social_stability", 1.0)
+	population_health = data.get("population_health", 1.0)
+	set_policy_effects(data.get("active_policy_ids", []))
 
 	var resources_data: Dictionary = data.get("resources", {})
 	for name in resources_data:

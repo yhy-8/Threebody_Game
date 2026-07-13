@@ -1,100 +1,131 @@
 extends Control
-## 科技树界面
+## Technology tree screen: research interaction, status display, and tooltip details.
 
 const TechTreeScript = preload("res://scripts/simulation/tech_tree.gd")
+const EntityManagerScript = preload("res://scripts/simulation/entity_manager.gd")
+
+var _refresh_elapsed: float = 0.0
+var _hovered_node_id: String = ""
 
 
 func _ready() -> void:
 	%BackButton.pressed.connect(_on_back_pressed)
+	%TechTreeContainer.node_clicked.connect(_on_node_clicked)
+	%TechTreeContainer.node_hovered.connect(_on_node_hovered)
 	_refresh_display()
+
+
+func _process(p_delta: float) -> void:
+	_refresh_elapsed += p_delta
+	if _refresh_elapsed >= 0.2:
+		_refresh_elapsed = 0.0
+		_refresh_display()
+		if not _hovered_node_id.is_empty():
+			_update_tooltip(_hovered_node_id)
+
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		_on_back_pressed()
 
 
 func _refresh_display() -> void:
 	if not GameState.game_started:
 		return
 
-	var points_hbox := %PointsHBox
-	_clear_children(points_hbox)
+	var point_parts: Array[String] = []
+	for research_type in ["basic", "applied", "theoretical"]:
+		var amount: float = GameState.tech_tree.research_points.get(research_type, 0.0)
+		var display_name: String = TechTreeScript.RESEARCH_NAMES.get(research_type, research_type)
+		point_parts.append("%s %.1f" % [display_name, amount])
+	%PointsLabel.text = "    ".join(point_parts)
 
-	for rtype in ["basic", "applied", "theoretical"]:
-		var amount: float = GameState.tech_tree.research_points.get(rtype, 0.0)
-		var name: String = TechTreeScript.RESEARCH_NAMES.get(rtype, rtype)
-		var label := Label.new()
-		label.text = "%s: %.1f" % [name, amount]
-		var col: Color = TechTreeScript.RESEARCH_COLORS.get(rtype, Color.WHITE)
-		label.add_theme_color_override("font_color", col)
-		points_hbox.add_child(label)
-
-	# Show current research progress
 	var progress: Dictionary = GameState.tech_tree.get_research_progress()
-	if not progress.is_empty():
-		var prog_label := Label.new()
-		prog_label.text = "研究: %s (%.0f%%)" % [progress["tech_name"], progress["overall_percent"] * 100]
-		points_hbox.add_child(prog_label)
-
-	# Tech tree nodes — draw on TechTreeContainer
+	if progress.is_empty():
+		%ResearchLabel.text = "当前未研究任何科技"
+	else:
+		%ResearchLabel.text = "研究中：%s  %.0f%%" % [
+			progress.get("tech_name", ""), progress.get("overall_percent", 0.0) * 100.0,
+		]
 	%TechTreeContainer.queue_redraw()
 
 
-func _draw() -> void:
-	if not GameState.game_started:
+func _on_node_clicked(node_id: String) -> void:
+	var node = GameState.tech_tree.get_node(node_id)
+	if node == null:
 		return
-	_draw_tech_nodes()
+
+	var result: Dictionary
+	if node.unlocked:
+		result = {"success": false, "message": "「%s」已经研发完毕" % node.name}
+	elif node.researching:
+		result = GameState.tech_tree.cancel_research()
+	else:
+		result = GameState.tech_tree.start_research(node_id, GameState.entities)
+
+	%MessageLabel.text = result.get("message", "")
+	%MessageLabel.modulate = Color(0.55, 1.0, 0.65) if result.get("success", false) else Color(1.0, 0.5, 0.4)
+	_refresh_display()
+	_update_tooltip(node_id)
 
 
-func _draw_tech_nodes() -> void:
-	var tt = GameState.tech_tree
-	var container: Control = %TechTreeContainer
-	var max_tier: int = tt.get_max_tier()
-	var tier_width: float = container.size.x / float(max_tier + 2)
-
-	const NODE_WIDTH := 140.0
-	const NODE_HEIGHT := 60.0
-
-	for tier in range(max_tier + 1):
-		var nodes_in_tier: Array = tt.get_nodes_by_tier(tier)
-		var x_base: float = 80.0 + tier * tier_width
-		var spacing: float = container.size.y / float(nodes_in_tier.size() + 1)
-
-		for i in nodes_in_tier.size():
-			var node = nodes_in_tier[i]
-			var y: float = spacing * (i + 1) - NODE_HEIGHT / 2.0
-			var rect := Rect2(x_base, y, NODE_WIDTH, NODE_HEIGHT)
-
-			var bg_color: Color
-			if node.unlocked:
-				bg_color = Color(0.2, 0.5, 0.2, 0.8)
-			elif node.researching:
-				bg_color = Color(0.5, 0.4, 0.1, 0.8)
-			elif tt.is_researchable(node.id):
-				bg_color = Color(0.2, 0.3, 0.5, 0.8)
-			else:
-				bg_color = Color(0.15, 0.15, 0.2, 0.6)
-
-			draw_rect(rect, bg_color, true)
-			draw_rect(rect, Color(0.4, 0.4, 0.6, 1.0), false)
-
-			draw_string(ThemeDB.fallback_font, Vector2(x_base + 4, y + 22), node.name,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-			draw_string(ThemeDB.fallback_font, Vector2(x_base + 4, y + 42),
-				"T%d" % node.tier, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.6, 0.8))
-
-			# Draw lines to prerequisites
-			for pre_id in node.prerequisites:
-				var pre_node = tt.get_node(pre_id)
-				if pre_node != null:
-					var pre_tier_nodes: Array = tt.get_nodes_by_tier(pre_node.tier)
-					var pre_idx := pre_tier_nodes.find(pre_node)
-					if pre_idx >= 0:
-						var pre_x: float = 80.0 + pre_node.tier * tier_width + NODE_WIDTH
-						var pre_y: float = spacing * (pre_idx + 1)
-						draw_line(Vector2(x_base, y + NODE_HEIGHT / 2.0), Vector2(pre_x, pre_y), Color(0.3, 0.3, 0.5, 0.5))
+func _on_node_hovered(node_id: String, local_position: Vector2) -> void:
+	_hovered_node_id = node_id
+	%TooltipPanel.visible = not node_id.is_empty()
+	if node_id.is_empty():
+		return
+	_update_tooltip(node_id)
+	var canvas: Control = %TechTreeContainer
+	var desired: Vector2 = canvas.global_position + local_position + Vector2(18.0, 18.0)
+	var panel_size: Vector2 = %TooltipPanel.size
+	desired.x = min(desired.x, size.x - panel_size.x - 12.0)
+	desired.y = min(desired.y, size.y - panel_size.y - 12.0)
+	%TooltipPanel.global_position = desired
 
 
-func _clear_children(node: Node) -> void:
-	for child in node.get_children():
-		node.remove_child(child)
-		child.queue_free()
+func _update_tooltip(node_id: String) -> void:
+	var node = GameState.tech_tree.get_node(node_id)
+	if node == null:
+		%TooltipPanel.visible = false
+		return
+
+	var lines: Array[String] = []
+	lines.append("[font_size=20][b]%s[/b][/font_size]" % node.name)
+	lines.append(node.description)
+	lines.append("[color=#9fe6ac]效果：%s[/color]" % node.effect_description)
+	lines.append("")
+	lines.append("[b]科研需求[/b]")
+	for research_type in node.research_cost:
+		var current: float = GameState.tech_tree.research_points.get(research_type, 0.0)
+		var display_name: String = TechTreeScript.RESEARCH_NAMES.get(research_type, research_type)
+		lines.append("• %s %.1f / %d" % [display_name, current, node.research_cost[research_type]])
+
+	if not node.resource_cost.is_empty():
+		lines.append("[b]物质消耗[/b]")
+		for resource_name in node.resource_cost:
+			var display_name: String = EntityManagerScript.RESOURCE_DISPLAY_NAMES.get(resource_name, resource_name)
+			var current: float = GameState.entities.get_resource(resource_name)
+			lines.append("• %s %.0f / %.0f" % [display_name, current, node.resource_cost[resource_name]])
+
+	if not node.prerequisites.is_empty():
+		lines.append("[b]前置科技[/b]")
+		for prerequisite_id in node.prerequisites:
+			var prerequisite = GameState.tech_tree.get_node(prerequisite_id)
+			if prerequisite != null:
+				lines.append("• %s %s" % ["✓" if prerequisite.unlocked else "✗", prerequisite.name])
+
+	lines.append("")
+	if node.unlocked:
+		lines.append("[color=#70ff8a]★ 已解锁[/color]")
+	elif node.researching:
+		var progress: Dictionary = GameState.tech_tree.get_research_progress()
+		lines.append("[color=#ffd05c]研究中 %.0f%%（点击取消）[/color]" % [progress.get("overall_percent", 0.0) * 100.0])
+	else:
+		var availability: Dictionary = GameState.tech_tree.can_start_research(node_id, GameState.entities)
+		lines.append("[color=#8fdbff]点击开始研究[/color]" if availability.get("success", false)
+			else "[color=#ff8a7a]%s[/color]" % availability.get("message", "尚未满足条件"))
+	%TooltipLabel.text = "\n".join(lines)
 
 
 func _on_back_pressed() -> void:

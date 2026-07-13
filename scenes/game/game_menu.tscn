@@ -1,11 +1,19 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scenes/game/game_menu.gd" id="1_script"]
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
 
 [sub_resource type="LabelSettings" id="1_title"]
-font_size = 20
+font_size = 32
 font_color = Color(0.9, 0.9, 1.0, 1.0)
+
+[sub_resource type="LabelSettings" id="2_subtitle"]
+font_size = 16
+font_color = Color(0.58, 0.65, 0.82, 1)
+
+[sub_resource type="LabelSettings" id="3_hint"]
+font_size = 15
+font_color = Color(0.66, 0.72, 0.9, 1)
 
 [node name="GameMenu" type="Control"]
 layout_mode = 3
@@ -20,7 +28,7 @@ layout_mode = 1
 anchors_preset = 15
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.0, 0.0, 0.0, 0.6)
+color = Color(0.012, 0.014, 0.035, 1)
 
 [node name="CenterPanel" type="Panel" parent="."]
 layout_mode = 1
@@ -29,48 +37,224 @@ anchor_left = 0.5
 anchor_right = 0.5
 anchor_top = 0.5
 anchor_bottom = 0.5
-offset_left = -160.0
-offset_top = -160.0
-offset_right = 160.0
-offset_bottom = 160.0
+offset_left = -260.0
+offset_top = -320.0
+offset_right = 260.0
+offset_bottom = 320.0
 
 [node name="TitleLabel" type="Label" parent="CenterPanel"]
 layout_mode = 1
-anchors_preset = 2
+anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 36.0
+offset_top = 28.0
+offset_bottom = 76.0
 text = "暂停菜单"
 horizontal_alignment = 1
+vertical_alignment = 1
 label_settings = SubResource("1_title")
+
+[node name="SubtitleLabel" type="Label" parent="CenterPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 78.0
+offset_bottom = 108.0
+text = "模拟已暂停 · Esc 继续游戏"
+horizontal_alignment = 1
+vertical_alignment = 1
+label_settings = SubResource("2_subtitle")
 
 [node name="MenuVBox" type="VBoxContainer" parent="CenterPanel"]
 layout_mode = 1
-anchors_preset = 15
-anchor_top = 0.12
-anchor_bottom = 0.95
-grow_vertical = 2
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 40.0
+offset_top = 132.0
+offset_right = -40.0
+offset_bottom = 550.0
+theme_override_constants/separation = 12
 
 [node name="ResumeButton" type="Button" parent="CenterPanel/MenuVBox"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 58)
 text = "继续游戏"
 
 [node name="SaveButton" type="Button" parent="CenterPanel/MenuVBox"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 58)
 text = "保存游戏"
+
+[node name="SaveStatusPanel" type="PanelContainer" parent="CenterPanel/MenuVBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 58)
+
+[node name="SaveStatusLabel" type="Label" parent="CenterPanel/MenuVBox/SaveStatusPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "保存提示：尚未进行手动保存"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.64, 0.74, 0.96, 1)
+theme_override_font_sizes/font_size = 16
 
 [node name="LoadButton" type="Button" parent="CenterPanel/MenuVBox"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 58)
 text = "加载游戏"
 
 [node name="SettingsButton" type="Button" parent="CenterPanel/MenuVBox"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 58)
 text = "设置"
 
 [node name="MainMenuButton" type="Button" parent="CenterPanel/MenuVBox"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 58)
 text = "返回主菜单"
+
+[node name="HintLabel" type="Label" parent="CenterPanel"]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -58.0
+offset_right = -24.0
+offset_bottom = -22.0
+text = "保存后可在“加载游戏”中查看存档"
+horizontal_alignment = 1
+vertical_alignment = 1
+label_settings = SubResource("3_hint")
+
+[node name="SaveOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 10
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="SaveOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.72)
+
+[node name="SavePanel" type="Panel" parent="SaveOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -340.0
+offset_top = -270.0
+offset_right = 340.0
+offset_bottom = 270.0
+
+[node name="Title" type="Label" parent="SaveOverlay/SavePanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 28.0
+offset_bottom = 74.0
+text = "保存游戏"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 30
+
+[node name="UniverseInfoLabel" type="Label" parent="SaveOverlay/SavePanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 82.0
+offset_bottom = 112.0
+text = "宇宙：未命名宇宙  |  第 1 天"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(0.62, 0.7, 0.88, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="NameLabel" type="Label" parent="SaveOverlay/SavePanel"]
+layout_mode = 1
+offset_left = 60.0
+offset_top = 134.0
+offset_right = 260.0
+offset_bottom = 164.0
+text = "存档名称"
+
+[node name="SaveNameInput" type="LineEdit" parent="SaveOverlay/SavePanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 60.0
+offset_top = 170.0
+offset_right = -60.0
+offset_bottom = 228.0
+placeholder_text = "输入存档名称..."
+max_length = 24
+
+[node name="SaveButtonRow" type="HBoxContainer" parent="SaveOverlay/SavePanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 60.0
+offset_top = 248.0
+offset_right = -60.0
+offset_bottom = 304.0
+alignment = 1
+theme_override_constants/separation = 20
+
+[node name="SaveConfirmButton" type="Button" parent="SaveOverlay/SavePanel/SaveButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(260, 54)
+text = "保存"
+
+[node name="SaveCancelButton" type="Button" parent="SaveOverlay/SavePanel/SaveButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(260, 54)
+text = "关闭"
+
+[node name="SaveDialogStatus" type="Label" parent="SaveOverlay/SavePanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 60.0
+offset_top = 320.0
+offset_right = -60.0
+offset_bottom = 356.0
+text = "Enter 保存  |  Esc 关闭"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.65, 0.74, 0.94, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="RecentSavesLabel" type="Label" parent="SaveOverlay/SavePanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 60.0
+offset_top = 374.0
+offset_right = -60.0
+offset_bottom = 500.0
+text = "最近存档：\n暂无"
+vertical_alignment = 1
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.62, 0.78, 1)
+theme_override_font_sizes/font_size = 15

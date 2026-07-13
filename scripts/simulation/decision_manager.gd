@@ -239,6 +239,28 @@ func _build_decisions(p_config: Dictionary) -> void:
 	)
 	available_decisions["rehydrate"] = rehydrate_dec
 
+	available_decisions["boom"] = Decision.new(
+		"boom", "大生育计划",
+		"消耗500食物，人口增长速度提高200%。再次点击可结束计划。",
+		"policy", {"food": 500}, "", {
+			"growth": "+200%", "food": "启用时消耗500",
+		}
+	)
+	available_decisions["rationing"] = Decision.new(
+		"rationing", "配给制",
+		"食物消耗减少50%，但生产效率降低20%，社会安定度持续下降。",
+		"policy", {}, "", {
+			"food_consumption": "-50%", "efficiency": "-20%", "stability": "下降",
+		}
+	)
+	available_decisions["industrial_drive"] = Decision.new(
+		"industrial_drive", "工业强心剂",
+		"所有建筑与科研产出提高150%，人口健康和社会安定度持续下降。",
+		"policy", {}, "", {
+			"production": "+150%", "health": "下降", "stability": "大幅下降",
+		}
+	)
+
 
 func get_next_building_id() -> int:
 	var bid: int = _next_building_id
@@ -273,6 +295,9 @@ func _check_policy_conditions(p_policy_id: String, p_entities = null) -> Diction
 	elif p_policy_id == "rehydrate":
 		if current_state != CivilizationState.DEHYDRATED:
 			return {"success": false, "message": "目前不在脱水状态，无需浸泡"}
+	elif p_policy_id in ["boom", "rationing", "industrial_drive"]:
+		if current_state == CivilizationState.DEHYDRATED and p_policy_id not in active_policies:
+			return {"success": false, "message": "脱水状态下无法开启该政策"}
 	return {"success": true, "message": ""}
 
 
@@ -291,11 +316,13 @@ func can_execute(p_decision_id: String, p_entities, p_tech_tree = null) -> Dicti
 			var tech_name: String = tech_node.name if tech_node != null else decision.tech_requirement
 			return {"success": false, "message": "需要先研发科技「%s」" % tech_name}
 
-	for res_name in decision.resource_cost:
-		var cost: float = decision.resource_cost[res_name]
-		var current: float = p_entities.get_resource(res_name)
-		if current < cost:
-			return {"success": false, "message": "资源「%s」不足（需求：%d，当前：%d）" % [res_name, int(cost), int(current)]}
+	var is_active_policy := decision.category == "policy" and p_decision_id in active_policies
+	if not is_active_policy:
+		for res_name in decision.resource_cost:
+			var cost: float = decision.resource_cost[res_name]
+			var current: float = p_entities.get_resource(res_name)
+			if current < cost:
+				return {"success": false, "message": "资源「%s」不足（需求：%d，当前：%d）" % [res_name, int(cost), int(current)]}
 
 	if decision.category == "policy":
 		return _check_policy_conditions(p_decision_id, p_entities)
@@ -311,9 +338,11 @@ func execute_decision(p_decision_id: String, p_entities, p_tech_tree = null,
 
 	var decision: Decision = available_decisions[p_decision_id] as Decision
 
-	for res_name in decision.resource_cost:
-		var cost: float = decision.resource_cost[res_name]
-		p_entities.consume_resource(res_name, cost)
+	var is_active_policy := decision.category == "policy" and p_decision_id in active_policies
+	if not is_active_policy:
+		for res_name in decision.resource_cost:
+			var cost: float = decision.resource_cost[res_name]
+			p_entities.consume_resource(res_name, cost)
 
 	if decision.cooldown > 0.0:
 		cooldowns[p_decision_id] = decision.cooldown
@@ -396,6 +425,14 @@ func _execute_policy(p_policy_id: String, p_entities) -> Dictionary:
 		if stored > 0:
 			pop.retrieve_population(stored)
 		return {"success": true, "message": "浸泡复苏完成：%d人苏醒" % stored, "building_id": -1}
+
+	elif p_policy_id in ["boom", "rationing", "industrial_drive"]:
+		var decision: Decision = available_decisions[p_policy_id] as Decision
+		if p_policy_id in active_policies:
+			active_policies.erase(p_policy_id)
+			return {"success": true, "message": "已结束政策「%s」" % decision.name, "building_id": -1}
+		active_policies.append(p_policy_id)
+		return {"success": true, "message": "已开启政策「%s」" % decision.name, "building_id": -1}
 
 	return {"success": false, "message": "未知政策", "building_id": -1}
 

@@ -1,8 +1,10 @@
 extends Control
-## 政策/决策界面
+## Civilization policy screen. Construction belongs to the selected zone screen.
 
-const EntityManagerScript = preload("res://scripts/simulation/entity_manager.gd")
 const DecisionManagerScript = preload("res://scripts/simulation/decision_manager.gd")
+const EntityManagerScript = preload("res://scripts/simulation/entity_manager.gd")
+
+var _refresh_elapsed: float = 0.0
 
 
 func _ready() -> void:
@@ -10,77 +12,117 @@ func _ready() -> void:
 	_refresh_display()
 
 
+func _process(p_delta: float) -> void:
+	_refresh_elapsed += p_delta
+	if _refresh_elapsed >= 0.25:
+		_refresh_elapsed = 0.0
+		_refresh_display()
+
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		_on_back_pressed()
+
+
 func _refresh_display() -> void:
 	if not GameState.game_started:
 		return
-
-	var state_label: Label = %StateLabel
-	var dm = GameState.decision_manager
-	var state_str := "正常"
-	if dm.current_state == DecisionManagerScript.CivilizationState.DEHYDRATED:
-		state_str = "脱水"
-	state_label.text = "文明状态: %s    库存: %d / %d 人" % [
-		state_str,
-		GameState.entities.population.stored_population,
-		GameState.entities.population.storage_capacity,
+	var decision_manager = GameState.decision_manager
+	var population = GameState.entities.population
+	var state_name := "正常浸泡状态"
+	if decision_manager.current_state == DecisionManagerScript.CivilizationState.DEHYDRATED:
+		state_name = "全民脱水状态"
+	%StateLabel.text = "文明状态：%s    活跃人口 %d    库存 %d / %d" % [
+		state_name, population.total, population.stored_population, population.storage_capacity,
+	]
+	%StabilityBar.value = GameState.entities.social_stability * 100.0
+	%StabilityBar.tooltip_text = "社会安定度 %.0f%%" % %StabilityBar.value
+	%HealthBar.value = GameState.entities.population_health * 100.0
+	%HealthBar.tooltip_text = "人口健康 %.0f%%" % %HealthBar.value
+	%StatusValues.text = "社会安定 %.0f%%    人口健康 %.0f%%" % [
+		%StabilityBar.value, %HealthBar.value,
 	]
 
-	# Build decision buttons
-	var vbox: VBoxContainer = %DecisionVBox
-	_clear_children(vbox)
-
-	var tt = GameState.tech_tree
-	var ents = GameState.entities
-
-	# Construction decisions
-	var section_label := Label.new()
-	section_label.text = "— 建造 —"
-	vbox.add_child(section_label)
-
-	for dec in dm.get_construction_decisions():
-		var can_exec: Dictionary = dm.can_execute(dec.id, ents, tt)
-		var btn := Button.new()
-		btn.text = "%s [%s]" % [dec.name, dec.description]
-		btn.disabled = not can_exec["success"]
-		btn.tooltip_text = can_exec["message"] if not can_exec["success"] else dec.description
-		btn.pressed.connect(_on_build_pressed.bind(dec.id))
-		vbox.add_child(btn)
-
-	# Policy decisions
-	var policy_label := Label.new()
-	policy_label.text = "— 政策 —"
-	vbox.add_child(policy_label)
-
-	for dec in dm.get_policy_decisions():
-		var can_exec: Dictionary = dm.can_execute(dec.id, ents, tt)
-		var btn := Button.new()
-		btn.text = dec.name
-		btn.disabled = not can_exec["success"]
-		btn.tooltip_text = can_exec["message"] if not can_exec["success"] else dec.description
-		btn.pressed.connect(_on_policy_pressed.bind(dec.id))
-		vbox.add_child(btn)
+	_clear_children(%PolicyVBox)
+	for decision in decision_manager.get_policy_decisions():
+		%PolicyVBox.add_child(_make_policy_card(decision))
 
 
-func _on_build_pressed(decision_id: String) -> void:
-	var result: Dictionary = GameState.decision_manager.execute_decision(
-		decision_id, GameState.entities, GameState.tech_tree,
-		GameState.planet_zones, 0  # zone 0 by default for now
+func _make_policy_card(decision) -> PanelContainer:
+	var card := PanelContainer.new()
+	var row := HBoxContainer.new()
+	card.add_child(row)
+	var text_box := VBoxContainer.new()
+	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(text_box)
+
+	var active: bool = decision.id in GameState.decision_manager.active_policies
+	var title := Label.new()
+	title.text = "%s%s" % [decision.name, "  [生效中]" if active else ""]
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(0.55, 1.0, 0.68) if active else Color(0.9, 0.9, 1.0))
+	text_box.add_child(title)
+
+	var description := Label.new()
+	description.text = decision.description
+	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text_box.add_child(description)
+
+	var effect_parts: Array[String] = []
+	for effect_name in decision.effects:
+		effect_parts.append("%s: %s" % [_effect_display_name(effect_name), decision.effects[effect_name]])
+	if not effect_parts.is_empty():
+		var effects := Label.new()
+		effects.text = "效果：" + "  |  ".join(effect_parts)
+		effects.add_theme_color_override("font_color", Color(0.78, 0.72, 0.5))
+		text_box.add_child(effects)
+
+	if not decision.resource_cost.is_empty():
+		var cost_parts: Array[String] = []
+		for resource_name in decision.resource_cost:
+			cost_parts.append("%s %.0f" % [
+				EntityManagerScript.RESOURCE_DISPLAY_NAMES.get(resource_name, resource_name),
+				decision.resource_cost[resource_name],
+			])
+		var costs := Label.new()
+		costs.text = "启用消耗：" + "  |  ".join(cost_parts)
+		text_box.add_child(costs)
+
+	var availability: Dictionary = GameState.decision_manager.can_execute(
+		decision.id, GameState.entities, GameState.tech_tree
 	)
-	print(result["message"])
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(130.0, 56.0)
+	button.text = "结束政策" if active else "执行政策"
+	button.disabled = not availability.get("success", false)
+	button.tooltip_text = availability.get("message", "")
+	button.pressed.connect(_on_policy_pressed.bind(decision.id))
+	row.add_child(button)
+	return card
+
+
+func _effect_display_name(p_name: String) -> String:
+	return {
+		"civilization": "文明", "consumption": "消耗", "production": "产出",
+		"growth": "人口增长", "food": "食物", "food_consumption": "食物消耗",
+		"efficiency": "效率", "stability": "安定度", "health": "健康",
+	}.get(p_name, p_name)
+
+
+func _on_policy_pressed(p_decision_id: String) -> void:
+	var result: Dictionary = GameState.decision_manager.execute_decision(
+		p_decision_id, GameState.entities, GameState.tech_tree, GameState.planet_zones
+	)
+	%MessageLabel.text = result.get("message", "")
+	%MessageLabel.modulate = Color(0.55, 1.0, 0.65) if result.get("success", false) else Color(1.0, 0.5, 0.4)
+	GameState.entities.set_policy_effects(GameState.decision_manager.active_policies)
 	_refresh_display()
 
 
-func _on_policy_pressed(decision_id: String) -> void:
-	var result: Dictionary = GameState.decision_manager.execute_decision(
-		decision_id, GameState.entities
-	)
-	print(result["message"])
-	_refresh_display()
-
-
-func _clear_children(node: Node) -> void:
-	for child in node.get_children():
-		node.remove_child(child)
+func _clear_children(p_node: Node) -> void:
+	for child in p_node.get_children():
+		p_node.remove_child(child)
 		child.queue_free()
 
 
