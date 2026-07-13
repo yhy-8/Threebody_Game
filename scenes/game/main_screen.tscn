@@ -1,0 +1,158 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/game/main_screen.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+
+[sub_resource type="LabelSettings" id="1_hint_settings"]
+font_size = 10
+font_color = Color(0.3, 0.3, 0.5, 1.0)
+
+[node name="MainScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.02, 0.06, 1.0)
+
+[node name="Toolbar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 2
+anchor_right = 1.0
+offset_bottom = 44.0
+
+[node name="MenuButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "菜单"
+custom_minimum_size = Vector2(70, 36)
+
+[node name="PauseButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "暂停/继续"
+
+[node name="SpeedSpacer" type="Control" parent="Toolbar"]
+layout_mode = 2
+custom_minimum_size = Vector2(10, 0)
+
+[node name="Speed1x" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "1x"
+custom_minimum_size = Vector2(40, 36)
+
+[node name="Speed2x" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "2x"
+custom_minimum_size = Vector2(40, 36)
+
+[node name="Speed3x" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "3x"
+custom_minimum_size = Vector2(40, 36)
+
+[node name="Speed5x" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "5x"
+custom_minimum_size = Vector2(40, 36)
+
+[node name="RightSpacer" type="Control" parent="Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TechTreeButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "科技树"
+
+[node name="DecisionButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "政策"
+
+[node name="ZoneViewButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "区域 / 建筑"
+
+[node name="StarmapButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "星图"
+
+[node name="PanelContainer" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_top = 0.06
+anchor_bottom = 0.94
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ResourcePanel" type="Panel" parent="PanelContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ResourceTitle" type="Label" parent="PanelContainer/ResourcePanel"]
+layout_mode = 1
+anchors_preset = 2
+anchor_right = 1.0
+offset_top = 8.0
+offset_bottom = 28.0
+text = "— 资源 —"
+horizontal_alignment = 1
+
+[node name="ResourceList" type="VBoxContainer" parent="PanelContainer/ResourcePanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_top = 0.08
+grow_vertical = 2
+
+[node name="CivilizationPanel" type="Panel" parent="PanelContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CivTitle" type="Label" parent="PanelContainer/CivilizationPanel"]
+layout_mode = 1
+anchors_preset = 2
+anchor_right = 1.0
+offset_top = 8.0
+offset_bottom = 28.0
+text = "— 文明 —"
+horizontal_alignment = 1
+
+[node name="EnvironmentPanel" type="Panel" parent="PanelContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="EnvTitle" type="Label" parent="PanelContainer/EnvironmentPanel"]
+layout_mode = 1
+anchors_preset = 2
+anchor_right = 1.0
+offset_top = 8.0
+offset_bottom = 28.0
+text = "— 环境 —"
+horizontal_alignment = 1
+
+[node name="HintLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -420.0
+offset_top = -24.0
+text = "ESC菜单 | 空格暂停 | +/-/1235调速 | 星图按钮进3D视图"
+label_settings = SubResource("1_hint_settings")

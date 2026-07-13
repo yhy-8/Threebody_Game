@@ -1,0 +1,344 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scenes/main_menu/start_game_menu.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+
+[sub_resource type="LabelSettings" id="1_title"]
+font_size = 42
+font_color = Color(0.863, 0.902, 1.0, 1.0)
+
+[sub_resource type="LabelSettings" id="2_subtitle"]
+font_size = 18
+font_color = Color(0.549, 0.588, 0.706, 1.0)
+
+[sub_resource type="LabelSettings" id="3_naming_title"]
+font_size = 34
+font_color = Color(0.784, 0.863, 1.0, 1.0)
+
+[sub_resource type="LabelSettings" id="4_naming_hint"]
+font_size = 16
+font_color = Color(0.471, 0.549, 0.667, 1.0)
+
+[sub_resource type="LabelSettings" id="5_list_title"]
+font_size = 28
+font_color = Color(0.784, 0.863, 1.0, 1.0)
+
+[sub_resource type="LabelSettings" id="6_list_subtitle"]
+font_size = 14
+font_color = Color(0.471, 0.549, 0.667, 1.0)
+
+[sub_resource type="LabelSettings" id="7_hint"]
+font_size = 12
+font_color = Color(0.314, 0.353, 0.471, 1.0)
+
+[node name="StartGameMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.02, 0.02, 0.06, 1.0)
+
+[node name="TitleLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 100.0
+offset_right = 200.0
+offset_bottom = 160.0
+text = "三体文明"
+horizontal_alignment = 1
+label_settings = SubResource("1_title")
+
+[node name="SubtitleLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 170.0
+offset_right = 200.0
+offset_bottom = 210.0
+text = "选择一个选项开始你的旅程"
+horizontal_alignment = 1
+label_settings = SubResource("2_subtitle")
+
+[node name="MainVBox" type="VBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_right = 0.5
+anchor_top = 0.38
+offset_left = -160.0
+offset_right = 160.0
+offset_bottom = 350.0
+theme_override_constants/separation = 12
+
+[node name="NewGameBtn" type="Button" parent="MainVBox"]
+layout_mode = 2
+text = "新游戏"
+custom_minimum_size = Vector2(320, 56)
+
+[node name="ContinueBtn" type="Button" parent="MainVBox"]
+layout_mode = 2
+text = "继续游戏"
+custom_minimum_size = Vector2(320, 56)
+
+[node name="LoadBtn" type="Button" parent="MainVBox"]
+layout_mode = 2
+text = "加载存档"
+custom_minimum_size = Vector2(320, 56)
+
+[node name="BackBtn" type="Button" parent="MainVBox"]
+layout_mode = 2
+text = "返回"
+custom_minimum_size = Vector2(320, 56)
+
+[node name="NamingContainer" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="NamingTitle" type="Label" parent="NamingContainer"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 250.0
+offset_right = 200.0
+offset_bottom = 300.0
+text = "命名你的宇宙"
+horizontal_alignment = 1
+label_settings = SubResource("3_naming_title")
+
+[node name="NamingHint" type="Label" parent="NamingContainer"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 310.0
+offset_right = 200.0
+offset_bottom = 340.0
+text = "为这个三体世界起一个名字"
+horizontal_alignment = 1
+label_settings = SubResource("4_naming_hint")
+
+[node name="NameInput" type="LineEdit" parent="NamingContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 370.0
+offset_right = 200.0
+offset_bottom = 420.0
+placeholder_text = "输入宇宙名称..."
+max_length = 16
+
+[node name="ConfirmNameBtn" type="Button" parent="NamingContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -40.0
+offset_top = 450.0
+offset_right = -10.0
+offset_bottom = 496.0
+text = "开始"
+custom_minimum_size = Vector2(140, 46)
+
+[node name="CancelNameBtn" type="Button" parent="NamingContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = 10.0
+offset_top = 450.0
+offset_right = 40.0
+offset_bottom = 496.0
+text = "取消"
+custom_minimum_size = Vector2(140, 46)
+
+[node name="LoadContainer" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ListTitle" type="Label" parent="LoadContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+offset_left = 60.0
+offset_top = 30.0
+offset_right = 400.0
+offset_bottom = 60.0
+text = "选择宇宙"
+label_settings = SubResource("5_list_title")
+
+[node name="ListSubtitle" type="Label" parent="LoadContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+offset_left = 60.0
+offset_top = 64.0
+offset_right = 400.0
+offset_bottom = 84.0
+text = "共 0 个宇宙档案"
+label_settings = SubResource("6_list_subtitle")
+
+[node name="ItemContainer" type="Control" parent="LoadContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_top = 0.12
+anchor_bottom = 0.88
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+
+[node name="Toolbar" type="HBoxContainer" parent="LoadContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_right = 0.0
+offset_bottom = 80.0
+alignment = 0
+
+[node name="ToolbarBg" type="ColorRect" parent="LoadContainer/Toolbar"]
+layout_mode = 2
+color = Color(0.04, 0.047, 0.098, 0.9)
+custom_minimum_size = Vector2(0, 80)
+size_flags_horizontal = 3
+size_flags_vertical = 8
+
+[node name="BackBtn" type="Button" parent="LoadContainer/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "返回"
+custom_minimum_size = Vector2(120, 44)
+offset_left = 20.0
+offset_top = 18.0
+
+[node name="ActionBtn" type="Button" parent="LoadContainer/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "进入"
+custom_minimum_size = Vector2(120, 44)
+
+[node name="DeleteBtn" type="Button" parent="LoadContainer/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "删除"
+custom_minimum_size = Vector2(120, 44)
+
+[node name="ToolbarHint" type="Label" parent="LoadContainer/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "滚轮滚动 | Enter确认 | Delete删除"
+horizontal_alignment = 2
+size_flags_horizontal = 3
+label_settings = SubResource("7_hint")
+
+[node name="MessageLabel" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -80.0
+offset_right = 200.0
+offset_bottom = -40.0
+text = ""
+horizontal_alignment = 1
+
+[node name="ConfirmOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ConfirmBg" type="ColorRect" parent="ConfirmOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0, 0.0, 0.0, 0.63)
+
+[node name="ConfirmDialog" type="Panel" parent="ConfirmOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_right = 0.5
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -210.0
+offset_top = -100.0
+offset_right = 210.0
+offset_bottom = 100.0
+
+[node name="ConfirmLabel" type="Label" parent="ConfirmOverlay/ConfirmDialog"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -180.0
+offset_top = 20.0
+offset_right = 180.0
+offset_bottom = 100.0
+text = "确认删除？"
+horizontal_alignment = 1
+
+[node name="DeleteConfirmBtn" type="Button" parent="ConfirmOverlay/ConfirmDialog"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -30.0
+offset_top = 120.0
+offset_right = -10.0
+offset_bottom = 164.0
+text = "确认删除"
+custom_minimum_size = Vector2(120, 44)
+
+[node name="DeleteCancelBtn" type="Button" parent="ConfirmOverlay/ConfirmDialog"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = 10.0
+offset_top = 120.0
+offset_right = 30.0
+offset_bottom = 164.0
+text = "取消"
+custom_minimum_size = Vector2(120, 44)

@@ -1,0 +1,15 @@
+[gd_resource type="Theme" load_steps=5 format=3]
+
+[ext_resource type="StyleBox" path="res://resources/themes/panel_style.tres" id="1_panel"]
+[ext_resource type="StyleBox" path="res://resources/themes/button_normal.tres" id="2_btn_normal"]
+[ext_resource type="StyleBox" path="res://resources/themes/button_hover.tres" id="3_btn_hover"]
+
+[resource]
+Button/styles/normal = ExtResource("2_btn_normal")
+Button/styles/hover = ExtResource("3_btn_hover")
+Button/styles/font_size = 14
+Button/colors/font_color = Color(0.78, 0.78, 1.0, 1.0)
+Button/colors/font_hover_color = Color(1.0, 1.0, 1.0, 1.0)
+Label/colors/font_color = Color(0.78, 0.78, 1.0, 1.0)
+Label/colors/font_outline_color = Color(0.04, 0.04, 0.08, 1.0)
+Panel/styles/panel = ExtResource("1_panel")
