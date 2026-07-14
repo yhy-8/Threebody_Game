@@ -24,10 +24,12 @@ func _check_pause_menu() -> void:
 	var save_panel: Control = scene.get_node("SaveOverlay/SavePanel")
 	var save_input: Control = scene.get_node("SaveOverlay/SavePanel/SaveNameInput")
 	var save_row: Control = scene.get_node("SaveOverlay/SavePanel/SaveButtonRow")
+	var browser_panel: Control = scene.get_node("SaveBrowser/BrowserPanel")
 	_expect(_inside_viewport(panel), "暂停菜单卡片超出视口")
 	_expect(_ends_before(status, load_button, true), "暂停菜单保存提示与加载按钮重叠")
 	_expect(_inside_viewport(save_panel), "保存命名面板超出视口")
 	_expect(_ends_before(save_input, save_row, true), "保存名称输入框与按钮行重叠")
+	_expect(_inside_viewport(browser_panel), "暂停菜单存档浏览器超出视口")
 	await _discard(scene)
 
 
@@ -80,6 +82,9 @@ func _check_game_subscreens() -> void:
 			var bodies: Node = scene.get_node("Viewport3D/SubViewport/StarMap3D/CelestialBodies")
 			_expect(bodies.get_child_count() == 4, "3D 星图没有创建完整的三颗恒星与一颗行星")
 			_expect(bodies.get_node_or_null("Planet/PlanetGrid") != null, "3D 星图行星经纬网缺失")
+			for star_index in range(3):
+				_expect(bodies.get_node_or_null("Star%d/Corona" % star_index) != null, "3D 星图恒星日冕缺失")
+				_expect(bodies.get_node_or_null("Star%d/StellarLight" % star_index) != null, "3D 星图恒星动态光源缺失")
 			var game_over_panel: Control = scene.get_node("GameOverOverlay/GameOverPanel")
 			_expect(_inside_viewport(game_over_panel), "星图游戏结束面板超出视口")
 		await _discard(scene)

@@ -1,7 +1,8 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scenes/game/game_menu.gd" id="1_script"]
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+[ext_resource type="PackedScene" path="res://scenes/shared/save_browser.tscn" id="3_save_browser"]
 
 [sub_resource type="LabelSettings" id="1_title"]
 font_size = 32
@@ -258,3 +259,8 @@ vertical_alignment = 1
 autowrap_mode = 2
 theme_override_colors/font_color = Color(0.55, 0.62, 0.78, 1)
 theme_override_font_sizes/font_size = 15
+
+[node name="SaveBrowser" parent="." instance=ExtResource("3_save_browser")]
+unique_name_in_owner = true
+visible = false
+z_index = 20

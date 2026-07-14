@@ -46,7 +46,7 @@ theme_override_font_sizes/font_size = 26
 
 [node name="HintLabel" type="Label" parent="Toolbar"]
 layout_mode = 2
-text = "左键研发  |  滚轮缩放  |  右键拖拽"
+text = "左键研发  |  滚轮缩放  |  右键拖拽  |  空格暂停/继续"
 vertical_alignment = 1
 theme_override_colors/font_color = Color(0.62, 0.69, 0.86, 1)
 theme_override_font_sizes/font_size = 16

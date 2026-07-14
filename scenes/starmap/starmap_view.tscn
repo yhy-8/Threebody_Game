@@ -19,10 +19,14 @@ grow_vertical = 2
 stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="Viewport3D"]
+unique_name_in_owner = true
 handle_input_locally = false
 render_target_update_mode = 4
 
 [node name="StarMap3D" type="Node3D" parent="Viewport3D/SubViewport"]
+unique_name_in_owner = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Viewport3D/SubViewport/StarMap3D"]
 unique_name_in_owner = true
 
 [node name="CelestialBodies" type="Node3D" parent="Viewport3D/SubViewport/StarMap3D"]

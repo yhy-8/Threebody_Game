@@ -1,0 +1,219 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/shared/save_browser.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+
+[node name="SaveBrowser" type="Control"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.012, 0.016, 0.042, 1)
+
+[node name="BrowserPanel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -660.0
+offset_top = -420.0
+offset_right = 660.0
+offset_bottom = 420.0
+
+[node name="Title" type="Label" parent="BrowserPanel"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 42.0
+offset_top = 28.0
+offset_right = -42.0
+offset_bottom = 76.0
+text = "加载存档"
+theme_override_colors/font_color = Color(0.84, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 32
+
+[node name="SummaryLabel" type="Label" parent="BrowserPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 42.0
+offset_top = 78.0
+offset_right = -42.0
+offset_bottom = 110.0
+text = "共 0 个宇宙 · 0 个可用存档"
+theme_override_colors/font_color = Color(0.52, 0.62, 0.82, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="SaveScroll" type="ScrollContainer" parent="BrowserPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+offset_left = 42.0
+offset_top = 126.0
+offset_right = -42.0
+offset_bottom = -126.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="ItemList" type="VBoxContainer" parent="BrowserPanel/SaveScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="EmptyLabel" type="Label" parent="BrowserPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+offset_left = 60.0
+offset_top = 160.0
+offset_right = -60.0
+offset_bottom = -150.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "还没有存档\n新建宇宙后会自动生成“初始存档”"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.55, 0.63, 0.8, 1)
+theme_override_font_sizes/font_size = 20
+
+[node name="StatusLabel" type="Label" parent="BrowserPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 42.0
+offset_top = -112.0
+offset_right = -42.0
+offset_bottom = -82.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "选择一个存档，然后点击“加载”"
+theme_override_colors/font_color = Color(0.63, 0.72, 0.92, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="Toolbar" type="HBoxContainer" parent="BrowserPanel"]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 42.0
+offset_top = -72.0
+offset_right = -42.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+alignment = 2
+theme_override_constants/separation = 14
+
+[node name="Hint" type="Label" parent="BrowserPanel/Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "双击可直接加载 · Enter 加载 · Delete 删除 · Esc 返回"
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.48, 0.57, 0.76, 1)
+theme_override_font_sizes/font_size = 15
+
+[node name="BackButton" type="Button" parent="BrowserPanel/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(150, 52)
+text = "返回"
+
+[node name="DeleteButton" type="Button" parent="BrowserPanel/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(150, 52)
+disabled = true
+text = "删除"
+
+[node name="LoadButton" type="Button" parent="BrowserPanel/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(180, 52)
+disabled = true
+text = "加载所选存档"
+
+[node name="ConfirmOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 20
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="Dim" type="ColorRect" parent="ConfirmOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.72)
+
+[node name="Dialog" type="Panel" parent="ConfirmOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -330.0
+offset_top = -160.0
+offset_right = 330.0
+offset_bottom = 160.0
+
+[node name="ConfirmLabel" type="Label" parent="ConfirmOverlay/Dialog"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 34.0
+offset_top = 42.0
+offset_right = -34.0
+offset_bottom = 142.0
+text = "确认删除存档？"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 20
+
+[node name="ButtonRow" type="HBoxContainer" parent="ConfirmOverlay/Dialog"]
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 52.0
+offset_top = -108.0
+offset_right = -52.0
+offset_bottom = -42.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 18
+
+[node name="DeleteCancelButton" type="Button" parent="ConfirmOverlay/Dialog/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 54)
+text = "取消"
+
+[node name="DeleteConfirmButton" type="Button" parent="ConfirmOverlay/Dialog/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 54)
+text = "确认删除"

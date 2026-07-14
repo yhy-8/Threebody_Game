@@ -20,6 +20,12 @@ func _process(p_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
+		GameState.toggle_pause()
+		%MessageLabel.text = "模拟已暂停" if GameState.paused else "模拟已继续"
+		%MessageLabel.modulate = Color(0.72, 0.82, 1.0)
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		_on_back_pressed()

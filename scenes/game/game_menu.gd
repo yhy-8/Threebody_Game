@@ -11,9 +11,13 @@ func _ready() -> void:
 	%SaveConfirmButton.pressed.connect(_on_save_confirmed)
 	%SaveCancelButton.pressed.connect(_close_save_panel)
 	%SaveNameInput.text_submitted.connect(func(_text: String): _on_save_confirmed())
+	%SaveBrowser.close_requested.connect(_on_browser_closed)
+	%SaveBrowser.save_selected.connect(_on_save_selected)
 
 
 func _input(event: InputEvent) -> void:
+	if %SaveBrowser.visible:
+		return
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		if %SaveOverlay.visible:
@@ -73,7 +77,19 @@ func _close_save_panel() -> void:
 
 
 func _on_load_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/main_menu/start_game_menu.tscn")
+	%SaveBrowser.open_browser()
+
+
+func _on_browser_closed() -> void:
+	%LoadButton.grab_focus()
+
+
+func _on_save_selected(filepath: String) -> void:
+	if SaveManager.load_game(filepath):
+		get_tree().change_scene_to_file("res://scenes/game/main_screen.tscn")
+	else:
+		%SaveStatusLabel.text = "加载失败：存档文件不可用"
+		%SaveStatusLabel.modulate = Color(1.0, 0.5, 0.4)
 
 
 func _on_settings_pressed() -> void:

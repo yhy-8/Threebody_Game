@@ -3,14 +3,122 @@ extends Control
 
 const STAR_SHADER_CODE := """
 shader_type spatial;
-render_mode unshaded;
+render_mode unshaded, cull_back;
 uniform vec4 base_color : source_color = vec4(1.0);
+varying vec3 object_position;
+
+float hash3(vec3 p) {
+	return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+float noise3(vec3 p) {
+	vec3 cell = floor(p);
+	vec3 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(
+		mix(mix(hash3(cell), hash3(cell + vec3(1.0, 0.0, 0.0)), f.x),
+			mix(hash3(cell + vec3(0.0, 1.0, 0.0)), hash3(cell + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+		mix(mix(hash3(cell + vec3(0.0, 0.0, 1.0)), hash3(cell + vec3(1.0, 0.0, 1.0)), f.x),
+			mix(hash3(cell + vec3(0.0, 1.0, 1.0)), hash3(cell + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
+}
+
+float fbm(vec3 p) {
+	float value = 0.0;
+	float amplitude = 0.5;
+	for (int i = 0; i < 4; i++) {
+		value += noise3(p) * amplitude;
+		p = p * 2.03 + vec3(7.1, 3.4, 5.8);
+		amplitude *= 0.5;
+	}
+	return value;
+}
+
+void vertex() {
+	object_position = VERTEX;
+}
+
 void fragment() {
 	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
-	float gradient = 0.25 + 0.75 * pow(facing, 0.45);
-	ALBEDO = base_color.rgb * gradient;
-	EMISSION = base_color.rgb * (1.2 + 2.8 * facing);
+	vec3 surface_point = normalize(object_position);
+	float convection = fbm(surface_point * 5.5 + vec3(TIME * 0.055, -TIME * 0.035, TIME * 0.025));
+	float filaments = smoothstep(0.48, 0.82, convection);
+	float limb = 0.32 + 0.68 * pow(facing, 0.38);
+	vec3 hot_color = mix(base_color.rgb * 0.72, min(vec3(1.0), base_color.rgb * 1.32 + vec3(0.16)), filaments);
+	ALBEDO = hot_color * limb;
+	EMISSION = hot_color * limb * (2.2 + filaments * 2.8);
 	ALPHA = base_color.a;
+}
+"""
+
+const STAR_HALO_SHADER_CODE := """
+shader_type spatial;
+render_mode unshaded, cull_back, depth_draw_never, blend_add;
+uniform vec4 halo_color : source_color = vec4(1.0, 0.7, 0.3, 0.34);
+void fragment() {
+	float facing = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
+	float soft_disc = pow(facing, 2.8);
+	float pulse = 0.94 + 0.06 * sin(TIME * 1.7);
+	ALBEDO = halo_color.rgb;
+	EMISSION = halo_color.rgb * 2.4;
+	ALPHA = halo_color.a * soft_disc * pulse;
+}
+"""
+
+const PLANET_SHADER_CODE := """
+shader_type spatial;
+render_mode diffuse_burley, specular_schlick_ggx;
+uniform vec4 ocean_color : source_color = vec4(0.018, 0.10, 0.25, 1.0);
+uniform vec4 shallow_color : source_color = vec4(0.04, 0.28, 0.42, 1.0);
+uniform vec4 land_color : source_color = vec4(0.18, 0.36, 0.24, 1.0);
+uniform vec4 highland_color : source_color = vec4(0.48, 0.43, 0.28, 1.0);
+uniform vec4 atmosphere_color : source_color = vec4(0.12, 0.48, 1.0, 1.0);
+varying vec3 object_position;
+
+float hash3(vec3 p) {
+	return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+}
+
+float noise3(vec3 p) {
+	vec3 cell = floor(p);
+	vec3 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(
+		mix(mix(hash3(cell), hash3(cell + vec3(1.0, 0.0, 0.0)), f.x),
+			mix(hash3(cell + vec3(0.0, 1.0, 0.0)), hash3(cell + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+		mix(mix(hash3(cell + vec3(0.0, 0.0, 1.0)), hash3(cell + vec3(1.0, 0.0, 1.0)), f.x),
+			mix(hash3(cell + vec3(0.0, 1.0, 1.0)), hash3(cell + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
+}
+
+float fbm(vec3 p) {
+	float value = 0.0;
+	float amplitude = 0.5;
+	for (int i = 0; i < 5; i++) {
+		value += noise3(p) * amplitude;
+		p = p * 2.08 + vec3(5.2, 1.3, 7.7);
+		amplitude *= 0.5;
+	}
+	return value;
+}
+
+void vertex() {
+	object_position = VERTEX;
+}
+
+void fragment() {
+	vec3 sphere_point = normalize(object_position);
+	float continents = fbm(sphere_point * 3.2 + vec3(2.4, 7.1, 1.3));
+	float detail = fbm(sphere_point * 11.0 + vec3(8.2, 0.7, 4.5));
+	float land_mask = smoothstep(0.51, 0.58, continents + (detail - 0.5) * 0.16);
+	float highlands = smoothstep(0.61, 0.78, continents + detail * 0.12);
+	vec3 water = mix(ocean_color.rgb, shallow_color.rgb, smoothstep(0.45, 0.54, continents));
+	vec3 terrain = mix(land_color.rgb, highland_color.rgb, highlands);
+	ALBEDO = mix(water, terrain, land_mask);
+	ROUGHNESS = mix(0.2, 0.88, land_mask);
+	SPECULAR = mix(0.78, 0.22, land_mask);
+	float clouds = smoothstep(0.68, 0.79, fbm(sphere_point * 7.0 + vec3(TIME * 0.006, 3.0, 0.0)));
+	ALBEDO = mix(ALBEDO, vec3(0.82, 0.88, 0.94), clouds * 0.36);
+	float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.2);
+	EMISSION = atmosphere_color.rgb * rim * 0.72 + vec3(0.12) * clouds * 0.06;
 }
 """
 
@@ -36,12 +144,31 @@ func _ready() -> void:
 	%HelpButton.pressed.connect(_on_help_toggled)
 	%CloseHelpButton.pressed.connect(_on_help_toggled)
 	%RestartButton.pressed.connect(_on_restart_pressed)
+	_setup_space_environment()
 	_setup_star_field()
 	if GameState.game_started:
 		_update_star_meshes()
 		_refresh_info()
 	_update_pause_button()
 	%GameOverOverlay.visible = GameState.game_over
+
+
+func _setup_space_environment() -> void:
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_COLOR
+	environment.background_color = Color(0.0015, 0.0025, 0.009, 1.0)
+	environment.background_energy_multiplier = 0.35
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color(0.025, 0.04, 0.09, 1.0)
+	environment.ambient_light_energy = 0.22
+	environment.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	environment.glow_enabled = true
+	environment.glow_intensity = 1.15
+	environment.glow_strength = 1.35
+	environment.glow_bloom = 0.18
+	%WorldEnvironment.environment = environment
+	%SubViewport.msaa_3d = Viewport.MSAA_4X
 
 
 func _process(p_delta: float) -> void:
@@ -64,7 +191,7 @@ func _process(p_delta: float) -> void:
 func _setup_star_field() -> void:
 	var particles := GPUParticles3D.new()
 	particles.name = "StarField"
-	particles.amount = 450
+	particles.amount = 1100
 	particles.lifetime = 60.0
 	particles.preprocess = 60.0
 	particles.randomness = 1.0
@@ -75,16 +202,29 @@ func _setup_star_field() -> void:
 	process_material.gravity = Vector3.ZERO
 	process_material.initial_velocity_min = 0.0
 	process_material.initial_velocity_max = 0.0
-	process_material.scale_min = 0.35
-	process_material.scale_max = 1.4
+	process_material.scale_min = 0.3
+	process_material.scale_max = 2.1
+	var star_gradient := Gradient.new()
+	star_gradient.colors = PackedColorArray([
+		Color(0.52, 0.68, 1.0, 0.7),
+		Color(0.92, 0.96, 1.0, 1.0),
+		Color(1.0, 0.72, 0.42, 0.82),
+	])
+	star_gradient.offsets = PackedFloat32Array([0.0, 0.58, 1.0])
+	var star_ramp := GradientTexture1D.new()
+	star_ramp.gradient = star_gradient
+	process_material.color_initial_ramp = star_ramp
 	particles.process_material = process_material
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1.4, 1.4)
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	material.albedo_color = Color(0.8, 0.88, 1.0, 0.9)
+	material.albedo_color = Color.WHITE
+	material.vertex_color_use_as_albedo = true
+	material.vertex_color_is_srgb = true
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	quad.material = material
 	particles.draw_pass_1 = quad
 	%StarMap3D.add_child(particles)
@@ -117,12 +257,10 @@ func _update_star_meshes() -> void:
 
 		var color: Color = star.get("color", Color.WHITE)
 		if star.get("is_planet", false):
-			var planet_material := StandardMaterial3D.new()
-			planet_material.albedo_color = color
-			planet_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			planet_material.emission_enabled = true
-			planet_material.emission = color
-			planet_material.emission_energy_multiplier = 1.4
+			var planet_shader := Shader.new()
+			planet_shader.code = PLANET_SHADER_CODE
+			var planet_material := ShaderMaterial.new()
+			planet_material.shader = planet_shader
 			mesh_instance.material_override = planet_material
 		else:
 			var star_shader := Shader.new()
@@ -131,6 +269,7 @@ func _update_star_meshes() -> void:
 			star_material.shader = star_shader
 			star_material.set_shader_parameter("base_color", color)
 			mesh_instance.material_override = star_material
+			_add_star_halo_and_light(mesh_instance, radius, color)
 		mesh_instance.set_meta("is_planet", star.get("is_planet", false))
 		mesh_instance.set_meta("star_index", index)
 		mesh_instance.position = _dict_to_vector(star.get("position", {}))
@@ -153,13 +292,40 @@ func _update_star_meshes() -> void:
 	_update_trails()
 
 
+func _add_star_halo_and_light(star_mesh: MeshInstance3D, radius: float, color: Color) -> void:
+	var halo := MeshInstance3D.new()
+	halo.name = "Corona"
+	var halo_sphere := SphereMesh.new()
+	halo_sphere.radius = radius * 1.62
+	halo_sphere.height = radius * 3.24
+	halo_sphere.radial_segments = 40
+	halo_sphere.rings = 20
+	halo.mesh = halo_sphere
+	var halo_shader := Shader.new()
+	halo_shader.code = STAR_HALO_SHADER_CODE
+	var halo_material := ShaderMaterial.new()
+	halo_material.shader = halo_shader
+	halo_material.set_shader_parameter("halo_color", Color(color, 0.34))
+	halo.material_override = halo_material
+	star_mesh.add_child(halo)
+
+	var light := OmniLight3D.new()
+	light.name = "StellarLight"
+	light.light_color = color.lerp(Color.WHITE, 0.28)
+	light.light_energy = 4.8
+	light.omni_range = 1800.0
+	light.omni_attenuation = 0.72
+	light.shadow_enabled = false
+	star_mesh.add_child(light)
+
+
 func _create_planet_grid(radius: float) -> MeshInstance3D:
 	var grid := MeshInstance3D.new()
 	grid.name = "PlanetGrid"
 	var immediate := ImmediateMesh.new()
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = Color(0.3, 0.65, 1.0, 0.72)
+	material.albedo_color = Color(0.26, 0.62, 1.0, 0.42)
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 
 	for latitude_index in range(1, 6):
@@ -286,7 +452,7 @@ func _input(event: InputEvent) -> void:
 		else:
 			_on_back_pressed()
 		return
-	if event is InputEventKey and event.pressed and event.keycode == KEY_SPACE:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		_on_pause_pressed()
 		get_viewport().set_input_as_handled()
 		return
