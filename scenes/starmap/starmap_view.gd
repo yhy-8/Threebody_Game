@@ -138,6 +138,7 @@ var _render_elapsed: float = 0.0
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("starmap")
 	%BackButton.pressed.connect(_on_back_pressed)
 	%PauseButton.pressed.connect(_on_pause_pressed)
 	%LockButton.pressed.connect(_on_lock_toggled)
@@ -248,7 +249,7 @@ func _update_star_meshes() -> void:
 		var mesh_instance := MeshInstance3D.new()
 		mesh_instance.name = "Planet" if star.get("is_planet", false) else "Star%d" % index
 		var sphere := SphereMesh.new()
-		var radius: float = star.get("radius", 20.0) * 0.5
+		var radius: float = star.get("radius", 20.0)
 		sphere.radius = radius
 		sphere.height = radius * 2.0
 		sphere.radial_segments = 48
@@ -368,21 +369,18 @@ func _update_trails() -> void:
 	if not GameState.game_started:
 		return
 	var stars_data: Array = GameState.get_state().get("environment", {}).get("stars", [])
+	var prediction_steps := 0
+	if GameState.tech_tree.is_unlocked("computer"):
+		prediction_steps = 80 if GameState.tech_tree.is_unlocked("chaos_prediction") else 24
+	var predicted: Array = GameState.environment.predict_trajectories(prediction_steps, 0.25) if prediction_steps > 0 else []
 	for index in range(min(stars_data.size(), _trail_meshes.size())):
 		var star: Dictionary = stars_data[index]
 		var color: Color = star.get("color", Color.WHITE)
 		_trail_meshes[index].mesh = _line_mesh(star.get("trail", []), color, false)
 		_prediction_meshes[index].mesh = null
 
-		if GameState.tech_tree.is_unlocked("computer"):
-			var prediction_steps := 80 if GameState.tech_tree.is_unlocked("chaos_prediction") else 24
-			var prediction_points: Array = []
-			var position := _dict_to_vector(star.get("position", {}))
-			var velocity := _dict_to_vector(star.get("velocity", {}))
-			for step in range(prediction_steps):
-				position += velocity * 0.25
-				prediction_points.append({"x": position.x, "y": position.y, "z": position.z})
-			_prediction_meshes[index].mesh = _line_mesh(prediction_points, Color(color, 0.35), true)
+		if prediction_steps > 0 and index < predicted.size():
+			_prediction_meshes[index].mesh = _line_mesh(predicted[index], Color(color, 0.35), true)
 
 
 func _line_mesh(points: Array, color: Color, prediction: bool) -> ImmediateMesh:
@@ -481,13 +479,21 @@ func _refresh_info() -> void:
 	var environment: Dictionary = state.get("environment", {}).get("params", {})
 	var prediction := "实时轨迹"
 	if GameState.tech_tree.is_unlocked("chaos_prediction"):
-		prediction = "长程混沌预测"
+		prediction = "长程多体数值预测"
 	elif GameState.tech_tree.is_unlocked("computer"):
-		prediction = "短程轨道预测"
-	%InfoLabel.text = "第 %.1f 天  |  温度 %.1f℃  |  辐射 %.2f  |  %s  |  %s" % [
+		prediction = "短程多体数值预测"
+	var observatory_info := ""
+	if GameState.tech_tree.is_unlocked("observatory"):
+		var masses: Array[String] = []
+		for star in state.get("environment", {}).get("stars", []):
+			if not star.get("is_planet", false):
+				masses.append("%.0f" % float(star.get("mass", 0.0)))
+		observatory_info = "  |  恒星质量参数 " + "/".join(masses)
+	%InfoLabel.text = "第 %.1f 天  |  温度 %.1f℃  |  辐射 %.2f  |  %s  |  %s%s" % [
 		state.get("game_time", 0.0), environment.get("temperature", 0.0),
 		environment.get("radiation", 0.0), prediction,
 		"行星锁定" if _locked_on_planet else "自由视角",
+		observatory_info,
 	]
 
 

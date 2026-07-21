@@ -100,7 +100,7 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 	},
 	"fossil_power_plant": {
 		"name": "建造化石燃料发电站", "description": "大规模化石燃料发电设施，中级电力来源。",
-		"resource_cost": {"iron": 120, "copper": 40}, "tech_requirement": "power_plant", "requires_zone": true,
+		"resource_cost": {"iron": 200, "copper": 100}, "tech_requirement": "power_plant", "requires_zone": true,
 		"worker_capacity": 3, "per_worker_output": {"electricity": 15.0},
 		"consumption": {"fossil_fuel": 5.0}, "build_time": 5.0, "storage_capacity": 0,
 	},
@@ -118,19 +118,19 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 	},
 	"academy": {
 		"name": "建造科学院", "description": "最高级别的科研机构，产出理论科研点。",
-		"resource_cost": {"iron": 800, "copper": 200, "rare_mineral": 50}, "tech_requirement": "academy", "requires_zone": true,
+		"resource_cost": {"iron": 1500, "copper": 500, "rare_mineral": 100}, "tech_requirement": "academy", "requires_zone": true,
 		"worker_capacity": 8, "per_worker_output": {},
 		"consumption": {"electricity": 25.0, "food": 5.0}, "build_time": 10.0, "storage_capacity": 0,
 	},
 	"deep_shelter": {
 		"name": "建造深地庇护所", "description": "深入地下的巨型避难系统。",
-		"resource_cost": {"iron": 300, "copper": 60}, "tech_requirement": "deep_shelter", "requires_zone": true,
+		"resource_cost": {"iron": 400, "copper": 100}, "tech_requirement": "deep_shelter", "requires_zone": true,
 		"worker_capacity": 0, "per_worker_output": {},
 		"consumption": {"electricity": 3.0}, "build_time": 8.0, "storage_capacity": 100,
 	},
 	"radiation_shield": {
 		"name": "建造辐射屏蔽站", "description": "为所在区域提供辐射防护。",
-		"resource_cost": {"iron": 250, "copper": 50, "rare_mineral": 20}, "tech_requirement": "radiation_armor", "requires_zone": true,
+		"resource_cost": {"iron": 300, "rare_mineral": 20}, "tech_requirement": "radiation_armor", "requires_zone": true,
 		"worker_capacity": 0, "per_worker_output": {},
 		"consumption": {"electricity": 5.0}, "build_time": 7.0, "storage_capacity": 0,
 	},
@@ -301,7 +301,8 @@ func _check_policy_conditions(p_policy_id: String, p_entities = null) -> Diction
 	return {"success": true, "message": ""}
 
 
-func can_execute(p_decision_id: String, p_entities, p_tech_tree = null) -> Dictionary:
+func can_execute(p_decision_id: String, p_entities, p_tech_tree = null,
+		p_zone_manager = null, p_zone_id: int = -1) -> Dictionary:
 	var decision: Decision = available_decisions.get(p_decision_id)
 	if decision == null:
 		return {"success": false, "message": "未知的决策"}
@@ -310,7 +311,9 @@ func can_execute(p_decision_id: String, p_entities, p_tech_tree = null) -> Dicti
 		var remaining: float = cooldowns[p_decision_id]
 		return {"success": false, "message": "冷却中（剩余 %.0f 天）" % remaining}
 
-	if not decision.tech_requirement.is_empty() and p_tech_tree != null:
+	if not decision.tech_requirement.is_empty():
+		if p_tech_tree == null:
+			return {"success": false, "message": "无法验证前置科技"}
 		if not p_tech_tree.is_unlocked(decision.tech_requirement):
 			var tech_node = p_tech_tree.get_node(decision.tech_requirement)
 			var tech_name: String = tech_node.name if tech_node != null else decision.tech_requirement
@@ -326,43 +329,63 @@ func can_execute(p_decision_id: String, p_entities, p_tech_tree = null) -> Dicti
 
 	if decision.category == "policy":
 		return _check_policy_conditions(p_decision_id, p_entities)
+	if decision.category == "construction" and decision.requires_zone:
+		if p_zone_manager == null:
+			return {"success": false, "message": "区域管理器不可用"}
+		if p_zone_id < 0:
+			return {"success": false, "message": "需要选择一个建造区域"}
+		if p_zone_manager.get_zone(p_zone_id) == null:
+			return {"success": false, "message": "建造区域不存在"}
 
 	return {"success": true, "message": ""}
 
 
 func execute_decision(p_decision_id: String, p_entities, p_tech_tree = null,
 		p_zone_manager = null, p_zone_id: int = -1) -> Dictionary:
-	var can: Dictionary = can_execute(p_decision_id, p_entities, p_tech_tree)
+	var can: Dictionary = can_execute(p_decision_id, p_entities, p_tech_tree, p_zone_manager, p_zone_id)
 	if not can["success"]:
 		return {"success": false, "message": can["message"], "building_id": -1}
 
 	var decision: Decision = available_decisions[p_decision_id] as Decision
 
-	var is_active_policy := decision.category == "policy" and p_decision_id in active_policies
-	if not is_active_policy:
-		for res_name in decision.resource_cost:
-			var cost: float = decision.resource_cost[res_name]
-			p_entities.consume_resource(res_name, cost)
-
-	if decision.cooldown > 0.0:
-		cooldowns[p_decision_id] = decision.cooldown
-
-	enacted_history.append(p_decision_id)
-
 	if decision.category == "construction":
-		return _execute_construction(decision, p_entities, p_zone_manager, p_zone_id)
+		var construction_result: Dictionary = _execute_construction(decision, p_entities, p_zone_manager, p_zone_id)
+		if construction_result.get("success", false):
+			_commit_decision(p_decision_id, decision)
+		return construction_result
 	elif decision.category == "policy":
-		return _execute_policy(p_decision_id, p_entities)
+		var is_active_policy := p_decision_id in active_policies
+		if not is_active_policy and not _consume_costs_atomically(decision, p_entities):
+			return {"success": false, "message": "资源状态已变化，决策未执行", "building_id": -1}
+		var policy_result: Dictionary = _execute_policy(p_decision_id, p_entities)
+		if policy_result.get("success", false):
+			_commit_decision(p_decision_id, decision)
+		return policy_result
 
 	return {"success": false, "message": "未知决策类型", "building_id": -1}
 
 
+func _commit_decision(p_decision_id: String, p_decision: Decision) -> void:
+	if p_decision.cooldown > 0.0:
+		cooldowns[p_decision_id] = p_decision.cooldown
+	enacted_history.append(p_decision_id)
+
+
+func _consume_costs_atomically(p_decision: Decision, p_entities) -> bool:
+	var consumed: Dictionary = {}
+	for res_name in p_decision.resource_cost:
+		var cost: float = float(p_decision.resource_cost[res_name])
+		if cost < 0.0 or not p_entities.consume_resource(res_name, cost):
+			for rollback_name in consumed:
+				p_entities.produce_resource(rollback_name, consumed[rollback_name])
+			return false
+		consumed[res_name] = cost
+	return true
+
+
 func _execute_construction(p_decision: Decision, p_entities,
 		p_zone_manager, p_zone_id: int) -> Dictionary:
-	if p_decision.requires_zone and p_zone_id < 0:
-		return {"success": false, "message": "需要选择一个建造区域", "building_id": -1}
-
-	var building_id: int = get_next_building_id()
+	var building_id: int = _next_building_id
 
 	var storage_cap: int = p_decision.storage_capacity
 	if storage_cap <= 0:
@@ -386,10 +409,14 @@ func _execute_construction(p_decision: Decision, p_entities,
 		storage_cap,
 	)
 
+	if not _consume_costs_atomically(p_decision, p_entities):
+		return {"success": false, "message": "资源状态已变化，建造未开始", "building_id": -1}
+	if p_decision.requires_zone and not p_zone_manager.add_building_to_zone(p_zone_id, building_id):
+		for res_name in p_decision.resource_cost:
+			p_entities.produce_resource(res_name, float(p_decision.resource_cost[res_name]))
+		return {"success": false, "message": "区域注册失败，资源已退回", "building_id": -1}
 	p_entities.add_building(building)
-
-	if p_zone_manager != null and p_decision.requires_zone and p_zone_id >= 0:
-		p_zone_manager.add_building_to_zone(p_zone_id, building_id)
+	_next_building_id += 1
 
 	var msg: String = "开始建造 " + building.building_name
 	return {
@@ -411,7 +438,11 @@ func _execute_policy(p_policy_id: String, p_entities) -> Dictionary:
 		var can_store: int = pop.get_storable_amount()
 		var actual_store: int = min(to_store, can_store)
 		if actual_store > 0:
-			pop.store_population(actual_store)
+			p_entities.prepare_population_reduction(pop.total - actual_store)
+			var stored_result: Dictionary = p_entities.store_population_from_idle(actual_store)
+			if not stored_result.get("success", false):
+				current_state = CivilizationState.NORMAL
+				return {"success": false, "message": stored_result.get("message", "人口脱水失败"), "building_id": -1}
 
 		var exposed: int = to_store - actual_store
 		if exposed > 0:

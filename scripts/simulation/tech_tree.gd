@@ -1,6 +1,8 @@
 class_name TechTree
 extends RefCounted
-## 科技树管理器 — 5层17节点 + 3种科技点数
+## 科技树管理器 — 5层19节点 + 3种科技点数
+
+signal research_finished(tech_id: String, tech_name: String)
 
 
 const RESEARCH_BASIC: String = "basic"
@@ -152,7 +154,7 @@ func _init_default_techs(p_config: Dictionary) -> void:
 		["material_science"], 3, 1, "applied"))
 
 	# ── Tier 4 ────────────────────────────────────────
-	add_node(_make_node("nuclear_fusion", "可控核聚变", "人造恒星级别的能量来源。", "解锁聚变反应堆，提供近乎无限的清洁能源。",
+	add_node(_make_node("nuclear_fusion", "可控核聚变", "人造恒星级别的能量来源。", "规划效果：聚变反应堆尚未进入当前可建造原型。",
 		{"theoretical": 500, "applied": 300}, {"iron": 3000, "copper": 1000, "rare_mineral": 500}, {"population": 800},
 		["academy"], 4, 0, "theoretical"))
 
@@ -183,7 +185,7 @@ func is_unlocked(p_node_id: String) -> bool:
 
 
 func produce_research(p_point_type: String, p_amount: float) -> void:
-	if not research_points.has(p_point_type):
+	if not research_points.has(p_point_type) or p_amount <= 0.0:
 		return
 
 	var remaining: float = p_amount
@@ -225,6 +227,8 @@ func can_start_research(p_node_id: String, p_entities) -> Dictionary:
 
 	for res_name in node.resource_cost:
 		var required: float = node.resource_cost[res_name]
+		if required < 0.0:
+			return {"success": false, "message": "科技资源成本无效"}
 		var current_amt: float = p_entities.get_resource(res_name)
 		if current_amt < required:
 			var display_name: String = "资源"
@@ -246,15 +250,29 @@ func start_research(p_node_id: String, p_entities) -> Dictionary:
 
 	var node: TechNode = get_node(p_node_id)
 
+	var consumed: Dictionary = {}
 	for res_name in node.resource_cost:
 		var cost: float = node.resource_cost[res_name]
-		p_entities.consume_resource(res_name, cost)
+		if not p_entities.consume_resource(res_name, cost):
+			for rollback_name in consumed:
+				p_entities.produce_resource(rollback_name, consumed[rollback_name])
+			return {"success": false, "message": "资源状态已变化，研究未开始"}
+		consumed[res_name] = cost
 
 	node.researching = true
 	researching_tech_id = p_node_id
 	research_progress.clear()
 	for rtype in node.research_cost:
 		research_progress[rtype] = 0.0
+		var available: float = maxf(0.0, float(research_points.get(rtype, 0.0)))
+		var inject: float = minf(available, float(node.research_cost[rtype]))
+		if inject > 0.0:
+			research_progress[rtype] = inject
+			research_points[rtype] = available - inject
+
+	_check_research_completion()
+	if node.unlocked:
+		return {"success": true, "message": "已使用库存科研点完成「%s」" % node.name}
 
 	return {"success": true, "message": "开始研究「%s」" % node.name}
 
@@ -299,10 +317,13 @@ func _check_research_completion() -> void:
 
 
 func _complete_research(p_node: TechNode) -> void:
+	var completed_id: String = p_node.id
+	var completed_name: String = p_node.name
 	p_node.unlocked = true
 	p_node.researching = false
 	researching_tech_id = ""
 	research_progress.clear()
+	research_finished.emit(completed_id, completed_name)
 
 
 func is_researchable(p_node_id: String) -> bool:

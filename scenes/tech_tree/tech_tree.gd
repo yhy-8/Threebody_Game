@@ -9,6 +9,7 @@ var _hovered_node_id: String = ""
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("tech_tree")
 	%BackButton.pressed.connect(_on_back_pressed)
 	%TechTreeContainer.node_clicked.connect(_on_node_clicked)
 	%TechTreeContainer.node_hovered.connect(_on_node_hovered)

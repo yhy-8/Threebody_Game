@@ -3,6 +3,7 @@ extends Control
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("game_menu")
 	%ResumeButton.pressed.connect(_on_resume_pressed)
 	%SaveButton.pressed.connect(_on_save_pressed)
 	%LoadButton.pressed.connect(_on_load_pressed)
@@ -93,8 +94,10 @@ func _on_save_selected(filepath: String) -> void:
 
 
 func _on_settings_pressed() -> void:
+	GameState.settings_return_scene = "res://scenes/game/game_menu.tscn"
 	get_tree().change_scene_to_file("res://scenes/main_menu/settings_screen.tscn")
 
 
 func _on_main_menu_pressed() -> void:
+	GameState.reset()
 	get_tree().change_scene_to_file("res://scenes/main_menu/initial_menu.tscn")

@@ -30,6 +30,14 @@ func _ready() -> void:
 		target_button.pressed.emit()
 		browser.get_node("BrowserPanel/Toolbar/LoadButton").pressed.emit()
 	_expect(selected_paths.size() == 1 and selected_paths[0] == save_path, "选择卡片后没有发出正确的加载路径")
+	if target_button != null:
+		browser._on_delete_pressed()
+		var enter_event := InputEventKey.new()
+		enter_event.keycode = KEY_ENTER
+		enter_event.pressed = true
+		browser._input(enter_event)
+		_expect(selected_paths.size() == 1, "删除确认层打开时 Enter 穿透并加载了底层存档")
+		browser._close_delete_confirmation()
 
 	var start_menu := (load("res://scenes/main_menu/start_game_menu.tscn") as PackedScene).instantiate()
 	add_child(start_menu)
@@ -59,4 +67,3 @@ func _expect(condition: bool, message: String) -> void:
 		return
 	_failures += 1
 	push_error(message)
-

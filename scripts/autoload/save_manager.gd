@@ -123,14 +123,22 @@ func save_game(simulator, save_name: String, universe_name: String) -> bool:
 	var safe_save := save_name.validate_filename()
 	var save_time := Time.get_datetime_string_from_system(false, true)
 	var timestamp := save_time.replace("-", "").replace(":", "").replace(" ", "_")
-	var path := get_save_directory().path_join("%s__%s__%s.sav" % [safe_universe, timestamp, safe_save])
+	var unique_suffix := str(Time.get_ticks_usec())
+	var path := get_save_directory().path_join("%s__%s_%s__%s.sav" % [safe_universe, timestamp, unique_suffix, safe_save])
+	while FileAccess.file_exists(path):
+		unique_suffix += "_1"
+		path = get_save_directory().path_join("%s__%s_%s__%s.sav" % [safe_universe, timestamp, unique_suffix, safe_save])
+	var state: Dictionary = source.to_dict()
+	var state_payload: String = JSON.stringify(state)
 	var data: Dictionary = {
 		"save_name": save_name,
 		"universe_name": universe_name,
 		"save_time": save_time,
 		"game_day": source.game_time,
 		"is_legacy": false,
-		"state": source.to_dict(),
+		"state": state,
+		"state_payload": state_payload,
+		"state_checksum": state_payload.sha256_text(),
 	}
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
@@ -142,6 +150,8 @@ func save_game(simulator, save_name: String, universe_name: String) -> bool:
 
 
 func load_game(filepath: String, simulator = null) -> bool:
+	if not _is_safe_save_path(filepath):
+		return false
 	if not FileAccess.file_exists(filepath):
 		return false
 	var file := FileAccess.open(filepath, FileAccess.READ)
@@ -153,18 +163,24 @@ func load_game(filepath: String, simulator = null) -> bool:
 	if error != OK:
 		return false
 	var data = json.get_data()
-	if not data is Dictionary or not data.has("state"):
+	if not _is_valid_save_document(data):
 		return false
 	var target = simulator if simulator != null else GameState
 	if target == null or not target.has_method("from_dict"):
 		return false
-	target.from_dict(data["state"])
+	if target.has_method("validate_serialized_state") and not target.validate_serialized_state(data["state"]):
+		return false
+	var load_result = target.from_dict(data["state"])
+	if load_result is bool and not load_result:
+		return false
 	_current_save_path = filepath
 	EventBus.game_loaded.emit(data.get("universe_name", target.universe_name))
 	return true
 
 
 func delete_save(filepath: String) -> bool:
+	if not _is_safe_save_path(filepath):
+		return false
 	if not FileAccess.file_exists(filepath):
 		return false
 	return DirAccess.remove_absolute(filepath) == OK
@@ -176,7 +192,8 @@ func delete_universe(universe_name: String) -> bool:
 	if saves_in_uni.is_empty():
 		return false
 	for s: SaveInfo in saves_in_uni:
-		DirAccess.remove_absolute(s.filepath)
+		if not delete_save(s.filepath):
+			return false
 	return true
 
 
@@ -193,7 +210,7 @@ func _read_save_info(path: String) -> SaveInfo:
 	if err != OK:
 		return null
 	var data = json.get_data()
-	if not data is Dictionary:
+	if not _is_valid_save_document(data):
 		return null
 	return SaveInfo.new(
 		path,
@@ -203,3 +220,29 @@ func _read_save_info(path: String) -> SaveInfo:
 		float(data.get("game_day", 0.0)),
 		data.get("is_legacy", false)
 	)
+
+
+func _is_valid_save_document(data) -> bool:
+	if not data is Dictionary or not data.get("state", null) is Dictionary:
+		return false
+	var state: Dictionary = data["state"]
+	if data.has("state_payload"):
+		var payload: String = str(data["state_payload"])
+		if payload.is_empty() or not data.has("state_checksum") or payload.sha256_text() != str(data["state_checksum"]):
+			return false
+		var payload_json := JSON.new()
+		if payload_json.parse(payload) != OK or not payload_json.get_data() is Dictionary:
+			return false
+		state = payload_json.get_data()
+		data["state"] = state
+	if not GameState.validate_serialized_state(state):
+		return false
+	return true
+
+
+func _is_safe_save_path(filepath: String) -> bool:
+	if filepath.is_empty() or not filepath.to_lower().ends_with(".sav"):
+		return false
+	var base: String = get_save_directory().simplify_path()
+	var resolved: String = ProjectSettings.globalize_path(filepath).simplify_path()
+	return resolved.begins_with(base + "/") and resolved.get_base_dir() == base

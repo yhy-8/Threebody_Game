@@ -6,6 +6,9 @@ signal research_completed(tech_id: String, tech_name: String)
 signal developer_mode_changed(enabled: bool)
 
 const SETTINGS_PATH := "res://settings.json"
+const SAVE_SCHEMA_VERSION := 2
+const FIXED_SIMULATION_STEP_DAYS := 0.02
+const MAX_SIMULATION_SUBSTEPS := 512
 
 # Preload all simulation scripts — their return values are GDScript resources used for .new()
 const ThreeBodySimScript = preload("res://scripts/simulation/three_body.gd")
@@ -30,6 +33,10 @@ var game_started: bool = false
 var universe_name: String = "未命名宇宙"
 var last_autosave_day: int = -1
 var developer_mode: bool = false
+var settings_return_scene: String = "res://scenes/main_menu/initial_menu.tscn"
+var _simulation_accumulator: float = 0.0
+var _autosave_elapsed_seconds: float = 0.0
+var _runtime_settings: Dictionary = {}
 
 # ── 配置 ────────────────────────────────────────────
 var config: Dictionary = {}
@@ -49,7 +56,9 @@ var current_screen: String = ""
 
 
 func _ready() -> void:
+	EventBus.screen_changed.connect(_on_screen_changed)
 	_load_runtime_settings()
+	_apply_runtime_settings()
 
 
 func _process(p_delta: float) -> void:
@@ -80,7 +89,11 @@ func new_game(p_universe_name: String, p_config: Dictionary = {}) -> void:
 	game_started = true
 	game_over = false
 	game_time = 0.0
+	time_scale = clampf(float(_runtime_settings.get("time_scale", 1.0)), _time_scale_min, _time_scale_max)
+	environment.time_scale = 1.0
+	_connect_tech_tree_signals()
 	_init_zone_temperatures()
+	EventBus.game_started.emit(universe_name)
 
 
 func reset() -> void:
@@ -89,11 +102,15 @@ func reset() -> void:
 	game_over = false
 	game_started = false
 	game_time = 0.0
+	last_autosave_day = -1
+	_simulation_accumulator = 0.0
+	_autosave_elapsed_seconds = 0.0
 	environment = null
 	entities = null
 	tech_tree = null
 	decision_manager = null
 	planet_zones = null
+	research_output_rate = {"basic": 0.0, "applied": 0.0, "theoretical": 0.0}
 
 
 func toggle_pause() -> void:
@@ -179,7 +196,42 @@ func _load_runtime_settings() -> void:
 		return
 	var data = json.get_data()
 	if data is Dictionary:
+		_runtime_settings = data.duplicate(true)
 		developer_mode = data.get("developer_mode", false)
+
+
+func reload_runtime_settings() -> void:
+	_runtime_settings.clear()
+	_load_runtime_settings()
+	_apply_runtime_settings()
+
+
+func _apply_runtime_settings() -> void:
+	var fullscreen: bool = _runtime_settings.get("fullscreen", false)
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
+	DisplayServer.window_set_vsync_mode(
+		DisplayServer.VSYNC_ENABLED if _runtime_settings.get("vsync", true) else DisplayServer.VSYNC_DISABLED
+	)
+	var master_volume: float = clampf(float(_runtime_settings.get("master_volume", 0.8)), 0.0, 1.0)
+	var master_bus: int = AudioServer.get_bus_index("Master")
+	if master_bus >= 0:
+		AudioServer.set_bus_volume_db(master_bus, linear_to_db(master_volume))
+	if game_started:
+		set_time_scale(float(_runtime_settings.get("time_scale", time_scale)))
+
+
+func _on_screen_changed(p_screen_name: String) -> void:
+	current_screen = p_screen_name
+
+
+func _connect_tech_tree_signals() -> void:
+	if tech_tree != null and not tech_tree.research_finished.is_connected(_on_research_finished):
+		tech_tree.research_finished.connect(_on_research_finished)
+
+
+func _on_research_finished(p_tech_id: String, p_tech_name: String) -> void:
+	entities.apply_technology_effects(tech_tree)
+	research_completed.emit(p_tech_id, p_tech_name)
 
 
 func update(p_dt: float) -> void:
@@ -187,13 +239,8 @@ func update(p_dt: float) -> void:
 		return
 	if environment == null:
 		return
-
-	var dehydrated: bool = false
-	if decision_manager != null:
-		dehydrated = (decision_manager.current_state == decision_manager.CivilizationState.DEHYDRATED)
-
-	environment.time_scale = time_scale
-	environment.update(p_dt)
+	if p_dt <= 0.0:
+		return
 	if environment.has_collision():
 		game_over = true
 		paused = true
@@ -201,10 +248,37 @@ func update(p_dt: float) -> void:
 		state_updated.emit()
 		return
 
+	_simulation_accumulator += p_dt * time_scale
+	var substeps: int = 0
+	while _simulation_accumulator + 1e-9 >= FIXED_SIMULATION_STEP_DAYS and substeps < MAX_SIMULATION_SUBSTEPS:
+		_advance_simulation(FIXED_SIMULATION_STEP_DAYS)
+		_simulation_accumulator -= FIXED_SIMULATION_STEP_DAYS
+		substeps += 1
+		if game_over:
+			break
+	_process_autosave(p_dt)
+	if substeps > 0:
+		state_updated.emit()
+
+
+func _advance_simulation(p_game_days_dt: float) -> void:
+
+	var dehydrated: bool = false
+	if decision_manager != null:
+		dehydrated = (decision_manager.current_state == decision_manager.CivilizationState.DEHYDRATED)
+
+	environment.time_scale = 1.0
+	environment.update(p_game_days_dt)
+	if environment.has_collision():
+		game_over = true
+		paused = true
+		EventBus.game_over.emit("天体发生碰撞，文明毁灭")
+		return
+
 	var stars_data: Array = environment.get_stars_data()
 	var planet_position: Vector3 = environment.get_planet_position()
 
-	planet_zones.update(p_dt, time_scale, stars_data, planet_position)
+	planet_zones.update(p_game_days_dt, 1.0, stars_data, planet_position)
 
 	var avg_env: Dictionary = planet_zones.get_average_environment()
 	var raw_env: Dictionary = environment.get_environment_params()
@@ -217,19 +291,30 @@ func update(p_dt: float) -> void:
 		"stability": raw_env.get("stability", 0.0),
 	}
 
-	var game_days_dt: float = p_dt * time_scale
 	entities.set_policy_effects(decision_manager.active_policies)
-	entities.update(env_params, planet_zones, game_days_dt, dehydrated)
+	entities.apply_technology_effects(tech_tree)
+	entities.update(env_params, planet_zones, p_game_days_dt, dehydrated)
 
-	_process_research_output(game_days_dt)
+	_process_research_output(p_game_days_dt)
 
 	if dehydrated:
-		_process_storage_damage(game_days_dt)
+		_process_storage_damage(p_game_days_dt)
 
-	decision_manager.update_cooldowns(p_dt, time_scale)
+	decision_manager.update_cooldowns(p_game_days_dt, 1.0)
 
-	game_time += game_days_dt
-	state_updated.emit()
+	game_time += p_game_days_dt
+
+
+func _process_autosave(p_real_dt: float) -> void:
+	var interval_minutes: int = int(_runtime_settings.get("auto_save_interval", 0))
+	if interval_minutes <= 0:
+		return
+	_autosave_elapsed_seconds += p_real_dt
+	if _autosave_elapsed_seconds < float(interval_minutes) * 60.0:
+		return
+	_autosave_elapsed_seconds = 0.0
+	if SaveManager.save_game(self, "自动存档_Day%d" % maxi(1, int(game_time)), universe_name):
+		last_autosave_day = int(game_time)
 
 
 func _process_research_output(p_game_days_dt: float) -> void:
@@ -268,52 +353,32 @@ func _process_research_output(p_game_days_dt: float) -> void:
 	var institutes: Array = entities.get_buildings_by_type("research_institute")
 	for inst in institutes:
 		var building = inst
-		var durability_ratio: float = building.durability / building.max_durability if building.max_durability > 0.0 else 0.0
-		var worker_ratio: float = building.get_saturation()
-		var zone_eff: float = 1.0
-		if building.zone_id >= 0:
-			var zone = planet_zones.get_zone(building.zone_id)
-			if zone != null:
-				zone_eff = zone.get_work_efficiency()
-		var efficiency: float = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
-		frame_output["basic"] = frame_output["basic"] + institute_output * efficiency
-		tech_tree.produce_research("basic", institute_output * efficiency * p_game_days_dt)
+		var output_rate: float = entities.get_research_building_rate(building, institute_output)
+		frame_output["basic"] = frame_output["basic"] + output_rate
+		tech_tree.produce_research("basic", output_rate * p_game_days_dt)
 
 	# 实验室产出
 	var labs: Array = entities.get_buildings_by_type("laboratory")
 	for lab_item in labs:
 		var building = lab_item
-		var durability_ratio: float = building.durability / building.max_durability if building.max_durability > 0.0 else 0.0
-		var worker_ratio: float = building.get_saturation()
-		var zone_eff: float = 1.0
-		if building.zone_id >= 0:
-			var zone = planet_zones.get_zone(building.zone_id)
-			if zone != null:
-				zone_eff = zone.get_work_efficiency()
-		var efficiency: float = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
-		frame_output["applied"] = frame_output["applied"] + lab_output * efficiency
-		tech_tree.produce_research("applied", lab_output * efficiency * p_game_days_dt)
+		var output_rate: float = entities.get_research_building_rate(building, lab_output)
+		frame_output["applied"] = frame_output["applied"] + output_rate
+		tech_tree.produce_research("applied", output_rate * p_game_days_dt)
 
 	# 科学院产出
 	var academies: Array = entities.get_buildings_by_type("academy")
 	for acad_item in academies:
 		var building = acad_item
-		var durability_ratio: float = building.durability / building.max_durability if building.max_durability > 0.0 else 0.0
-		var worker_ratio: float = building.get_saturation()
-		var zone_eff: float = 1.0
-		if building.zone_id >= 0:
-			var zone = planet_zones.get_zone(building.zone_id)
-			if zone != null:
-				zone_eff = zone.get_work_efficiency()
-		var efficiency: float = durability_ratio * worker_ratio * zone_eff * dehydrate_mult
-		frame_output["theoretical"] = frame_output["theoretical"] + academy_output * efficiency
-		tech_tree.produce_research("theoretical", academy_output * efficiency * p_game_days_dt)
+		var output_rate: float = entities.get_research_building_rate(building, academy_output)
+		frame_output["theoretical"] = frame_output["theoretical"] + output_rate
+		tech_tree.produce_research("theoretical", output_rate * p_game_days_dt)
 
 	# EMA 平滑
+	var step_alpha: float = clampf(alpha * p_game_days_dt, 0.0, 1.0)
 	for rtype in frame_output:
 		research_output_rate[rtype] = (
-			alpha * frame_output[rtype]
-			+ (1.0 - alpha) * research_output_rate[rtype]
+			step_alpha * frame_output[rtype]
+			+ (1.0 - step_alpha) * research_output_rate[rtype]
 		)
 
 	# 自动化科技解锁
@@ -335,6 +400,7 @@ func _process_storage_damage(p_game_days_dt: float) -> void:
 
 	if active_storage_buildings.is_empty() and pop.stored_population > 0:
 		pop.stored_population = 0
+		pop.stored_loss_accumulator = 0.0
 		return
 
 	var total_stored: int = pop.stored_population
@@ -346,7 +412,7 @@ func _process_storage_damage(p_game_days_dt: float) -> void:
 		var building = b
 		total_capacity += building.storage_capacity
 
-	var total_loss: float = 0.0
+	var weighted_loss_rate: float = 0.0
 
 	var ext_cold: float = sdc.get("extreme_cold_threshold", -80.0)
 	var ext_heat: float = sdc.get("extreme_heat_threshold", 100.0)
@@ -366,8 +432,6 @@ func _process_storage_damage(p_game_days_dt: float) -> void:
 		if total_capacity <= 0:
 			break
 		var fraction: float = float(building.storage_capacity) / float(total_capacity)
-		var stored_here: float = float(total_stored) * fraction
-
 		if building.zone_id < 0:
 			continue
 
@@ -395,11 +459,17 @@ func _process_storage_damage(p_game_days_dt: float) -> void:
 		elif zone.radiation > rad_low:
 			var factor: float = (zone.radiation - rad_low) / 3.0
 			loss_rate += factor * rad_low_coeff
+		var protection: Dictionary = entities.get_zone_protection(building.zone_id)
+		loss_rate *= 1.0 - maxf(float(protection.get("environment", 0.0)), float(protection.get("radiation", 0.0)))
+		weighted_loss_rate += fraction * maxf(0.0, loss_rate)
 
-		total_loss += stored_here * loss_rate * p_game_days_dt
-
-	if total_loss > 0.0:
-		pop.stored_population = max(0, int(float(pop.stored_population) - total_loss))
+	if weighted_loss_rate > 0.0:
+		var effective_stored: float = maxf(0.0, float(pop.stored_population) - pop.stored_loss_accumulator)
+		pop.stored_loss_accumulator += effective_stored * (1.0 - exp(-weighted_loss_rate * p_game_days_dt))
+		var stored_loss: int = mini(pop.stored_population, int(pop.stored_loss_accumulator))
+		if stored_loss > 0:
+			pop.stored_population -= stored_loss
+			pop.stored_loss_accumulator -= stored_loss
 
 	# 暴露人口损耗
 	var exposed: int = max(0, pop.total - max(1, int(float(pop.total + pop.stored_population) * 0.01)))
@@ -416,10 +486,19 @@ func _process_storage_damage(p_game_days_dt: float) -> void:
 			exposed_loss_rate += sdc.get("exposed_radiation_high_rate", 0.05)
 		elif rad > rad_low:
 			exposed_loss_rate += sdc.get("exposed_radiation_low_rate", 0.01)
+		var average_protection: Dictionary = entities.get_average_protection(planet_zones)
+		exposed_loss_rate *= 1.0 - maxf(
+			float(average_protection.get("environment", 0.0)),
+			float(average_protection.get("radiation", 0.0))
+		)
 		if exposed_loss_rate > 0.0:
-			var loss: int = int(float(exposed) * exposed_loss_rate * p_game_days_dt)
+			var effective_exposed: float = maxf(0.0, float(exposed) - pop.exposed_loss_accumulator)
+			pop.exposed_loss_accumulator += effective_exposed * (1.0 - exp(-exposed_loss_rate * p_game_days_dt))
+			var loss: int = mini(maxi(0, pop.total - 1), int(pop.exposed_loss_accumulator))
 			if loss > 0:
-				pop.total = max(1, pop.total - loss)
+				pop.total -= loss
+				pop.exposed_loss_accumulator -= loss
+				entities.enforce_population_invariants()
 
 
 func _init_zone_temperatures() -> void:
@@ -530,10 +609,12 @@ func to_dict() -> Dictionary:
 			"color": {"r": s.color.r, "g": s.color.g, "b": s.color.b, "a": s.color.a},
 			"radius": s.radius,
 			"is_planet": s.is_planet,
+			"trail": s.trail.map(func(point: Vector3): return {"x": point.x, "y": point.y, "z": point.z}),
 		})
 
 	var result: Dictionary
 	result = {
+		"schema_version": SAVE_SCHEMA_VERSION,
 		"time": game_time,
 		"paused": paused,
 		"game_over": game_over,
@@ -544,17 +625,103 @@ func to_dict() -> Dictionary:
 		"decision": decision_manager.get_state(),
 		"planet_zones": planet_zones.get_state(),
 		"time_scale": time_scale,
+		"simulation_accumulator": _simulation_accumulator,
+		"last_autosave_day": last_autosave_day,
+		"research_output_rate": research_output_rate.duplicate(),
+		"config": config.duplicate(true),
+		"rng_state": str(environment.rng.state),
 	}
 	return result
 
 
-func from_dict(data: Dictionary) -> void:
+func validate_serialized_state(data) -> bool:
+	if not data is Dictionary:
+		return false
+	if not data.get("stars", []) is Array or data.get("stars", []).is_empty():
+		return false
+	for star_data in data.get("stars", []):
+		if not star_data is Dictionary:
+			return false
+		if not star_data.get("position", null) is Dictionary:
+			return false
+		if not star_data.get("velocity", null) is Dictionary:
+			return false
+		if not star_data.get("color", null) is Dictionary:
+			return false
+		if star_data.has("trail") and not star_data["trail"] is Array:
+			return false
+	var entities_data = data.get("entities", null)
+	if not entities_data is Dictionary:
+		return false
+	if not entities_data.get("resources", null) is Dictionary:
+		return false
+	if not entities_data.get("population", null) is Dictionary:
+		return false
+	if not entities_data.get("buildings", null) is Array:
+		return false
+	for building_data in entities_data.get("buildings", []):
+		if not building_data is Dictionary:
+			return false
+		if not building_data.get("per_worker_output", {}) is Dictionary or not building_data.get("consumption", {}) is Dictionary:
+			return false
+	var technology_data = data.get("technology", null)
+	if not technology_data is Dictionary:
+		return false
+	if not technology_data.get("unlocked", []) is Array or not technology_data.get("researching", []) is Array:
+		return false
+	if not technology_data.get("research_points", {}) is Dictionary or not technology_data.get("research_progress", {}) is Dictionary:
+		return false
+	var zones_data = data.get("planet_zones", null)
+	if not zones_data is Dictionary or not zones_data.get("zones", null) is Array:
+		return false
+	for zone_data in zones_data.get("zones", []):
+		if not zone_data is Dictionary:
+			return false
+		if not zone_data.get("building_ids", []) is Array or not zone_data.get("resource_deposits", {}) is Dictionary:
+			return false
+	var decision_data = data.get("decision", data.get("policy", null))
+	if not decision_data is Dictionary:
+		return false
+	if data.has("decision") and (
+			not decision_data.get("active_policies", []) is Array
+			or not decision_data.get("cooldowns", {}) is Dictionary
+			or not decision_data.get("enacted_history", []) is Array
+	):
+		return false
+	if data.has("config"):
+		if not data["config"] is Dictionary:
+			return false
+		for section in ["simulation", "environment", "research", "storage_damage", "damage_rates", "dehydrate", "population", "technology", "buildings"]:
+			if data["config"].has(section) and not data["config"][section] is Dictionary:
+				return false
+	return true
+
+
+func from_dict(data: Dictionary) -> bool:
+	if not validate_serialized_state(data):
+		return false
 	reset()
 	game_time = data.get("time", 0.0)
 	paused = data.get("paused", false)
 	game_over = data.get("game_over", false)
 	universe_name = data.get("universe_name", "未命名宇宙")
 	game_started = true
+	time_scale = clampf(float(data.get("time_scale", 1.0)), 0.1, 10.0)
+	_simulation_accumulator = clampf(float(data.get("simulation_accumulator", 0.0)), 0.0, FIXED_SIMULATION_STEP_DAYS)
+	last_autosave_day = int(data.get("last_autosave_day", -1))
+	var saved_rates: Dictionary = data.get("research_output_rate", {})
+	for research_type in research_output_rate:
+		research_output_rate[research_type] = maxf(0.0, float(saved_rates.get(research_type, 0.0)))
+
+	var saved_config = data.get("config", {})
+	config = saved_config.duplicate(true) if saved_config is Dictionary and not saved_config.is_empty() else _default_config()
+	_env_config = config.get("environment", {})
+	_research_config = config.get("research", {})
+	_storage_damage_config = config.get("storage_damage", {})
+	var sim_config: Dictionary = config.get("simulation", {})
+	_time_scale_min = sim_config.get("time_scale_min", 0.1)
+	_time_scale_max = sim_config.get("time_scale_max", 10.0)
+	time_scale = clampf(time_scale, _time_scale_min, _time_scale_max)
 
 	environment = ThreeBodySimScript.new()
 	environment.stars.clear()
@@ -576,13 +743,14 @@ func from_dict(data: Dictionary) -> void:
 				s.get("radius", 20.0),
 				s.get("is_planet", false),
 			)
+			for point_data in s.get("trail", []):
+				if point_data is Dictionary:
+					star.trail.append(Vector3(point_data.get("x", 0.0), point_data.get("y", 0.0), point_data.get("z", 0.0)))
 			environment.stars.append(star)
 
-	environment.time_scale = data.get("time_scale", 1.0)
-
-	if config.is_empty():
-		config = _default_config()
-		_env_config = config.get("environment", {})
+	environment.time_scale = 1.0
+	if data.has("rng_state"):
+		environment.rng.state = int(str(data["rng_state"]))
 
 	entities = EntityManagerScript.new(config)
 	if data.has("entities"):
@@ -591,6 +759,7 @@ func from_dict(data: Dictionary) -> void:
 	tech_tree = TechTreeScript.new(config)
 	if data.has("technology"):
 		tech_tree.load_state(data["technology"])
+	_connect_tech_tree_signals()
 
 	decision_manager = DecisionManagerScript.new(config)
 	if data.has("decision"):
@@ -602,6 +771,9 @@ func from_dict(data: Dictionary) -> void:
 	planet_zones = PlanetZoneManagerScript.new(_env_config)
 	if data.has("planet_zones"):
 		planet_zones.load_state(data["planet_zones"])
+	entities.apply_technology_effects(tech_tree)
+	entities.enforce_population_invariants()
+	return true
 
 
 func _default_config() -> Dictionary:
@@ -610,7 +782,7 @@ func _default_config() -> Dictionary:
 		"simulation": {"time_scale_min": 0.1, "time_scale_max": 10.0},
 		"environment": {
 			"rotation_speed": 15.0, "thermal_inertia": 0.08,
-			"diffusion_rate": 0.15, "dark_side_scatter": 0.25,
+			"diffusion_rate": 0.15, "dark_side_scatter": 0.05,
 			"target_start_temp": 20.0, "target_peak_light": 0.85,
 		},
 		"research": {

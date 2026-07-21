@@ -7,6 +7,7 @@ extends Control
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("initial_menu")
 	start_button.pressed.connect(_on_start_pressed)
 	settings_button.pressed.connect(_on_settings_pressed)
 	quit_button.pressed.connect(_on_quit_pressed)
@@ -17,6 +18,7 @@ func _on_start_pressed() -> void:
 
 
 func _on_settings_pressed() -> void:
+	GameState.settings_return_scene = "res://scenes/main_menu/initial_menu.tscn"
 	get_tree().change_scene_to_file("res://scenes/main_menu/settings_screen.tscn")
 
 

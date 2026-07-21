@@ -57,6 +57,12 @@ func _ready() -> void:
 		["res://scenes/starmap/starmap_view.tscn", "星图"],
 	]:
 		var scene := await _spawn(entry[0])
+		if entry[0].ends_with("decision.tscn"):
+			var policy_box: Node = scene.get_node("PolicyScroll/PolicyVBox")
+			var first_card_id: int = policy_box.get_child(0).get_instance_id()
+			scene._process(0.3)
+			await get_tree().process_frame
+			_expect(policy_box.get_child(0).get_instance_id() == first_card_id, "政策界面周期刷新仍在重建卡片")
 		await _check_space_pause(scene, entry[1])
 		await _discard(scene)
 
@@ -94,4 +100,3 @@ func _expect(condition: bool, message: String) -> void:
 		return
 	_failures += 1
 	push_error(message)
-

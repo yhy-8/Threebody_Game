@@ -32,12 +32,16 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if not visible:
 		return
+	if _confirm_overlay.visible:
+		if event.is_action_pressed("ui_cancel"):
+			get_viewport().set_input_as_handled()
+			_close_delete_confirmation()
+		elif event is InputEventKey and event.pressed:
+			get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
-		if _confirm_overlay.visible:
-			_close_delete_confirmation()
-		else:
-			_on_back_pressed()
+		_on_back_pressed()
 	elif event is InputEventKey and event.pressed:
 		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 			get_viewport().set_input_as_handled()

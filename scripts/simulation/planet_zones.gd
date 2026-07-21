@@ -104,7 +104,7 @@ func _init(env_config: Dictionary = {}) -> void:
 	rotation_speed = env_config.get("rotation_speed", 15.0)
 	thermal_inertia = env_config.get("thermal_inertia", 0.08)
 	diffusion_rate = env_config.get("diffusion_rate", 0.15)
-	dark_side_scatter = env_config.get("dark_side_scatter", 0.25)
+	dark_side_scatter = env_config.get("dark_side_scatter", 0.05)
 	_init_zones()
 	_build_neighbor_cache()
 
@@ -233,16 +233,13 @@ func initialize_temperatures(stars_data: Array, planet_position: Vector3) -> voi
 			var mass: float = s["mass"]
 
 			var scatter_factor: float
-			if cos_angle <= 0.0:
-				scatter_factor = dark_side_scatter
-			else:
-				scatter_factor = cos_angle
+			scatter_factor = maxf(dark_side_scatter, cos_angle)
 
 			var intensity: float = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
 			target_light += intensity
 
 			var safe_dist: float = max(5.0, dist)
-			var rad: float = mass * 200.0 / pow(safe_dist, 2.5)
+			var rad: float = mass * 200.0 / pow(safe_dist, 2.5) * scatter_factor
 			target_radiation += rad
 
 		var terrain_mod: float = TERRAIN_THERMAL_MODIFIER.get(z.terrain_type, 0.0)
@@ -288,16 +285,13 @@ func _compute_zone_environments(active_stars: Array, game_days_elapsed: float) -
 			var mass: float = s["mass"]
 
 			var scatter_factor: float
-			if cos_angle <= 0.0:
-				scatter_factor = dark_side_scatter
-			else:
-				scatter_factor = cos_angle
+			scatter_factor = maxf(dark_side_scatter, cos_angle)
 
 			var intensity: float = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
 			target_light += intensity
 
 			var safe_dist: float = max(5.0, dist)
-			var rad: float = mass * 200.0 / pow(safe_dist, 2.5)
+			var rad: float = mass * 200.0 / pow(safe_dist, 2.5) * scatter_factor
 			target_radiation += rad
 
 		var terrain_mod: float = TERRAIN_THERMAL_MODIFIER.get(z.terrain_type, 0.0)
@@ -432,6 +426,8 @@ func get_state() -> Dictionary:
 			"terrain_type": z.terrain_type,
 			"building_ids": z.building_ids.duplicate(),
 			"temperature": z.temperature,
+			"radiation": z.radiation,
+			"light_intensity": z.light_intensity,
 			"resource_deposits": z.resource_deposits.duplicate(),
 			"fertility": z.fertility,
 			"algae_density": z.algae_density,
@@ -441,6 +437,7 @@ func get_state() -> Dictionary:
 		"rotation_angle": rotation_angle,
 		"light_to_temp_scale": light_to_temp_scale,
 		"light_norm_divisor": light_norm_divisor,
+		"dark_side_scatter": dark_side_scatter,
 		"zones": zones_data,
 	}
 	return result
@@ -450,6 +447,7 @@ func load_state(data: Dictionary) -> void:
 	rotation_angle = data.get("rotation_angle", 0.0)
 	light_to_temp_scale = data.get("light_to_temp_scale", light_to_temp_scale)
 	light_norm_divisor = data.get("light_norm_divisor", light_norm_divisor)
+	dark_side_scatter = data.get("dark_side_scatter", dark_side_scatter)
 	var zones_data: Array = data.get("zones", [])
 	for zd in zones_data:
 		var zd_dict: Dictionary = zd
@@ -458,6 +456,8 @@ func load_state(data: Dictionary) -> void:
 			zone.terrain_type = zd_dict.get("terrain_type", zone.terrain_type)
 			zone.building_ids = zd_dict.get("building_ids", [])
 			zone.temperature = zd_dict.get("temperature", -273.15)
+			zone.radiation = zd_dict.get("radiation", 0.0)
+			zone.light_intensity = zd_dict.get("light_intensity", 0.0)
 			if "resource_deposits" in zd_dict:
 				zone.resource_deposits = zd_dict["resource_deposits"]
 			if "fertility" in zd_dict:

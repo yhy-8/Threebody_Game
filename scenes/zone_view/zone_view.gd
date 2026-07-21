@@ -13,6 +13,7 @@ var _building_controls: Dictionary = {}
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("zone_view")
 	%BackButton.pressed.connect(_on_back_pressed)
 	%ModeTemp.pressed.connect(_set_mode.bind("temperature"))
 	%ModeRadiation.pressed.connect(_set_mode.bind("radiation"))
@@ -348,7 +349,8 @@ func _open_build_menu() -> void:
 	_clear_children(%BuildList)
 	for decision in GameState.decision_manager.get_construction_decisions():
 		var availability: Dictionary = GameState.decision_manager.can_execute(
-			decision.id, GameState.entities, GameState.tech_tree
+			decision.id, GameState.entities, GameState.tech_tree,
+			GameState.planet_zones, selected_zone_id
 		)
 		var button := Button.new()
 		var cost_parts: Array[String] = []

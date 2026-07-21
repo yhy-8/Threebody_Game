@@ -19,7 +19,7 @@
 
 ## 运行要求
 
-- Godot Engine 4.7（项目目标为 Godot 4.4+）
+- Godot Engine 4.7 或更高版本（当前最低验证版本为 4.7）
 - 支持 Forward Plus 渲染的图形环境
 - Windows 或 Linux
 

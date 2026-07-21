@@ -14,6 +14,7 @@ var message_timer: float = 0.0
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("start_game_menu")
 	_setup_main_buttons()
 	%ConfirmNameBtn.pressed.connect(_on_confirm_name)
 	%CancelNameBtn.pressed.connect(_on_cancel_name)

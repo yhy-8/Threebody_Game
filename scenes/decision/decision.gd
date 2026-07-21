@@ -5,10 +5,13 @@ const DecisionManagerScript = preload("res://scripts/simulation/decision_manager
 const EntityManagerScript = preload("res://scripts/simulation/entity_manager.gd")
 
 var _refresh_elapsed: float = 0.0
+var _policy_controls: Dictionary = {}
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("decision")
 	%BackButton.pressed.connect(_on_back_pressed)
+	_build_policy_cards()
 	_refresh_display()
 
 
@@ -50,9 +53,28 @@ func _refresh_display() -> void:
 		%StabilityBar.value, %HealthBar.value,
 	]
 
+	_update_policy_cards()
+
+
+func _build_policy_cards() -> void:
 	_clear_children(%PolicyVBox)
-	for decision in decision_manager.get_policy_decisions():
+	_policy_controls.clear()
+	for decision in GameState.decision_manager.get_policy_decisions():
 		%PolicyVBox.add_child(_make_policy_card(decision))
+
+
+func _update_policy_cards() -> void:
+	for decision in GameState.decision_manager.get_policy_decisions():
+		if not _policy_controls.has(decision.id):
+			continue
+		var controls: Dictionary = _policy_controls[decision.id]
+		var active: bool = decision.id in GameState.decision_manager.active_policies
+		controls["title"].text = "%s%s" % [decision.name, "  [生效中]" if active else ""]
+		controls["title"].add_theme_color_override("font_color", Color(0.55, 1.0, 0.68) if active else Color(0.9, 0.9, 1.0))
+		var availability: Dictionary = GameState.decision_manager.can_execute(decision.id, GameState.entities, GameState.tech_tree)
+		controls["button"].text = "结束政策" if active else "执行政策"
+		controls["button"].disabled = not availability.get("success", false)
+		controls["button"].tooltip_text = availability.get("message", "")
 
 
 func _make_policy_card(decision) -> PanelContainer:
@@ -105,6 +127,7 @@ func _make_policy_card(decision) -> PanelContainer:
 	button.tooltip_text = availability.get("message", "")
 	button.pressed.connect(_on_policy_pressed.bind(decision.id))
 	row.add_child(button)
+	_policy_controls[decision.id] = {"title": title, "button": button}
 	return card
 
 

@@ -35,6 +35,7 @@ var edge_scroll_speed: float = 1.0
 
 
 func _ready() -> void:
+	EventBus.screen_changed.emit("settings")
 	tab_game_btn.pressed.connect(func(): _switch_tab(Tab.GAME))
 	tab_display_btn.pressed.connect(func(): _switch_tab(Tab.DISPLAY))
 	tab_audio_btn.pressed.connect(func(): _switch_tab(Tab.AUDIO))
@@ -117,8 +118,6 @@ func _build_game_tab() -> void:
 	vbox.add_theme_constant_override("separation", 10)
 	vbox.add_child(_make_slider("时间流逝速度", 0.1, 10.0, time_scale_val, 1, "x", func(v): time_scale_val = v))
 	vbox.add_child(_make_slider("自动保存间隔", 1.0, 30.0, float(auto_save_interval), 0, "分钟", func(v): auto_save_interval = int(v)))
-	vbox.add_child(_make_checkbox("启用教程提示", enable_tutorial, func(v): enable_tutorial = v))
-	vbox.add_child(_make_checkbox("显示通知消息", show_notifications, func(v): show_notifications = v))
 	var developer_toggle := _make_checkbox("开发者模式（显示调试工具并绕过界面门槛）", developer_mode, func(v): developer_mode = v)
 	developer_toggle.tooltip_text = "开关本身不修改当前局；开发者工具执行的数值或科技修改会随存档保存"
 	vbox.add_child(developer_toggle)
@@ -129,28 +128,20 @@ func _build_display_tab() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.add_child(_make_checkbox("全屏模式", fullscreen, func(v): fullscreen = v))
 	vbox.add_child(_make_checkbox("垂直同步", vsync, func(v): vsync = v))
-	vbox.add_child(_make_checkbox("粒子效果", particle_effects, func(v): particle_effects = v))
-	vbox.add_child(_make_checkbox("显示FPS", show_fps, func(v): show_fps = v))
-	vbox.add_child(_make_slider("画质等级", 0.0, 3.0, float(quality_level), 0, "", func(v): quality_level = int(v)))
 	tab_content.add_child(vbox)
 
 
 func _build_audio_tab() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.add_child(_make_slider("主音量", 0.0, 1.0, master_volume, 2, "", func(v): master_volume = v))
-	vbox.add_child(_make_slider("音乐音量", 0.0, 1.0, music_volume, 2, "", func(v): music_volume = v))
-	vbox.add_child(_make_slider("音效音量", 0.0, 1.0, sfx_volume, 2, "", func(v): sfx_volume = v))
-	vbox.add_child(_make_slider("环境音量", 0.0, 1.0, ambient_volume, 2, "", func(v): ambient_volume = v))
-	vbox.add_child(_make_checkbox("失去焦点时静音", mute_when_unfocused, func(v): mute_when_unfocused = v))
 	tab_content.add_child(vbox)
 
 
 func _build_controls_tab() -> void:
 	var vbox := VBoxContainer.new()
-	vbox.add_child(_make_slider("鼠标灵敏度", 0.1, 3.0, mouse_sensitivity, 1, "x", func(v): mouse_sensitivity = v))
-	vbox.add_child(_make_slider("边缘滚动速度", 0.5, 2.0, edge_scroll_speed, 1, "x", func(v): edge_scroll_speed = v))
-	vbox.add_child(_make_checkbox("反转鼠标Y轴", invert_mouse_y, func(v): invert_mouse_y = v))
-	vbox.add_child(_make_checkbox("启用边缘滚动", enable_edge_scrolling, func(v): enable_edge_scrolling = v))
+	var unavailable := Label.new()
+	unavailable.text = "当前版本没有可配置的控制项；未接线的选项已隐藏。"
+	vbox.add_child(unavailable)
 	tab_content.add_child(vbox)
 
 
@@ -190,7 +181,7 @@ func _load_settings() -> void:
 	edge_scroll_speed = data.get("edge_scroll_speed", 1.0)
 
 
-func _save_settings() -> void:
+func _save_settings() -> bool:
 	var data := {
 		"time_scale": time_scale_val,
 		"auto_save_interval": auto_save_interval,
@@ -214,24 +205,27 @@ func _save_settings() -> void:
 	}
 	var file := FileAccess.open("res://settings.json", FileAccess.WRITE)
 	if file == null:
-		return
+		return false
 	file.store_string(JSON.stringify(data, "\t"))
+	file.flush()
+	var succeeded: bool = file.get_error() == OK
 	file.close()
+	return succeeded
 
 
 func _on_apply() -> void:
-	_save_settings()
+	var saved: bool = _save_settings()
 	GameState.set_developer_mode(developer_mode)
-	if fullscreen:
-		get_window().mode = Window.MODE_FULLSCREEN
+	get_window().mode = Window.MODE_FULLSCREEN if fullscreen else Window.MODE_WINDOWED
+	DisplayServer.window_set_vsync_mode(
+		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED
+	)
+	if saved:
+		GameState.reload_runtime_settings()
+		apply_btn.text = "已应用并保存"
 	else:
-		get_window().mode = Window.MODE_WINDOWED
-		DisplayServer.window_set_vsync_mode(
-			DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED
-		)
-	print("设置已应用并保存")
+		apply_btn.text = "保存失败"
 
 
 func _on_back() -> void:
-	var return_scene := "res://scenes/game/game_menu.tscn" if GameState.game_started else "res://scenes/main_menu/initial_menu.tscn"
-	get_tree().change_scene_to_file(return_scene)
+	get_tree().change_scene_to_file(GameState.settings_return_scene)
