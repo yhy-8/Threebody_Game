@@ -369,10 +369,8 @@ func _update_trails() -> void:
 	if not GameState.game_started:
 		return
 	var stars_data: Array = GameState.get_state().get("environment", {}).get("stars", [])
-	var prediction_steps := 0
-	if GameState.tech_tree.is_unlocked("computer"):
-		prediction_steps = 80 if GameState.tech_tree.is_unlocked("chaos_prediction") else 24
-	var predicted: Array = GameState.environment.predict_trajectories(prediction_steps, 0.25) if prediction_steps > 0 else []
+	var predicted: Array = GameState.get_public_orbit_prediction(160, 0.25)
+	var prediction_steps: int = predicted[0].size() if not predicted.is_empty() else 0
 	for index in range(min(stars_data.size(), _trail_meshes.size())):
 		var star: Dictionary = stars_data[index]
 		var color: Color = star.get("color", Color.WHITE)
@@ -477,11 +475,15 @@ func _refresh_info() -> void:
 		return
 	var state: Dictionary = GameState.get_state()
 	var environment: Dictionary = state.get("environment", {}).get("params", {})
-	var prediction := "实时轨迹"
-	if GameState.tech_tree.is_unlocked("chaos_prediction"):
-		prediction = "长程多体数值预测"
+	var forecast: Dictionary = state.get("hazard_forecast", {})
+	var forecast_level: int = forecast.get("level", 0)
+	var prediction := "仅显示已记录轨迹"
+	if forecast_level >= 2 and GameState.tech_tree.is_unlocked("chaos_prediction"):
+		prediction = "观测约束的长程数值预测"
+	elif forecast_level >= 2:
+		prediction = "观测约束的短程数值预测"
 	elif GameState.tech_tree.is_unlocked("computer"):
-		prediction = "短程多体数值预测"
+		prediction = "缺少持续观测资料，无法绘制未来轨迹"
 	var observatory_info := ""
 	if GameState.tech_tree.is_unlocked("observatory"):
 		var masses: Array[String] = []

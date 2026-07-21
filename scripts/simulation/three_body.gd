@@ -36,6 +36,15 @@ func _init() -> void:
 
 func _initialize_stars() -> void:
 	rng.randomize()
+	_initialize_stars_from_rng()
+
+
+func initialize_with_seed(p_seed: int) -> void:
+	rng.seed = p_seed
+	_initialize_stars_from_rng()
+
+
+func _initialize_stars_from_rng() -> void:
 
 	var m1: float = rng.randf_range(900.0, 1100.0)
 	var m2: float = rng.randf_range(700.0, 900.0)

@@ -141,6 +141,19 @@ func _refresh_panels() -> void:
 	env_vbox.add_child(_make_label(""))
 	env_vbox.add_child(_make_label("第%.1f天" % state["game_time"]))
 	env_vbox.add_child(_make_label("时间: %.0fx" % GameState.time_scale))
+	var scenario: Dictionary = state.get("scenario", {})
+	if scenario.get("simulation_phase", "") == "STABLE_EPHEMERIS":
+		var days_left: float = scenario.get("days_until_chaos", 0.0)
+		var days_per_year: float = maxf(1.0, float(scenario.get("days_per_year", 1.0)))
+		env_vbox.add_child(_make_label("规则阶段：稳定纪元（剩余 %.1f 年）" % (days_left / days_per_year)))
+	else:
+		env_vbox.add_child(_make_label("规则阶段：真实三体混沌"))
+	var forecast: Dictionary = state.get("hazard_forecast", {})
+	var forecast_names := ["无文明预警", "定性天象预警", "区域风险预测", "伤亡区间预测", "高精度概率预测"]
+	var forecast_level := clampi(int(forecast.get("level", 0)), 0, forecast_names.size() - 1)
+	env_vbox.add_child(_make_label("文明认知：%s（置信度 %.0f%%）" % [
+		forecast_names[forecast_level], float(forecast.get("confidence", 0.0)) * 100.0,
+	]))
 	if GameState.paused:
 		env_vbox.add_child(_make_label("[已暂停]"))
 

@@ -152,6 +152,12 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 		"worker_capacity": 5, "per_worker_output": {},
 		"consumption": {"electricity": 5.0}, "build_time": 4.0, "storage_capacity": 0,
 	},
+	"observatory_station": {
+		"name": "建造天文观测站", "description": "持续积累带时间戳的测角资料；只有实际运转的观测站才能提高轨道预测层级。",
+		"resource_cost": {"iron": 250, "copper": 100}, "tech_requirement": "observatory", "requires_zone": true,
+		"worker_capacity": 4, "per_worker_output": {},
+		"consumption": {"electricity": 8.0}, "build_time": 7.0, "storage_capacity": 0,
+	},
 }
 
 const _DEFAULT_STORAGE_CAPACITY: Dictionary = {

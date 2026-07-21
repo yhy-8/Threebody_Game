@@ -4,11 +4,13 @@ extends Node
 signal state_updated()
 signal research_completed(tech_id: String, tech_name: String)
 signal developer_mode_changed(enabled: bool)
+signal scenario_phase_changed(new_phase: String, transition_day: float)
 
 const SETTINGS_PATH := "res://settings.json"
-const SAVE_SCHEMA_VERSION := 2
+const SAVE_SCHEMA_VERSION := 4
 const FIXED_SIMULATION_STEP_DAYS := 0.02
 const MAX_SIMULATION_SUBSTEPS := 512
+const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
 
 # Preload all simulation scripts — their return values are GDScript resources used for .new()
 const ThreeBodySimScript = preload("res://scripts/simulation/three_body.gd")
@@ -16,6 +18,10 @@ const EntityManagerScript = preload("res://scripts/simulation/entity_manager.gd"
 const TechTreeScript = preload("res://scripts/simulation/tech_tree.gd")
 const DecisionManagerScript = preload("res://scripts/simulation/decision_manager.gd")
 const PlanetZoneManagerScript = preload("res://scripts/simulation/planet_zones.gd")
+const ScenarioManagerScript = preload("res://scripts/simulation/scenario_manager.gd")
+const ObservationNetworkScript = preload("res://scripts/simulation/observation_network.gd")
+const SatelliteNetworkScript = preload("res://scripts/simulation/satellite_network.gd")
+const HazardForecastServiceScript = preload("res://scripts/simulation/hazard_forecast_service.gd")
 
 # ── 子系统引用 ──
 var environment       ## ThreeBodySimulation
@@ -23,6 +29,10 @@ var entities          ## EntityManager
 var tech_tree         ## TechTree
 var decision_manager  ## DecisionManager
 var planet_zones      ## PlanetZoneManager
+var scenario_manager  ## ScenarioManager
+var observation_network  ## ObservationNetwork
+var satellite_network  ## SatelliteNetwork
+var hazard_forecast_service  ## HazardForecastService
 
 # ── 游戏状态 ────────────────────────────────────────
 var game_time: float = 0.0
@@ -67,7 +77,18 @@ func _process(p_delta: float) -> void:
 	update(min(p_delta, 0.1))
 
 
-func new_game(p_universe_name: String, p_config: Dictionary = {}) -> void:
+func new_game(p_universe_name: String, p_config: Dictionary = {}, p_scenario_snapshot: Dictionary = {}) -> bool:
+	var resolved_scenario := p_scenario_snapshot.duplicate(true)
+	if resolved_scenario.is_empty():
+		resolved_scenario = _load_default_scenario_snapshot()
+	if resolved_scenario.is_empty():
+		return false
+	var seed: int
+	if resolved_scenario.has("scenario_seed"):
+		seed = int(str(resolved_scenario["scenario_seed"]))
+	else:
+		seed = hash("%s:%d" % [p_universe_name, Time.get_ticks_usec()])
+
 	reset()
 	universe_name = p_universe_name
 	if p_config.is_empty():
@@ -81,19 +102,29 @@ func new_game(p_universe_name: String, p_config: Dictionary = {}) -> void:
 	_time_scale_max = sim_config.get("time_scale_max", 10.0)
 
 	environment = ThreeBodySimScript.new()
+	scenario_manager = ScenarioManagerScript.new()
+	if not scenario_manager.create_scenario(resolved_scenario, seed, environment):
+		reset()
+		return false
 	entities = EntityManagerScript.new(config)
 	tech_tree = TechTreeScript.new(config)
 	decision_manager = DecisionManagerScript.new(config)
 	planet_zones = PlanetZoneManagerScript.new(_env_config)
+	observation_network = ObservationNetworkScript.new()
+	satellite_network = SatelliteNetworkScript.new()
+	hazard_forecast_service = HazardForecastServiceScript.new()
 
 	game_started = true
 	game_over = false
 	game_time = 0.0
 	time_scale = clampf(float(_runtime_settings.get("time_scale", 1.0)), _time_scale_min, _time_scale_max)
 	environment.time_scale = 1.0
+	_connect_scenario_signals()
 	_connect_tech_tree_signals()
 	_init_zone_temperatures()
+	_update_observation_systems(0.0, 0.0)
 	EventBus.game_started.emit(universe_name)
+	return true
 
 
 func reset() -> void:
@@ -110,6 +141,10 @@ func reset() -> void:
 	tech_tree = null
 	decision_manager = null
 	planet_zones = null
+	scenario_manager = null
+	observation_network = null
+	satellite_network = null
+	hazard_forecast_service = null
 	research_output_rate = {"basic": 0.0, "applied": 0.0, "theoretical": 0.0}
 
 
@@ -179,6 +214,9 @@ func developer_unlock_all_technologies() -> bool:
 		tech_node.researching = false
 	tech_tree.researching_tech_id = ""
 	tech_tree.research_progress.clear()
+	if hazard_forecast_service != null:
+		hazard_forecast_service.invalidate()
+		_update_observation_systems(game_time, 0.0)
 	state_updated.emit()
 	return true
 
@@ -229,8 +267,21 @@ func _connect_tech_tree_signals() -> void:
 		tech_tree.research_finished.connect(_on_research_finished)
 
 
+func _connect_scenario_signals() -> void:
+	if scenario_manager != null and not scenario_manager.phase_changed.is_connected(_on_scenario_phase_changed):
+		scenario_manager.phase_changed.connect(_on_scenario_phase_changed)
+
+
+func _on_scenario_phase_changed(p_phase: String, p_transition_day: float) -> void:
+	scenario_phase_changed.emit(p_phase, p_transition_day)
+	EventBus.scenario_phase_changed.emit(p_phase, p_transition_day)
+
+
 func _on_research_finished(p_tech_id: String, p_tech_name: String) -> void:
 	entities.apply_technology_effects(tech_tree)
+	if hazard_forecast_service != null:
+		hazard_forecast_service.invalidate()
+		_update_observation_systems(game_time, 0.0)
 	research_completed.emit(p_tech_id, p_tech_name)
 
 
@@ -268,7 +319,7 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 		dehydrated = (decision_manager.current_state == decision_manager.CivilizationState.DEHYDRATED)
 
 	environment.time_scale = 1.0
-	environment.update(p_game_days_dt)
+	scenario_manager.update(game_time, p_game_days_dt)
 	if environment.has_collision():
 		game_over = true
 		paused = true
@@ -303,6 +354,7 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 	decision_manager.update_cooldowns(p_game_days_dt, 1.0)
 
 	game_time += p_game_days_dt
+	_update_observation_systems(game_time, p_game_days_dt, env_params)
 
 
 func _process_autosave(p_real_dt: float) -> void:
@@ -594,6 +646,8 @@ func get_state() -> Dictionary:
 			"rotation_angle": planet_zones.rotation_angle,
 			"zones_summary": planet_zones.get_all_zones_summary(),
 		},
+		"scenario": scenario_manager.get_rule_state(game_time),
+		"hazard_forecast": hazard_forecast_service.get_public_snapshot(),
 	}
 	return result
 
@@ -630,6 +684,10 @@ func to_dict() -> Dictionary:
 		"research_output_rate": research_output_rate.duplicate(),
 		"config": config.duplicate(true),
 		"rng_state": str(environment.rng.state),
+		"scenario": scenario_manager.get_state(),
+		"observation_network": observation_network.get_state(),
+		"satellite_network": satellite_network.get_state(),
+		"hazard_forecasts": hazard_forecast_service.get_state(),
 	}
 	return result
 
@@ -694,6 +752,12 @@ func validate_serialized_state(data) -> bool:
 		for section in ["simulation", "environment", "research", "storage_damage", "damage_rates", "dehydrate", "population", "technology", "buildings"]:
 			if data["config"].has(section) and not data["config"][section] is Dictionary:
 				return false
+	if data.has("scenario"):
+		if not data["scenario"] is Dictionary or not ScenarioManagerScript.new().validate_state(data["scenario"]):
+			return false
+	for optional_section in ["observation_network", "satellite_network", "hazard_forecasts"]:
+		if data.has(optional_section) and not data[optional_section] is Dictionary:
+			return false
 	return true
 
 
@@ -752,6 +816,14 @@ func from_dict(data: Dictionary) -> bool:
 	if data.has("rng_state"):
 		environment.rng.state = int(str(data["rng_state"]))
 
+	scenario_manager = ScenarioManagerScript.new()
+	if data.has("scenario"):
+		if not scenario_manager.load_state(data["scenario"], environment, game_time):
+			return false
+	else:
+		scenario_manager.create_legacy(environment)
+	_connect_scenario_signals()
+
 	entities = EntityManagerScript.new(config)
 	if data.has("entities"):
 		entities.load_state(data["entities"])
@@ -771,6 +843,15 @@ func from_dict(data: Dictionary) -> bool:
 	planet_zones = PlanetZoneManagerScript.new(_env_config)
 	if data.has("planet_zones"):
 		planet_zones.load_state(data["planet_zones"])
+	observation_network = ObservationNetworkScript.new()
+	if data.has("observation_network"):
+		observation_network.load_state(data["observation_network"])
+	satellite_network = SatelliteNetworkScript.new()
+	if data.has("satellite_network"):
+		satellite_network.load_state(data["satellite_network"])
+	hazard_forecast_service = HazardForecastServiceScript.new()
+	if data.has("hazard_forecasts"):
+		hazard_forecast_service.load_state(data["hazard_forecasts"])
 	entities.apply_technology_effects(tech_tree)
 	entities.enforce_population_invariants()
 	return true
@@ -821,3 +902,97 @@ func _default_config() -> Dictionary:
 		},
 	}
 	return result
+
+
+func _load_default_scenario_snapshot() -> Dictionary:
+	var difficulty_config = load(DIFFICULTY_CONFIG_PATH)
+	if difficulty_config == null or not difficulty_config.has_method("validate"):
+		push_error("无法加载场景难度配置：%s" % DIFFICULTY_CONFIG_PATH)
+		return {}
+	var errors: PackedStringArray = difficulty_config.validate()
+	if not errors.is_empty():
+		push_error("场景难度配置无效：%s" % "; ".join(errors))
+		return {}
+	var result: Dictionary = difficulty_config.create_snapshot(difficulty_config.default_preset_id)
+	if not result.get("success", false):
+		return {}
+	return result["snapshot"]
+
+
+func _update_observation_systems(p_game_day: float, p_dt: float, p_env_params: Dictionary = {}) -> void:
+	if observation_network == null or satellite_network == null or hazard_forecast_service == null:
+		return
+	var has_telescope: bool = tech_tree != null and tech_tree.is_unlocked("telescope")
+	var public_measurement := p_env_params.duplicate(true)
+	if public_measurement.is_empty() and environment != null:
+		public_measurement = environment.get_environment_params()
+	public_measurement["possible_zone_ids"] = _get_current_public_risk_zones()
+	observation_network.update(p_game_day, p_dt, has_telescope, entities, public_measurement)
+	var observation_data: Dictionary = observation_network.get_public_data()
+	var satellite_data: Dictionary = satellite_network.get_public_infrastructure()
+	if not hazard_forecast_service.is_stale(
+		p_game_day,
+		observation_data.get("data_version", 0),
+		satellite_data.get("network_version", 0),
+	):
+		return
+	hazard_forecast_service.build_forecast(
+		p_game_day,
+		_get_forecast_capabilities(),
+		observation_data,
+		satellite_data,
+		_get_public_census_snapshot(),
+	)
+
+
+func _get_forecast_capabilities() -> Dictionary:
+	if tech_tree == null:
+		return {}
+	return {
+		"hazard_warning": tech_tree.is_unlocked("telescope"),
+		"regional_hazard_projection": tech_tree.is_unlocked("observatory") and tech_tree.is_unlocked("computer"),
+		# 旧原型没有伤亡建模与知识传承能力；不能用混沌理论节点冒充它们。
+		"casualty_estimation": false,
+		"knowledge_loss_projection": false,
+	}
+
+
+func _get_current_public_risk_zones() -> Array[int]:
+	var result: Array[int] = []
+	if planet_zones == null:
+		return result
+	var average: Dictionary = planet_zones.get_average_environment()
+	var average_radiation: float = average.get("radiation", 0.0)
+	for zone in planet_zones.zones:
+		if zone.radiation >= average_radiation:
+			result.append(zone.zone_id)
+			if result.size() >= 12:
+				break
+	return result
+
+
+func _get_public_census_snapshot() -> Dictionary:
+	if entities == null:
+		return {"complete": false}
+	return {
+		"complete": true,
+		"population": entities.population.total,
+		"exposed_population": maxi(0, entities.population.total - entities.population.storage_capacity),
+		"knowledge_carrier_ranges": {},
+	}
+
+
+func get_public_orbit_prediction(p_requested_steps: int, p_dt: float) -> Array:
+	if environment == null or hazard_forecast_service == null or tech_tree == null:
+		return []
+	var snapshot: Dictionary = hazard_forecast_service.get_public_snapshot()
+	var level: int = snapshot.get("level", HazardForecastServiceScript.ForecastLevel.NONE)
+	if level < HazardForecastServiceScript.ForecastLevel.REGIONAL_RISK:
+		return []
+	var allowed_steps := 24
+	if tech_tree.is_unlocked("chaos_prediction"):
+		allowed_steps = 80
+	var satellite_data: Dictionary = satellite_network.get_public_infrastructure()
+	if satellite_data.get("spatial_coverage", 0.0) >= 0.6:
+		allowed_steps = 160
+	return environment.predict_trajectories(mini(maxi(0, p_requested_steps), allowed_steps), p_dt)

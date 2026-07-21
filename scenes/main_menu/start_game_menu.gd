@@ -1,13 +1,19 @@
 extends Control
 ## 开始游戏菜单 — 新建宇宙 / 继续游戏 / 加载存档
 
-enum State { MAIN, NAMING }
+enum State { MAIN, NAMING, DIFFICULTY }
+
+const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
 
 var state: State = State.MAIN
 var message_timer: float = 0.0
+var _pending_universe_name: String = ""
+var _difficulty_config
+var _difficulty_ids: Array[StringName] = []
 
 @onready var main_vbox: VBoxContainer = %MainVBox
 @onready var naming_container: Control = %NamingContainer
+@onready var difficulty_container: Control = %DifficultyContainer
 @onready var name_input: LineEdit = %NameInput
 @onready var message_label: Label = %MessageLabel
 @onready var save_browser: Control = %SaveBrowser
@@ -18,8 +24,12 @@ func _ready() -> void:
 	_setup_main_buttons()
 	%ConfirmNameBtn.pressed.connect(_on_confirm_name)
 	%CancelNameBtn.pressed.connect(_on_cancel_name)
+	%DifficultyOption.item_selected.connect(_on_difficulty_selected)
+	%ConfirmDifficultyBtn.pressed.connect(_on_confirm_difficulty)
+	%BackToNameBtn.pressed.connect(_on_back_to_naming)
 	save_browser.close_requested.connect(_on_browser_closed)
 	save_browser.save_selected.connect(_do_load_game)
+	_load_difficulty_config()
 	_refresh_ui()
 
 
@@ -33,6 +43,11 @@ func _input(event: InputEvent) -> void:
 					_on_confirm_name()
 				elif event.keycode == KEY_ESCAPE:
 					_on_cancel_name()
+			State.DIFFICULTY:
+				if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+					_on_confirm_difficulty()
+				elif event.keycode == KEY_ESCAPE:
+					_on_back_to_naming()
 			State.MAIN:
 				if event.keycode == KEY_ESCAPE:
 					_on_back_to_initial()
@@ -56,6 +71,9 @@ func _setup_main_buttons() -> void:
 
 
 func _on_new_game() -> void:
+	if _difficulty_config == null:
+		_show_message("场景难度配置不可用，无法创建宇宙", Color(1.0, 0.39, 0.39))
+		return
 	state = State.NAMING
 	name_input.text = ""
 	name_input.grab_focus()
@@ -73,6 +91,7 @@ func _on_continue_game() -> void:
 func _on_load_game() -> void:
 	main_vbox.visible = false
 	naming_container.visible = false
+	difficulty_container.visible = false
 	save_browser.open_browser()
 
 
@@ -97,7 +116,9 @@ func _on_confirm_name() -> void:
 	if SaveManager.universe_exists(universe_name):
 		_show_message("宇宙名称已存在，请重新命名", Color(1.0, 0.39, 0.39))
 		return
-	_do_start_new_game(universe_name)
+	_pending_universe_name = universe_name
+	state = State.DIFFICULTY
+	_refresh_ui()
 
 
 func _on_cancel_name() -> void:
@@ -105,8 +126,42 @@ func _on_cancel_name() -> void:
 	_refresh_ui()
 
 
-func _do_start_new_game(universe_name: String) -> void:
-	GameState.new_game(universe_name)
+func _on_back_to_naming() -> void:
+	state = State.NAMING
+	_refresh_ui()
+	name_input.grab_focus()
+
+
+func _on_confirm_difficulty() -> void:
+	if _difficulty_config == null or _difficulty_ids.is_empty():
+		_show_message("场景难度配置不可用", Color(1.0, 0.39, 0.39))
+		return
+	if SaveManager.universe_exists(_pending_universe_name):
+		_show_message("宇宙名称已存在，请返回重新命名", Color(1.0, 0.39, 0.39))
+		return
+	var selected_index: int = %DifficultyOption.selected
+	if selected_index < 0 or selected_index >= _difficulty_ids.size():
+		_show_message("请选择难度", Color(1.0, 0.59, 0.39))
+		return
+	var difficulty_id := _difficulty_ids[selected_index]
+	var custom_years := NAN
+	if difficulty_id == &"custom":
+		var text: String = %CustomYearsInput.text.strip_edges()
+		if not text.is_valid_float():
+			_show_message("请输入有效的自定义稳定年数", Color(1.0, 0.59, 0.39))
+			return
+		custom_years = text.to_float()
+	var result: Dictionary = _difficulty_config.create_snapshot(difficulty_id, custom_years)
+	if not result.get("success", false):
+		_show_message("；".join(result.get("errors", PackedStringArray(["难度配置无效"]))), Color(1.0, 0.39, 0.39))
+		return
+	_do_start_new_game(_pending_universe_name, result["snapshot"])
+
+
+func _do_start_new_game(universe_name: String, p_scenario_snapshot: Dictionary) -> void:
+	if not GameState.new_game(universe_name, {}, p_scenario_snapshot):
+		_show_message("场景初始化失败，请检查难度配置", Color(1.0, 0.39, 0.39))
+		return
 	if not SaveManager.save_game(GameState, "初始存档", universe_name):
 		_show_message("创建存档失败：%s" % SaveManager.get_save_directory(), Color(1.0, 0.39, 0.39))
 		return
@@ -130,4 +185,48 @@ func _show_message(text: String, color: Color) -> void:
 func _refresh_ui() -> void:
 	main_vbox.visible = state == State.MAIN
 	naming_container.visible = state == State.NAMING
+	difficulty_container.visible = state == State.DIFFICULTY
 	save_browser.visible = false
+
+
+func _load_difficulty_config() -> void:
+	_difficulty_config = load(DIFFICULTY_CONFIG_PATH)
+	if _difficulty_config == null or not _difficulty_config.has_method("validate"):
+		_difficulty_config = null
+		return
+	var errors: PackedStringArray = _difficulty_config.validate()
+	if not errors.is_empty():
+		push_error("场景难度配置无效：%s" % "; ".join(errors))
+		_difficulty_config = null
+		return
+	%DifficultyOption.clear()
+	_difficulty_ids.clear()
+	var selected_index := 0
+	for preset in _difficulty_config.get_selectable_presets():
+		_difficulty_ids.append(preset.id)
+		%DifficultyOption.add_item("%s（%.0f 年）" % [preset.display_name, preset.stable_years])
+		if preset.id == _difficulty_config.default_preset_id:
+			selected_index = _difficulty_ids.size() - 1
+	if _difficulty_config.custom_enabled:
+		_difficulty_ids.append(&"custom")
+		%DifficultyOption.add_item(_difficulty_config.custom_display_name)
+	%DifficultyOption.select(selected_index)
+	_on_difficulty_selected(selected_index)
+
+
+func _on_difficulty_selected(p_index: int) -> void:
+	if _difficulty_config == null or p_index < 0 or p_index >= _difficulty_ids.size():
+		return
+	var difficulty_id := _difficulty_ids[p_index]
+	var is_custom := difficulty_id == &"custom"
+	%CustomYearsRow.visible = is_custom
+	if is_custom:
+		%DifficultyDescription.text = "%s\n允许范围：%.0f 至 %.0f 年。" % [
+			_difficulty_config.custom_description,
+			_difficulty_config.custom_min_years,
+			_difficulty_config.custom_max_years,
+		]
+		%CustomYearsInput.placeholder_text = "%.0f - %.0f" % [_difficulty_config.custom_min_years, _difficulty_config.custom_max_years]
+	else:
+		var preset = _difficulty_config.get_preset(difficulty_id)
+		%DifficultyDescription.text = preset.description

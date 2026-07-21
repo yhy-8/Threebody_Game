@@ -56,6 +56,15 @@ func _check_start_and_settings() -> void:
 	var cancel: Control = start_scene.get_node("NamingContainer/NamingButtonRow/CancelNameBtn")
 	_expect(_ends_before(input, row, true), "宇宙命名输入框与按钮行重叠")
 	_expect(_ends_before(confirm, cancel, false), "宇宙命名确认与取消按钮重叠")
+	start_scene.get_node("NamingContainer").visible = false
+	start_scene.get_node("DifficultyContainer").visible = true
+	await get_tree().process_frame
+	var difficulty_option: Control = start_scene.get_node("DifficultyContainer/DifficultyOption")
+	var difficulty_description: Control = start_scene.get_node("DifficultyContainer/DifficultyDescription")
+	var difficulty_buttons: Control = start_scene.get_node("DifficultyContainer/DifficultyButtonRow")
+	_expect(_inside_viewport(start_scene.get_node("DifficultyContainer")), "难度选择步骤超出视口")
+	_expect(_ends_before(difficulty_option, difficulty_description, true), "难度选项与说明重叠")
+	_expect(_ends_before(difficulty_description, difficulty_buttons, true), "难度说明与按钮行重叠")
 	await _discard(start_scene)
 
 	var settings_scene := await _spawn("res://scenes/main_menu/settings_screen.tscn")

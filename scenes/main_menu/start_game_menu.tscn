@@ -165,6 +165,116 @@ size_flags_horizontal = 3
 text = "取消"
 custom_minimum_size = Vector2(260, 54)
 
+[node name="DifficultyContainer" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="DifficultyTitle" type="Label" parent="DifficultyContainer"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -320.0
+offset_top = 236.0
+offset_right = 320.0
+offset_bottom = 292.0
+text = "选择稳定纪元长度"
+horizontal_alignment = 1
+label_settings = SubResource("3_naming_title")
+
+[node name="RuleHint" type="Label" parent="DifficultyContainer"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -420.0
+offset_top = 302.0
+offset_right = 420.0
+offset_bottom = 352.0
+text = "难度只决定何时从规定稳定星历切换为真实 N 体混沌，不改变资源与科研倍率。"
+horizontal_alignment = 1
+autowrap_mode = 2
+label_settings = SubResource("4_naming_hint")
+
+[node name="DifficultyOption" type="OptionButton" parent="DifficultyContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -280.0
+offset_top = 370.0
+offset_right = 280.0
+offset_bottom = 428.0
+
+[node name="DifficultyDescription" type="Label" parent="DifficultyContainer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -360.0
+offset_top = 444.0
+offset_right = 360.0
+offset_bottom = 508.0
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+label_settings = SubResource("4_naming_hint")
+
+[node name="CustomYearsRow" type="HBoxContainer" parent="DifficultyContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -280.0
+offset_top = 522.0
+offset_right = 280.0
+offset_bottom = 576.0
+theme_override_constants/separation = 16
+
+[node name="CustomYearsLabel" type="Label" parent="DifficultyContainer/CustomYearsRow"]
+layout_mode = 2
+text = "稳定年数"
+vertical_alignment = 1
+
+[node name="CustomYearsInput" type="LineEdit" parent="DifficultyContainer/CustomYearsRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "0 - 500"
+
+[node name="DifficultyButtonRow" type="HBoxContainer" parent="DifficultyContainer"]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -280.0
+offset_top = 600.0
+offset_right = 280.0
+offset_bottom = 656.0
+theme_override_constants/separation = 20
+
+[node name="ConfirmDifficultyBtn" type="Button" parent="DifficultyContainer/DifficultyButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(260, 54)
+text = "创建宇宙"
+
+[node name="BackToNameBtn" type="Button" parent="DifficultyContainer/DifficultyButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(260, 54)
+text = "返回命名"
+
 [node name="MessageLabel" type="Label" parent="."]
 unique_name_in_owner = true
 visible = false

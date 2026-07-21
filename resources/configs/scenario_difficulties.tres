@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="ScenarioDifficultyConfig" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://resources/configs/scenario_difficulty_config.gd" id="1_config"]
+[ext_resource type="Script" path="res://resources/configs/difficulty_preset.gd" id="2_preset"]
+
+[sub_resource type="Resource" id="Difficulty_easy"]
+script = ExtResource("2_preset")
+id = &"easy"
+display_name = "简单"
+description = "100 年稳定纪元，适合完整建立文明基础。"
+stable_years = 100.0
+sort_order = 0
+
+[sub_resource type="Resource" id="Difficulty_normal"]
+script = ExtResource("2_preset")
+id = &"normal"
+display_name = "普通"
+description = "50 年稳定纪元，需要较早准备观测与生存体系。"
+stable_years = 50.0
+sort_order = 1
+
+[sub_resource type="Resource" id="Difficulty_hard"]
+script = ExtResource("2_preset")
+id = &"hard"
+display_name = "困难"
+description = "25 年稳定纪元，发展窗口紧张。"
+stable_years = 25.0
+sort_order = 2
+
+[sub_resource type="Resource" id="Difficulty_extreme"]
+script = ExtResource("2_preset")
+id = &"extreme"
+display_name = "极限"
+description = "没有稳定纪元，从第 0 天开始真实 N 体模拟。"
+stable_years = 0.0
+sort_order = 3
+
+[resource]
+script = ExtResource("1_config")
+config_version = 1
+default_preset_id = &"normal"
+presets = Array[Resource]([SubResource("Difficulty_easy"), SubResource("Difficulty_normal"), SubResource("Difficulty_hard"), SubResource("Difficulty_extreme")])
+custom_enabled = true
+custom_display_name = "自定义"
+custom_description = "手动指定 0 至 500 个游戏年后进入真实三体混沌。"
+custom_min_years = 0.0
+custom_max_years = 500.0
+days_per_year = 365.0
