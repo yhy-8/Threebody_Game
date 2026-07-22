@@ -59,6 +59,9 @@ func _test_guidance_is_presentation_only() -> void:
 	var deferred_state: Dictionary = guidance.get_state()
 	var restored_guidance = OpeningGuidanceControllerScript.new()
 	_expect(restored_guidance.initialize(0, deferred_state) and restored_guidance.group_deferred, "暂缓引导状态没有保存")
+	var obsolete_state := deferred_state.duplicate(true)
+	obsolete_state["guidance_version"] = 2
+	_expect(not OpeningGuidanceControllerScript.new().initialize(0, obsolete_state), "开发期旧引导格式仍被兼容读取")
 	restored_guidance.resume_guidance()
 	_expect(not restored_guidance.group_deferred and not restored_guidance.get_active_task_views().is_empty(), "恢复引导没有从真实进度继续")
 
@@ -68,6 +71,25 @@ func _test_capital_and_local_inventory() -> void:
 	var result: Dictionary = GameState.confirm_capital(capital_id)
 	_expect(result.get("success", false), "合法候选无法确认为首都")
 	_expect(not GameState.paused and GameState.settlement_system.get_population(capital_id) == GameState.entities.population.total, "首都确认后人口没有落在发源地")
+	_expect(GameState.planet_zones.zones.size() == 144, "区域网格不是 12×12 的 144 区")
+	var expected_visible: Array[int] = [capital_id]
+	expected_visible.append_array(GameState.planet_zones.get_zone_neighborhood(capital_id))
+	expected_visible.sort()
+	var actual_visible: Array[int] = GameState.settlement_system.visible_zone_ids.duplicate()
+	actual_visible.sort()
+	_expect(expected_visible.size() == 9 and actual_visible == expected_visible, "首都确认后没有形成唯一连续的 3×3 初始可见区")
+	var far_zone_id: int = (capital_id + 6) % GameState.planet_zones.zones.size()
+	if far_zone_id in expected_visible:
+		far_zone_id = (capital_id + 48) % GameState.planet_zones.zones.size()
+	var far_zone = GameState.planet_zones.get_zone(far_zone_id)
+	_expect(GameState.settlement_system.apply_survey_result(far_zone_id, {
+		"terrain": far_zone.terrain_type, "latitude": far_zone.lat_center, "longitude": far_zone.lon_center,
+		"temperature": far_zone.temperature, "radiation": far_zone.radiation,
+	}, 0.7, GameState.game_time, "test:historical-zone"), "无法建立失去覆盖后的历史认知测试记录")
+	var historical: Dictionary = GameState.get_zone_knowledge(far_zone_id)
+	_expect(int(historical.get("level", -1)) == GameState.settlement_system.ZoneKnowledgeLevel.UNKNOWN, "无人覆盖区域仍公开历史认知等级")
+	_expect(int(historical.get("historical_level", -1)) == GameState.settlement_system.ZoneKnowledgeLevel.SURVEYED and historical.get("terrain_known", false), "无人覆盖后没有保留静态地形与历史认知")
+	_expect(not historical.get("public_data", {}).has("temperature") and not historical.get("public_data", {}).has("radiation"), "无人覆盖后仍泄露动态环境数据")
 	var local: Dictionary = GameState.regional_logistics.get_local_inventory(capital_id)
 	for resource_id in GameState.entities.resources:
 		_expect(is_equal_approx(float(local.get(resource_id, -1.0)), GameState.entities.get_resource(resource_id)), "初始资源没有全部进入首都地方库存：%s" % resource_id)
@@ -77,6 +99,8 @@ func _test_capital_and_local_inventory() -> void:
 func _test_physical_expedition() -> void:
 	var capital_id: int = GameState.settlement_system.capital_zone_id
 	var target_id := int(GameState.planet_zones.get_zone_neighbors(capital_id)[0])
+	var hidden_target_id: int = (capital_id + 48) % GameState.planet_zones.zones.size()
+	_expect(not GameState.start_region_migration(capital_id, hidden_target_id, 1).get("success", false), "迁移允许把未知区域作为目标")
 	var route: Dictionary = GameState.plan_region_route(capital_id, target_id)
 	_expect(route.get("success", false) and route.get("cost_explanation", "").contains("口粮"), "路线没有给出可解释的时间与补给成本")
 	var people_before: int = GameState.settlement_system.get_population(capital_id)
@@ -113,7 +137,7 @@ func _test_physical_expedition() -> void:
 	_expect(GameState.regional_logistics.get_local_amount(target_id, "food") >= 9.99, "迁徙载荷没有进入目标地地方库存")
 	_expect(GameState.settlement_system.get_settlement(target_id).get("type", "") == "outpost", "首批迁入者没有建立前哨记录")
 	var shelter = EntityManagerScript.GameBuilding.new(9101, "测试前哨庇护所", "shelter", target_id, 0, {}, {}, 0.0, 0.0, false, true, 100.0, 100.0, 20)
-	var food_site = EntityManagerScript.GameBuilding.new(9102, "测试前哨食物点", "algae_food_synth", target_id, 5, {"food": 2.5})
+	var food_site = EntityManagerScript.GameBuilding.new(9102, "测试前哨食物点", "algae_foraging", target_id, 5, {"food": 2.5})
 	food_site.assigned_workers = 1
 	food_site.last_output_rate = {"food": 2.5}
 	GameState.entities.add_building(shelter)

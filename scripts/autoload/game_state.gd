@@ -7,7 +7,7 @@ signal developer_mode_changed(enabled: bool)
 signal scenario_phase_changed(new_phase: String, transition_day: float)
 
 const SETTINGS_PATH := "res://settings.json"
-const SAVE_SCHEMA_VERSION := 7
+const SAVE_SCHEMA_VERSION := 8
 const FIXED_SIMULATION_STEP_DAYS := 0.02
 const MAX_SIMULATION_SUBSTEPS := 512
 const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
@@ -217,9 +217,10 @@ func set_observed_zone(p_zone_id: int) -> bool:
 	if planet_zones == null or planet_zones.get_zone(p_zone_id) == null:
 		return false
 	if not developer_mode and settlement_system != null:
-		var knowledge: Dictionary = settlement_system.get_zone_knowledge(p_zone_id)
-		var required_level := SettlementSystemScript.ZoneKnowledgeLevel.OBSERVED if settlement_system.capital_zone_id < 0 else SettlementSystemScript.ZoneKnowledgeLevel.FAMILIAR
-		if int(knowledge.get("level", SettlementSystemScript.ZoneKnowledgeLevel.UNKNOWN)) < required_level:
+		if settlement_system.capital_zone_id < 0:
+			if settlement_system.get_candidate_view(p_zone_id).is_empty():
+				return false
+		elif not settlement_system.is_zone_visible(p_zone_id):
 			return false
 	if observed_zone_id == p_zone_id:
 		return true
@@ -504,6 +505,9 @@ func start_region_expedition(p_origin_zone_id: int, p_target_zone_id: int, p_pop
 	)
 	if result.get("success", false) and opening_guidance != null:
 		opening_guidance.handle_domain_event("expedition_departed", {"source_id": str(result.get("operation_id", ""))})
+	if result.get("success", false):
+		settlement_system.refresh_visibility(planet_zones, game_time)
+		_ensure_observed_zone_is_visible()
 	_refresh_external_workforce_reservation()
 	state_updated.emit()
 	return result
@@ -512,10 +516,17 @@ func start_region_expedition(p_origin_zone_id: int, p_target_zone_id: int, p_pop
 func start_region_migration(p_origin_zone_id: int, p_target_zone_id: int, p_population_count: int, p_cargo: Dictionary = {}) -> Dictionary:
 	if region_movement_system == null or regional_logistics == null:
 		return {"success": false, "message": "迁徙系统尚未初始化"}
+	if p_origin_zone_id == p_target_zone_id:
+		return {"success": false, "message": "出发区域与目标区域不能相同"}
+	if settlement_system == null or not settlement_system.is_zone_visible(p_target_zone_id):
+		return {"success": false, "message": "迁徙目标必须位于当前有人区域的周边可见范围"}
 	var result: Dictionary = region_movement_system.start_operation(
 		"migration", p_origin_zone_id, p_target_zone_id, p_population_count, p_cargo, planet_zones,
 		settlement_system, regional_logistics, entities, false
 	)
+	if result.get("success", false):
+		settlement_system.refresh_visibility(planet_zones, game_time)
+		_ensure_observed_zone_is_visible()
 	_refresh_external_workforce_reservation()
 	state_updated.emit()
 	return result
@@ -536,6 +547,9 @@ func start_region_transport(p_origin_zone_id: int, p_target_zone_id: int, p_crew
 		"transport", p_origin_zone_id, p_target_zone_id, p_crew_count, p_cargo, planet_zones,
 		settlement_system, regional_logistics, entities, true
 	)
+	if result.get("success", false):
+		settlement_system.refresh_visibility(planet_zones, game_time)
+		_ensure_observed_zone_is_visible()
 	_refresh_external_workforce_reservation()
 	state_updated.emit()
 	return result
@@ -545,6 +559,9 @@ func cancel_region_operation(p_operation_id: String) -> Dictionary:
 	if region_movement_system == null or settlement_system == null or regional_logistics == null:
 		return {"success": false, "message": "区域行动系统尚未初始化"}
 	var result: Dictionary = region_movement_system.cancel_operation(p_operation_id, settlement_system, regional_logistics)
+	if result.get("success", false):
+		settlement_system.refresh_visibility(planet_zones, game_time)
+		_ensure_observed_zone_is_visible()
 	_refresh_external_workforce_reservation()
 	state_updated.emit()
 	return result
@@ -631,9 +648,8 @@ func start_capital_relocation(p_target_zone_id: int) -> Dictionary:
 func execute_regional_construction(p_decision_id: String, p_zone_id: int) -> Dictionary:
 	if settlement_system == null or regional_logistics == null:
 		return {"success": false, "message": "地方建设系统尚未初始化"}
-	var zone_knowledge: Dictionary = settlement_system.get_zone_knowledge(p_zone_id)
-	if int(zone_knowledge.get("level", 0)) < SettlementSystemScript.ZoneKnowledgeLevel.FAMILIAR:
-		return {"success": false, "message": "需要先熟悉或勘探该区域才能施工"}
+	if not settlement_system.is_zone_visible(p_zone_id) or settlement_system.get_population(p_zone_id) <= 0:
+		return {"success": false, "message": "只能在当前有人驻留且保持可见的区域施工"}
 	var decision = decision_manager.available_decisions.get(p_decision_id)
 	if decision == null or decision.category != "construction":
 		return {"success": false, "message": "未知建设项目"}
@@ -819,6 +835,7 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 	for resource_id in entities.resources:
 		resources_before[resource_id] = entities.get_resource(str(resource_id))
 	entities.update(env_params, planet_zones, p_game_days_dt, dehydrated)
+	_emit_food_production_guidance_event()
 	if regional_logistics != null and settlement_system != null and settlement_system.capital_zone_id >= 0:
 		regional_logistics.reconcile_after_simulation(resources_before, entities, entities.buildings)
 	if region_movement_system != null:
@@ -831,6 +848,7 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 		var in_transit: int = region_movement_system.get_reserved_population() if region_movement_system != null else 0
 		settlement_system.reconcile_population_total(entities.population.total, in_transit)
 		settlement_system.refresh_known_environment(planet_zones, game_time + p_game_days_dt)
+		_ensure_observed_zone_is_visible()
 		if regional_logistics != null:
 			settlement_system.refresh_settlement_status(regional_logistics, entities, knowledge_system, game_time + p_game_days_dt)
 	if exploration_system != null:
@@ -846,6 +864,29 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 
 	game_time += p_game_days_dt
 	_update_observation_systems(game_time, p_game_days_dt, env_params)
+
+
+func _emit_food_production_guidance_event() -> void:
+	if opening_guidance == null:
+		return
+	for building in entities.buildings:
+		if building.building_type != "algae_foraging" or building.destroyed or building.under_construction:
+			continue
+		if float(building.last_output_rate.get("food", 0.0)) > 0.0:
+			opening_guidance.handle_domain_event("food_production_started", {"source_id": "food-production:%d" % building.id})
+			return
+
+
+func _ensure_observed_zone_is_visible() -> void:
+	if settlement_system == null or settlement_system.capital_zone_id < 0:
+		return
+	if settlement_system.is_zone_visible(observed_zone_id) or settlement_system.visible_zone_ids.is_empty():
+		return
+	observed_zone_id = (
+		settlement_system.capital_zone_id
+		if settlement_system.is_zone_visible(settlement_system.capital_zone_id)
+		else settlement_system.visible_zone_ids[0]
+	)
 
 
 func _process_autosave(p_real_dt: float) -> void:
@@ -1334,15 +1375,27 @@ func _validate_regional_serialized_sections(p_data: Dictionary) -> bool:
 		return false
 	if not settlement_data.get("region_population", null) is Dictionary or not settlement_data.get("settlements", null) is Dictionary:
 		return false
-	if not settlement_data.get("candidate_views", []) is Array or not settlement_data.get("familiar_zone_ids", []) is Array:
+	if not settlement_data.get("candidate_views", []) is Array or not settlement_data.get("visible_zone_ids", []) is Array:
+		return false
+	if settlement_data["zone_knowledge"].size() != PlanetZoneManagerScript.TOTAL_ZONES:
+		return false
+	if int(settlement_data.get("state_version", -1)) != SettlementSystemScript.STATE_VERSION:
 		return false
 	var capital_value = settlement_data.get("capital_zone_id", -1)
 	if (not capital_value is int and not capital_value is float) or not is_equal_approx(float(capital_value), floor(float(capital_value))):
 		return false
 	if int(capital_value) < -1 or int(capital_value) >= PlanetZoneManagerScript.TOTAL_ZONES:
 		return false
+	var expected_population_entries := PlanetZoneManagerScript.TOTAL_ZONES + (1 if int(capital_value) < 0 else 0)
+	if settlement_data["region_population"].size() != expected_population_entries:
+		return false
 	for record in settlement_data["zone_knowledge"].values():
-		if not record is Dictionary or not record.get("public_data", null) is Dictionary:
+		if (
+			not record is Dictionary
+			or not record.get("public_data", null) is Dictionary
+			or not record.has("knowledge_level")
+			or not record.has("live_visible")
+		):
 			return false
 	var logistics_data: Dictionary = p_data["regional_logistics"]
 	for key in ["local_inventories", "operation_reserves", "network_connections"]:
@@ -1360,6 +1413,8 @@ func _validate_regional_serialized_sections(p_data: Dictionary) -> bool:
 	if not p_data["exploration"].get("survey_log", null) is Array:
 		return false
 	var guidance_data: Dictionary = p_data["opening_guidance"]
+	if int(guidance_data.get("guidance_version", -1)) != OpeningGuidanceControllerScript.GUIDANCE_VERSION:
+		return false
 	for key in ["completed_task_ids", "skipped_task_ids", "dismissed_hint_ids", "handbook_seen_concept_ids", "processed_source_ids"]:
 		if not guidance_data.get(key, null) is Array:
 			return false

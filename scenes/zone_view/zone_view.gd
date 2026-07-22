@@ -10,6 +10,7 @@ var _detail_structure_signature: String = ""
 var _detail_labels: Dictionary = {}
 var _breeder_controls: Dictionary = {}
 var _building_controls: Dictionary = {}
+var _migration_controls: Dictionary = {}
 
 
 func _ready() -> void:
@@ -100,6 +101,7 @@ func _rebuild_detail() -> void:
 	_detail_labels.clear()
 	_breeder_controls.clear()
 	_building_controls.clear()
+	_migration_controls.clear()
 	detail.add_child(_section_label("全球概览"))
 	_add_detail_label(detail, "rotation")
 	_add_detail_label(detail, "average_temperature")
@@ -123,7 +125,12 @@ func _rebuild_detail() -> void:
 	var level := int(knowledge.get("level", 0))
 	detail.add_child(_section_label("区域 #%d · %s" % [selected_zone_id, knowledge.get("level_name", "未知")]))
 	if level == GameState.settlement_system.ZoneKnowledgeLevel.UNKNOWN:
-		detail.add_child(_label("文明尚未观察或踏足此地。地形、环境、资源和路线均保持未知。"))
+		if knowledge.get("terrain_known", false):
+			for key in ["latitude", "longitude", "terrain"]:
+				_add_detail_label(detail, key)
+			detail.add_child(_label("当前没有人口提供观察覆盖。地形记录仍保留，但温度、辐射、光照、大气状态与地方库存均为未知。"))
+		else:
+			detail.add_child(_label("文明尚未观察或踏足此地。地形、环境、资源和路线均保持未知。"))
 		_add_expedition_button_if_available(detail)
 		_detail_structure_signature = _get_detail_structure_signature()
 		_update_detail_values()
@@ -133,7 +140,7 @@ func _rebuild_detail() -> void:
 	_add_detail_label(detail, "local_inventory")
 	_add_settlement_controls(detail)
 	_add_expedition_button_if_available(detail)
-	_add_migration_button_if_available(detail, level)
+	_add_migration_controls_if_available(detail)
 
 	detail.add_child(_section_label("建筑"))
 	var buildings: Array = GameState.entities.get_buildings_in_zone(selected_zone_id) if level >= GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR else []
@@ -144,8 +151,8 @@ func _rebuild_detail() -> void:
 
 	var build_button := Button.new()
 	build_button.text = "+ 建造新建筑"
-	build_button.disabled = level < GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR
-	build_button.tooltip_text = "需要先熟悉或勘探该区域" if build_button.disabled else "建设会消耗该区域的地方库存"
+	build_button.disabled = GameState.settlement_system.get_population(selected_zone_id) <= 0
+	build_button.tooltip_text = "建设需要当地有人驻留" if build_button.disabled else "建设会消耗该区域的地方库存"
 	build_button.custom_minimum_size.y = 52.0
 	build_button.pressed.connect(_open_build_menu)
 	detail.add_child(build_button)
@@ -183,23 +190,58 @@ func _start_expedition(p_origin_zone_id: int, p_target_zone_id: int) -> void:
 	_refresh_data(true)
 
 
-func _add_migration_button_if_available(p_parent: VBoxContainer, p_level: int) -> void:
-	var capital_id: int = GameState.settlement_system.capital_zone_id
-	if selected_zone_id == capital_id or p_level < GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR:
+func _add_migration_controls_if_available(p_parent: VBoxContainer) -> void:
+	if not GameState.settlement_system.is_zone_visible(selected_zone_id):
 		return
-	var route_plan: Dictionary = GameState.plan_region_route(capital_id, selected_zone_id)
-	var button := Button.new()
-	button.text = "迁入 5 人并携带 10 食物"
-	button.disabled = not route_plan.get("success", false)
-	button.tooltip_text = "%s；载荷会留在目标地地方库存" % route_plan.get("cost_explanation", route_plan.get("message", "无法规划路线"))
-	button.pressed.connect(_start_migration.bind(capital_id, selected_zone_id))
-	p_parent.add_child(button)
+	var source_ids: Array[int] = []
+	for zone_id in range(GameState.planet_zones.zones.size()):
+		if zone_id != selected_zone_id and GameState.settlement_system.get_population(zone_id) > 0:
+			source_ids.append(zone_id)
+	if source_ids.is_empty():
+		return
+	p_parent.add_child(_section_label("迁移与补给"))
+	var source_row := HBoxContainer.new()
+	var source_label := _label("出发区域")
+	source_label.custom_minimum_size.x = 96.0
+	source_row.add_child(source_label)
+	var source_option := OptionButton.new()
+	source_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for zone_id in source_ids:
+		source_option.add_item("区域 #%d · %d 人" % [zone_id, GameState.settlement_system.get_population(zone_id)])
+		source_option.set_item_metadata(source_option.item_count - 1, zone_id)
+		if zone_id == GameState.settlement_system.capital_zone_id:
+			source_option.select(source_option.item_count - 1)
+	source_row.add_child(source_option)
+	p_parent.add_child(source_row)
+	var count_row := HBoxContainer.new()
+	var count_label := _label("迁移人数")
+	count_label.custom_minimum_size.x = 96.0
+	count_row.add_child(count_label)
+	var count_input := SpinBox.new()
+	count_input.min_value = 1.0
+	count_input.step = 1.0
+	count_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	count_row.add_child(count_input)
+	p_parent.add_child(count_row)
+	var preview := _label("")
+	p_parent.add_child(preview)
+	var start_button := Button.new()
+	start_button.custom_minimum_size.y = 48.0
+	start_button.text = "派出迁移队"
+	start_button.pressed.connect(_start_selected_migration)
+	p_parent.add_child(start_button)
 	var transport_button := Button.new()
-	transport_button.text = "运输 10 食物（2 人往返）"
-	transport_button.disabled = not route_plan.get("success", false)
-	transport_button.tooltip_text = "%s；人员返程，载荷留在目标地" % route_plan.get("cost_explanation", route_plan.get("message", "无法规划路线"))
-	transport_button.pressed.connect(_start_transport.bind(capital_id, selected_zone_id))
+	transport_button.custom_minimum_size.y = 44.0
+	transport_button.text = "运送 10 食物（2 人往返）"
+	transport_button.pressed.connect(_start_selected_transport)
 	p_parent.add_child(transport_button)
+	_migration_controls = {
+		"source": source_option, "count": count_input, "preview": preview,
+		"button": start_button, "transport_button": transport_button,
+	}
+	source_option.item_selected.connect(_on_migration_source_changed)
+	count_input.value_changed.connect(_on_migration_count_changed)
+	_refresh_migration_controls(true)
 
 
 func _add_settlement_controls(p_parent: VBoxContainer) -> void:
@@ -237,14 +279,81 @@ func _relocate_capital_to_selected_zone() -> void:
 	_refresh_data(true)
 
 
-func _start_migration(p_origin_zone_id: int, p_target_zone_id: int) -> void:
-	var result: Dictionary = GameState.start_region_migration(p_origin_zone_id, p_target_zone_id, 5, {"food": 10.0})
+func _on_migration_source_changed(_p_index: int) -> void:
+	_refresh_migration_controls(true)
+
+
+func _on_migration_count_changed(_p_value: float) -> void:
+	_refresh_migration_controls(false)
+
+
+func _refresh_migration_controls(p_reset_count: bool) -> void:
+	if _migration_controls.is_empty():
+		return
+	var source_option: OptionButton = _migration_controls["source"]
+	var count_input: SpinBox = _migration_controls["count"]
+	var preview: Label = _migration_controls["preview"]
+	var button: Button = _migration_controls["button"]
+	var transport_button: Button = _migration_controls["transport_button"]
+	if source_option.selected < 0:
+		button.disabled = true
+		transport_button.disabled = true
+		return
+	var origin_id := int(source_option.get_item_metadata(source_option.selected))
+	var available := _get_local_idle_population(origin_id)
+	source_option.set_item_text(source_option.selected, "区域 #%d · %d 人" % [origin_id, GameState.settlement_system.get_population(origin_id)])
+	count_input.max_value = maxi(1, available)
+	if p_reset_count:
+		count_input.value = mini(5, available) if available > 0 else 1
+	else:
+		count_input.value = mini(count_input.value, count_input.max_value)
+	var count := int(count_input.value)
+	var route_plan: Dictionary = GameState.plan_region_route(origin_id, selected_zone_id)
+	var arrival_food: float = count * GameState.region_movement_system.FOOD_PER_PERSON_PER_DAY * 3.0
+	button.disabled = available <= 0 or count > available or not route_plan.get("success", false)
+	transport_button.disabled = available < 2 or not route_plan.get("success", false)
+	preview.text = "%s\n可派 %d 人；系统另带 %.1f 食物作为落地 3 日储备。" % [
+		route_plan.get("cost_explanation", route_plan.get("message", "无法规划路线")), available, arrival_food,
+	]
+	button.tooltip_text = preview.text
+	transport_button.tooltip_text = "%s；人员返程，实际载荷在抵达后进入目标地方库存。" % route_plan.get("cost_explanation", route_plan.get("message", "无法规划路线"))
+
+
+func _get_local_idle_population(p_zone_id: int) -> int:
+	var assigned := 0
+	for building in GameState.entities.get_buildings_in_zone(p_zone_id):
+		if not building.destroyed and (building.active or building.under_construction):
+			assigned += building.assigned_workers
+	if p_zone_id == GameState.settlement_system.capital_zone_id:
+		assigned += GameState.entities.population.breeders
+	return mini(
+		maxi(0, GameState.settlement_system.get_population(p_zone_id) - assigned),
+		GameState.entities.get_idle_population()
+	)
+
+
+func _start_selected_migration() -> void:
+	if _migration_controls.is_empty():
+		return
+	var source_option: OptionButton = _migration_controls["source"]
+	if source_option.selected < 0:
+		return
+	var origin_id := int(source_option.get_item_metadata(source_option.selected))
+	var count := int((_migration_controls["count"] as SpinBox).value)
+	var arrival_food: float = count * GameState.region_movement_system.FOOD_PER_PERSON_PER_DAY * 3.0
+	var result: Dictionary = GameState.start_region_migration(origin_id, selected_zone_id, count, {"food": arrival_food})
 	_show_message(result.get("message", ""), result.get("success", false))
 	_refresh_data(true)
 
 
-func _start_transport(p_origin_zone_id: int, p_target_zone_id: int) -> void:
-	var result: Dictionary = GameState.start_region_transport(p_origin_zone_id, p_target_zone_id, 2, {"food": 10.0})
+func _start_selected_transport() -> void:
+	if _migration_controls.is_empty():
+		return
+	var source_option: OptionButton = _migration_controls["source"]
+	if source_option.selected < 0:
+		return
+	var origin_id := int(source_option.get_item_metadata(source_option.selected))
+	var result: Dictionary = GameState.start_region_transport(origin_id, selected_zone_id, 2, {"food": 10.0})
 	_show_message(result.get("message", ""), result.get("success", false))
 	_refresh_data(true)
 
@@ -487,6 +596,11 @@ func _update_detail_values() -> void:
 		return
 	var knowledge: Dictionary = GameState.get_zone_knowledge(selected_zone_id)
 	if int(knowledge.get("level", 0)) == GameState.settlement_system.ZoneKnowledgeLevel.UNKNOWN:
+		if knowledge.get("terrain_known", false):
+			var retained_data: Dictionary = knowledge.get("public_data", {})
+			_detail_labels["latitude"].text = "纬度中心：%.0f°" % retained_data.get("latitude", zone.lat_center)
+			_detail_labels["longitude"].text = "经度中心：%.0f°" % retained_data.get("longitude", zone.lon_center)
+			_detail_labels["terrain"].text = "保留地形记录：%s" % retained_data.get("terrain", "未知")
 		return
 	var public_data: Dictionary = knowledge.get("public_data", {})
 	_detail_labels["latitude"].text = "纬度中心：%.0f°" % public_data.get("latitude", zone.lat_center)
@@ -511,6 +625,7 @@ func _update_detail_values() -> void:
 			settlement.get("shelter_capacity", 0), settlement.get("food_output_per_day", 0.0),
 			settlement.get("food_reserve_days", 0.0), settlement.get("communication_level", 0),
 		]
+	_refresh_migration_controls(false)
 
 	for building in GameState.entities.get_buildings_in_zone(selected_zone_id):
 		if not _building_controls.has(building.id):
@@ -571,7 +686,7 @@ func _open_build_menu() -> void:
 		return
 	%BuildTitle.text = "在区域 #%d 建造新建筑" % selected_zone_id
 	_clear_children(%BuildList)
-	for decision in GameState.decision_manager.get_construction_decisions():
+	for decision in GameState.decision_manager.get_visible_construction_decisions(GameState.tech_tree):
 		var availability: Dictionary = GameState.decision_manager.can_execute(
 			decision.id, GameState.entities, GameState.tech_tree,
 			GameState.planet_zones, selected_zone_id
@@ -585,7 +700,7 @@ func _open_build_menu() -> void:
 				EntityManagerScript.RESOURCE_DISPLAY_NAMES.get(resource_name, resource_name),
 				decision.resource_cost[resource_name],
 			])
-		button.text = "%s\n%s\n消耗：%s" % [decision.name, decision.description, "  |  ".join(cost_parts)]
+		button.text = "%s\n%s\n消耗：%s" % [decision.name, decision.description, "  |  ".join(cost_parts) if not cost_parts.is_empty() else "仅需投入施工劳动"]
 		button.custom_minimum_size.y = 78.0
 		button.disabled = not availability.get("success", false)
 		button.tooltip_text = availability.get("message", "") if button.disabled else decision.description

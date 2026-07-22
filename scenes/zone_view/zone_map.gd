@@ -1,5 +1,7 @@
 extends Control
-## Clickable 12x6 Mercator-style planet heatmap.
+## Clickable 12x12 Mercator-style planet heatmap.
+
+const ZoneScript = preload("res://scripts/simulation/planet_zones.gd")
 
 signal zone_selected(zone_id: int)
 
@@ -34,18 +36,22 @@ func _draw() -> void:
 	if zones_summary.is_empty():
 		return
 	var grid := _grid_rect()
-	var cell_size := Vector2(grid.size.x / 12.0, grid.size.y / 6.0)
+	var cell_size := Vector2(
+		grid.size.x / float(ZoneScript.LONGITUDE_DIVISIONS),
+		grid.size.y / float(ZoneScript.LATITUDE_DIVISIONS),
+	)
 	var range_data := _value_range()
 	var value_min: float = range_data.x
 	var value_max: float = range_data.y
 
-	for longitude_index in range(12):
-		var label := "%d°" % (longitude_index * 30)
+	for longitude_index in range(ZoneScript.LONGITUDE_DIVISIONS):
+		var label := "%d°" % int(longitude_index * 360.0 / ZoneScript.LONGITUDE_DIVISIONS)
 		draw_string(ThemeDB.fallback_font,
 			Vector2(grid.position.x + longitude_index * cell_size.x + 4.0, grid.position.y - 8.0),
 			label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11, Color(0.55, 0.65, 0.85))
-	for row in range(6):
-		var latitude := 75 - row * 30
+	for row in range(ZoneScript.LATITUDE_DIVISIONS):
+		var latitude_index := ZoneScript.LATITUDE_DIVISIONS - 1 - row
+		var latitude := int(-90.0 + (latitude_index + 0.5) * 180.0 / ZoneScript.LATITUDE_DIVISIONS)
 		draw_string(ThemeDB.fallback_font,
 			Vector2(4.0, grid.position.y + row * cell_size.y + cell_size.y * 0.55),
 			"%d°" % latitude, HORIZONTAL_ALIGNMENT_LEFT, 38.0, 11, Color(0.55, 0.65, 0.85))
@@ -54,7 +60,7 @@ func _draw() -> void:
 		var zone: Dictionary = zone_data
 		var latitude_index: int = zone.get("lat_i", 0)
 		var longitude_index: int = zone.get("lon_i", 0)
-		var row: int = 5 - latitude_index
+		var row: int = ZoneScript.LATITUDE_DIVISIONS - 1 - latitude_index
 		var rect := Rect2(
 			grid.position + Vector2(longitude_index * cell_size.x, row * cell_size.y),
 			cell_size
@@ -80,8 +86,9 @@ func _draw() -> void:
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(rect.size.x - 15.0, rect.size.y - 5.0),
 				str(buildings), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11, Color(1.0, 0.82, 0.35))
 		if zone_id == _hovered_zone_id:
+			var hover_text := _value_text(value) if known else ("实时未知 · %s" % zone.get("terrain", "地形未知") if zone.get("terrain_known", false) else "未知")
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(4.0, 15.0),
-				_value_text(value) if known else "未知", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 8.0, 11, Color.WHITE)
+				hover_text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 8.0, 11, Color.WHITE)
 
 	var range_text := "%s范围：%s — %s" % [_mode_name(), _value_text(value_min), _value_text(value_max)]
 	draw_string(ThemeDB.fallback_font, Vector2(grid.position.x, size.y - 8.0), range_text,
@@ -153,8 +160,15 @@ func _zone_at(position: Vector2) -> int:
 	var grid := _grid_rect()
 	if not grid.has_point(position):
 		return -1
-	var cell_size := Vector2(grid.size.x / 12.0, grid.size.y / 6.0)
-	var longitude_index := clampi(int((position.x - grid.position.x) / cell_size.x), 0, 11)
-	var row := clampi(int((position.y - grid.position.y) / cell_size.y), 0, 5)
-	var latitude_index := 5 - row
-	return latitude_index * 12 + longitude_index
+	var cell_size := Vector2(
+		grid.size.x / float(ZoneScript.LONGITUDE_DIVISIONS),
+		grid.size.y / float(ZoneScript.LATITUDE_DIVISIONS),
+	)
+	var longitude_index := clampi(
+		int((position.x - grid.position.x) / cell_size.x), 0, ZoneScript.LONGITUDE_DIVISIONS - 1
+	)
+	var row := clampi(
+		int((position.y - grid.position.y) / cell_size.y), 0, ZoneScript.LATITUDE_DIVISIONS - 1
+	)
+	var latitude_index := ZoneScript.LATITUDE_DIVISIONS - 1 - row
+	return latitude_index * ZoneScript.LONGITUDE_DIVISIONS + longitude_index

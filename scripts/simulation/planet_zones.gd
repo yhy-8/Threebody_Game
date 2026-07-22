@@ -1,6 +1,6 @@
 class_name PlanetZoneManager
 extends RefCounted
-## 行星区域管理器 — 72区域 + 自转 + 逐区环境计算
+## 行星区域管理器 — 144 区域 + 自转 + 逐区环境计算
 
 
 # ── 地形对资源禀赋的基础系数 ──────────────────────────────
@@ -24,10 +24,10 @@ const TERRAIN_THERMAL_MODIFIER: Dictionary = {
 
 const TERRAIN_TYPES: Array[String] = ["平原", "高原", "山地", "峡谷", "盆地", "丘陵"]
 
-const LATITUDE_DIVISIONS: int = 6
+const LATITUDE_DIVISIONS: int = 12
 const LONGITUDE_DIVISIONS: int = 12
 const TOTAL_ZONES: int = LATITUDE_DIVISIONS * LONGITUDE_DIVISIONS
-const CLIMATE_MODEL_VERSION: int = 2
+const CLIMATE_MODEL_VERSION: int = 3
 const KELVIN_OFFSET: float = 273.15
 const REFERENCE_RADIATING_TEMPERATURE_K: float = 255.0
 const NITROGEN_CONDENSATION_K: float = 77.36
@@ -466,6 +466,27 @@ func get_zone_neighbors(zone_id: int) -> Array:
 	if get_zone(zone_id) == null:
 		return []
 	return (_neighbor_cache.get(zone_id, []) as Array).duplicate()
+
+
+func get_zone_neighborhood(zone_id: int, p_include_center: bool = false) -> Array[int]:
+	var zone := get_zone(zone_id)
+	if zone == null:
+		return []
+	var result: Array[int] = []
+	if p_include_center:
+		result.append(zone_id)
+	for latitude_offset in range(-1, 2):
+		var latitude_index: int = zone.lat_index + latitude_offset
+		if latitude_index < 0 or latitude_index >= LATITUDE_DIVISIONS:
+			continue
+		for longitude_offset in range(-1, 2):
+			if latitude_offset == 0 and longitude_offset == 0:
+				continue
+			var longitude_index := wrapi(zone.lon_index + longitude_offset, 0, LONGITUDE_DIVISIONS)
+			var neighbor_id := latitude_index * LONGITUDE_DIVISIONS + longitude_index
+			if neighbor_id not in result:
+				result.append(neighbor_id)
+	return result
 
 
 func get_zone_at(lat: float, lon: float) -> PlanetZone:

@@ -4,6 +4,7 @@ extends Node3D
 
 const FRAME_WORLD := "world"
 const FRAME_LOCAL_HORIZON := "local_horizon"
+const PlanetZoneManagerScript = preload("res://scripts/simulation/planet_zones.gd")
 
 const STAR_SHADER_CODE := """
 shader_type spatial;
@@ -291,8 +292,8 @@ static func create_planet_grid(p_radius: float) -> MeshInstance3D:
 	material.albedo_color = Color(0.26, 0.62, 1.0, 0.42)
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 
-	for latitude_index in range(1, 6):
-		var latitude := deg_to_rad(-90.0 + latitude_index * 30.0)
+	for latitude_index in range(1, PlanetZoneManagerScript.LATITUDE_DIVISIONS):
+		var latitude := deg_to_rad(-90.0 + latitude_index * 180.0 / PlanetZoneManagerScript.LATITUDE_DIVISIONS)
 		immediate.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, material)
 		for segment in range(49):
 			var longitude := TAU * float(segment) / 48.0
@@ -302,8 +303,8 @@ static func create_planet_grid(p_radius: float) -> MeshInstance3D:
 				p_radius * cos(latitude) * sin(longitude)
 			))
 		immediate.surface_end()
-	for longitude_index in range(12):
-		var longitude := TAU * float(longitude_index) / 12.0
+	for longitude_index in range(PlanetZoneManagerScript.LONGITUDE_DIVISIONS):
+		var longitude := TAU * float(longitude_index) / PlanetZoneManagerScript.LONGITUDE_DIVISIONS
 		immediate.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, material)
 		for segment in range(25):
 			var latitude := -PI * 0.5 + PI * float(segment) / 24.0

@@ -53,9 +53,9 @@ func _process(p_delta: float) -> void:
 
 
 func set_observed_zone(p_zone_id: int) -> bool:
-	if p_zone_id < 0 or p_zone_id >= 72:
+	if p_zone_id < 0 or GameState.planet_zones == null or p_zone_id >= GameState.planet_zones.zones.size():
 		return false
-	if GameState.planet_zones != null and GameState.planet_zones.get_zone(p_zone_id) == null:
+	if GameState.planet_zones.get_zone(p_zone_id) == null:
 		return false
 	observed_zone_id = p_zone_id
 	_update_local_frame()

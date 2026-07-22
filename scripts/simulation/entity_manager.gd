@@ -798,7 +798,8 @@ func _get_zone_yield(p_building: GameBuilding, p_zone_manager) -> float:
 		"copper_mine": return maxf(0.0, float(zone.resource_deposits.get("copper", 0.0)))
 		"rare_mine": return maxf(0.0, float(zone.resource_deposits.get("rare_mineral", 0.0)))
 		"farm": return maxf(0.0, zone.fertility)
-		"algae_collector", "algae_food_synth": return maxf(0.0, zone.algae_density)
+		"algae_collector": return maxf(0.0, zone.algae_density)
+		"algae_foraging": return maxf(0.5, zone.algae_density)
 	return 1.0
 
 

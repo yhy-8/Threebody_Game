@@ -3,10 +3,14 @@ extends RefCounted
 ## Capital, settlements, regional population, and information-bounded zone knowledge.
 
 const CapitalSelectionServiceScript = preload("res://scripts/simulation/capital_selection_service.gd")
-const STATE_VERSION := 2
+const PlanetZoneManagerScript = preload("res://scripts/simulation/planet_zones.gd")
+const STATE_VERSION := 3
 const LOCAL_FOOD_PER_PERSON_PER_DAY := 0.04
 const OUTPOST_MINIMUM_POPULATION := 5
 const OUTPOST_RESERVE_DAYS := 7.0
+const DYNAMIC_PUBLIC_FIELDS: Array[String] = [
+	"temperature", "air_temperature", "radiation", "light_intensity", "atmosphere_state", "updated_game_day",
+]
 
 enum ZoneKnowledgeLevel { UNKNOWN, OBSERVED, FAMILIAR, SURVEYED, MONITORED }
 
@@ -19,7 +23,7 @@ const LEVEL_NAMES: Dictionary = {
 }
 
 var capital_zone_id: int = -1
-var familiar_zone_ids: Array[int] = []
+var visible_zone_ids: Array[int] = []
 var zone_knowledge: Dictionary = {}
 var region_population: Dictionary = {}
 var settlements: Dictionary = {}
@@ -35,21 +39,18 @@ func _init() -> void:
 func initialize_new(p_zone_manager, p_population: int, p_scenario_rules: Dictionary) -> bool:
 	_initialize_empty_zones()
 	capital_zone_id = -1
-	familiar_zone_ids.clear()
+	visible_zone_ids.clear()
 	settlements.clear()
 	var public_views: Array = []
 	for zone in p_zone_manager.zones:
+		# The opening choice stays away from clipped polar rows so its first live view is a full 3x3 block.
+		if zone.lat_index <= 0 or zone.lat_index >= PlanetZoneManagerScript.LATITUDE_DIVISIONS - 1:
+			continue
 		public_views.append(_build_observed_view(zone, 0.32, 0.0))
 	var ranked: Array = selection_service.rank_candidates(selection_service.build_candidate_views(public_views, p_scenario_rules))
 	candidate_views = ranked.slice(0, mini(6, ranked.size()))
 	if candidate_views.is_empty():
 		return false
-	for candidate in candidate_views:
-		var zone_id := int(candidate.get("zone_id", -1))
-		zone_knowledge[zone_id] = _knowledge_record(
-			ZoneKnowledgeLevel.OBSERVED, candidate.get("known", {}), 0.32, 0.0,
-			["地下矿藏", "精确储量", "长期气候规律", "未来恒星轨道"]
-		)
 	region_population[-1] = maxi(0, p_population)
 	return true
 
@@ -64,20 +65,12 @@ func confirm_capital(p_zone_id: int, p_zone_manager, p_population: int, p_game_d
 	if not validation.get("success", false):
 		return validation
 	capital_zone_id = p_zone_id
-	familiar_zone_ids.clear()
-	familiar_zone_ids.append(p_zone_id)
-	for neighbor_id in p_zone_manager.get_zone_neighbors(p_zone_id):
-		familiar_zone_ids.append(int(neighbor_id))
-	for zone_id in familiar_zone_ids:
-		var zone = p_zone_manager.get_zone(zone_id)
-		zone_knowledge[zone_id] = _knowledge_record(
-			ZoneKnowledgeLevel.FAMILIAR, _build_familiar_view(zone, 0.58, p_game_day), 0.58, p_game_day,
-			["地下矿藏精确储量", "长期环境规律", "未来恒星轨道"]
-		)
+	_initialize_empty_zone_knowledge()
 	region_population.erase(-1)
 	region_population[p_zone_id] = maxi(0, p_population)
 	settlements[p_zone_id] = _default_settlement(p_zone_id, p_population, "文明发源地")
-	return {"success": true, "message": "区域 #%d 已确认为文明发源地" % p_zone_id, "familiar_zone_ids": familiar_zone_ids.duplicate()}
+	refresh_visibility(p_zone_manager, p_game_day)
+	return {"success": true, "message": "区域 #%d 已确认为文明发源地" % p_zone_id, "visible_zone_ids": visible_zone_ids.duplicate()}
 
 
 func get_candidate_view(p_zone_id: int) -> Dictionary:
@@ -90,8 +83,12 @@ func get_candidate_view(p_zone_id: int) -> Dictionary:
 
 func get_zone_knowledge(p_zone_id: int) -> Dictionary:
 	if not zone_knowledge.has(p_zone_id):
-		return _knowledge_record(ZoneKnowledgeLevel.UNKNOWN, {"zone_id": p_zone_id}, 0.0, 0.0, ["地形", "环境", "资源", "路线"])
-	return (zone_knowledge[p_zone_id] as Dictionary).duplicate(true)
+		return _public_knowledge_record(_knowledge_record(ZoneKnowledgeLevel.UNKNOWN, {"zone_id": p_zone_id}, 0.0, 0.0, ["地形", "环境", "资源", "路线"], false))
+	return _public_knowledge_record(zone_knowledge[p_zone_id])
+
+
+func is_zone_visible(p_zone_id: int) -> bool:
+	return p_zone_id in visible_zone_ids
 
 
 func get_public_zone_summaries(p_zone_manager, p_entities) -> Array:
@@ -101,7 +98,7 @@ func get_public_zone_summaries(p_zone_manager, p_entities) -> Array:
 		var record := get_zone_knowledge(zone_id)
 		var level := int(record.get("level", ZoneKnowledgeLevel.UNKNOWN))
 		var public_data: Dictionary = record.get("public_data", {})
-		var known_environment := level >= ZoneKnowledgeLevel.OBSERVED
+		var known_environment := bool(record.get("live_visible", false))
 		result.append({
 			"id": zone_id,
 			"lat_i": zone.lat_index,
@@ -114,22 +111,18 @@ func get_public_zone_summaries(p_zone_manager, p_entities) -> Array:
 			"light": public_data.get("light_intensity", 0.0),
 			"atmosphere_state": public_data.get("atmosphere_state", "未知"),
 			"terrain": public_data.get("terrain", "未知"),
-			"buildings": p_entities.get_buildings_in_zone(zone_id).size() if level >= ZoneKnowledgeLevel.FAMILIAR else 0,
+			"terrain_known": public_data.has("terrain"),
+			"buildings": p_entities.get_buildings_in_zone(zone_id).size() if known_environment else 0,
 			"stale": record.get("stale", false),
 		})
 	return result
 
 
 func refresh_known_environment(p_zone_manager, p_game_day: float) -> void:
+	refresh_visibility(p_zone_manager, p_game_day)
 	for zone_id in zone_knowledge:
 		var record: Dictionary = zone_knowledge[zone_id]
-		var level := int(record.get("level", ZoneKnowledgeLevel.UNKNOWN))
-		if level < ZoneKnowledgeLevel.OBSERVED:
-			continue
-		if level < ZoneKnowledgeLevel.MONITORED and get_population(int(zone_id)) <= 0:
-			if p_game_day - float(record.get("updated_game_day", 0.0)) >= 30.0:
-				record["stale"] = true
-				record["stale_reason"] = "当地无人驻留，环境记录已超过 30 天"
+		if not bool(record.get("live_visible", false)):
 			continue
 		var zone = p_zone_manager.get_zone(int(zone_id))
 		var public_data: Dictionary = record.get("public_data", {})
@@ -141,12 +134,49 @@ func refresh_known_environment(p_zone_manager, p_game_day: float) -> void:
 		public_data["updated_game_day"] = p_game_day
 		record["updated_game_day"] = p_game_day
 		record["stale"] = false
+		record["stale_reason"] = ""
+
+
+func refresh_visibility(p_zone_manager, p_game_day: float) -> void:
+	var covered: Dictionary = {}
+	for zone_key in region_population:
+		var occupied_zone_id := int(zone_key)
+		if occupied_zone_id < 0 or get_population(occupied_zone_id) <= 0:
+			continue
+		covered[occupied_zone_id] = true
+		for neighbor_id in p_zone_manager.get_zone_neighborhood(occupied_zone_id):
+			covered[int(neighbor_id)] = true
+	visible_zone_ids.clear()
+	for zone_id in range(PlanetZoneManagerScript.TOTAL_ZONES):
+		var record: Dictionary = zone_knowledge[zone_id]
+		var live_visible := covered.has(zone_id)
+		record["live_visible"] = live_visible
+		if not live_visible:
+			_strip_dynamic_public_data(record)
+			continue
+		visible_zone_ids.append(zone_id)
+		var zone = p_zone_manager.get_zone(zone_id)
+		var current_level := int(record.get("knowledge_level", ZoneKnowledgeLevel.UNKNOWN))
+		var minimum_level := ZoneKnowledgeLevel.FAMILIAR if get_population(zone_id) > 0 else ZoneKnowledgeLevel.OBSERVED
+		if current_level < minimum_level:
+			record["knowledge_level"] = minimum_level
+		var refreshed_view := (
+			_build_familiar_view(zone, 0.58, p_game_day)
+			if get_population(zone_id) > 0
+			else _build_observed_view(zone, 0.42, p_game_day)
+		)
+		for key in refreshed_view:
+			record["public_data"][key] = refreshed_view[key]
+		record["confidence"] = maxf(float(record.get("confidence", 0.0)), 0.58 if get_population(zone_id) > 0 else 0.42)
+		record["updated_game_day"] = p_game_day
+		record["stale"] = false
+		record["stale_reason"] = ""
 
 
 func apply_survey_result(p_zone_id: int, p_public_observations: Dictionary, p_confidence: float, p_game_day: float, p_source_id: String) -> bool:
-	if p_zone_id < 0 or p_zone_id >= 72 or p_source_id.is_empty():
+	if p_zone_id < 0 or p_zone_id >= PlanetZoneManagerScript.TOTAL_ZONES or p_source_id.is_empty():
 		return false
-	var current := get_zone_knowledge(p_zone_id)
+	var current: Dictionary = zone_knowledge[p_zone_id]
 	if p_source_id in current.get("source_ids", []):
 		return false
 	var source_ids: Array = current.get("source_ids", []).duplicate()
@@ -156,9 +186,11 @@ func apply_survey_result(p_zone_id: int, p_public_observations: Dictionary, p_co
 		public_data[key] = p_public_observations[key]
 	zone_knowledge[p_zone_id] = _knowledge_record(
 		ZoneKnowledgeLevel.SURVEYED, public_data, clampf(p_confidence, 0.0, 1.0), p_game_day,
-		["超出当前测量精度的储量", "未来环境与轨道"]
+		["超出当前测量精度的储量", "未来环境与轨道"], is_zone_visible(p_zone_id)
 	)
 	zone_knowledge[p_zone_id]["source_ids"] = source_ids
+	if not is_zone_visible(p_zone_id):
+		_strip_dynamic_public_data(zone_knowledge[p_zone_id])
 	return true
 
 
@@ -203,8 +235,6 @@ func disembark_population(p_destination: int, p_count: int) -> bool:
 		settlements[p_destination] = _default_settlement(p_destination, region_population[p_destination], "区域聚落 #%d" % p_destination)
 	else:
 		settlements[p_destination]["population"] = region_population[p_destination]
-	if p_destination not in familiar_zone_ids:
-		familiar_zone_ids.append(p_destination)
 	return true
 
 
@@ -293,7 +323,7 @@ func get_outpost_upgrade_requirements(p_zone_id: int, p_logistics, p_entities, p
 	if float(settlement.get("food_reserve_days", 0.0)) + 1e-6 < OUTPOST_RESERVE_DAYS:
 		missing.append("当地食物储备至少 %.0f 天" % OUTPOST_RESERVE_DAYS)
 	if not p_route_available:
-		missing.append("与首都之间的已知陆路")
+		missing.append("与首都之间可确认的步行路线")
 	if p_knowledge_system == null or not p_knowledge_system.has_capability("symbolic_recording"):
 		missing.append("符号记录与管理能力")
 	return {
@@ -332,7 +362,7 @@ func get_state() -> Dictionary:
 	return {
 		"state_version": STATE_VERSION,
 		"capital_zone_id": capital_zone_id,
-		"familiar_zone_ids": familiar_zone_ids.duplicate(),
+		"visible_zone_ids": visible_zone_ids.duplicate(),
 		"zone_knowledge": zone_knowledge.duplicate(true),
 		"region_population": region_population.duplicate(),
 		"settlements": settlements.duplicate(true),
@@ -341,15 +371,19 @@ func get_state() -> Dictionary:
 
 
 func load_state(p_data: Dictionary) -> bool:
+	if int(p_data.get("state_version", -1)) != STATE_VERSION:
+		return false
 	for key in ["zone_knowledge", "region_population", "settlements"]:
 		if not p_data.get(key, {}) is Dictionary:
 			return false
 	capital_zone_id = int(p_data.get("capital_zone_id", -1))
-	if capital_zone_id < -1 or capital_zone_id >= 72:
+	if capital_zone_id < -1 or capital_zone_id >= PlanetZoneManagerScript.TOTAL_ZONES:
 		return false
-	familiar_zone_ids.clear()
-	for zone_value in p_data.get("familiar_zone_ids", []):
-		familiar_zone_ids.append(int(zone_value))
+	if not p_data.get("visible_zone_ids", null) is Array:
+		return false
+	visible_zone_ids.clear()
+	for zone_value in p_data["visible_zone_ids"]:
+		visible_zone_ids.append(int(zone_value))
 	zone_knowledge.clear()
 	for zone_key in p_data.get("zone_knowledge", {}):
 		zone_knowledge[int(zone_key)] = (p_data["zone_knowledge"][zone_key] as Dictionary).duplicate(true)
@@ -364,11 +398,20 @@ func load_state(p_data: Dictionary) -> bool:
 
 
 func _initialize_empty_zones() -> void:
-	zone_knowledge.clear()
+	_initialize_empty_zone_knowledge()
 	region_population.clear()
-	for zone_id in range(72):
-		zone_knowledge[zone_id] = _knowledge_record(ZoneKnowledgeLevel.UNKNOWN, {"zone_id": zone_id}, 0.0, 0.0, ["地形", "环境", "资源", "路线"])
+	for zone_id in range(PlanetZoneManagerScript.TOTAL_ZONES):
 		region_population[zone_id] = 0
+
+
+func _initialize_empty_zone_knowledge() -> void:
+	zone_knowledge.clear()
+	visible_zone_ids.clear()
+	for zone_id in range(PlanetZoneManagerScript.TOTAL_ZONES):
+		zone_knowledge[zone_id] = _knowledge_record(
+			ZoneKnowledgeLevel.UNKNOWN, {"zone_id": zone_id}, 0.0, 0.0,
+			["地形", "环境", "资源", "路线"], false
+		)
 
 
 func _build_observed_view(p_zone, p_confidence: float, p_game_day: float) -> Dictionary:
@@ -406,10 +449,11 @@ func _surface_signs(p_terrain: String, p_light: float) -> Array[String]:
 	return signs
 
 
-func _knowledge_record(p_level: int, p_public_data: Dictionary, p_confidence: float, p_game_day: float, p_unknown_fields: Array) -> Dictionary:
+func _knowledge_record(p_level: int, p_public_data: Dictionary, p_confidence: float, p_game_day: float,
+		p_unknown_fields: Array, p_live_visible: bool) -> Dictionary:
 	return {
-		"level": p_level,
-		"level_name": LEVEL_NAMES.get(p_level, "未知"),
+		"knowledge_level": p_level,
+		"live_visible": p_live_visible,
 		"public_data": p_public_data.duplicate(true),
 		"confidence": p_confidence,
 		"updated_game_day": p_game_day,
@@ -418,6 +462,25 @@ func _knowledge_record(p_level: int, p_public_data: Dictionary, p_confidence: fl
 		"stale": false,
 		"stale_reason": "",
 	}
+
+
+func _public_knowledge_record(p_record: Dictionary) -> Dictionary:
+	var result := p_record.duplicate(true)
+	var historical_level := int(result.get("knowledge_level", ZoneKnowledgeLevel.UNKNOWN))
+	var live_visible := bool(result.get("live_visible", false))
+	result["historical_level"] = historical_level
+	result["level"] = historical_level if live_visible else ZoneKnowledgeLevel.UNKNOWN
+	result["level_name"] = LEVEL_NAMES.get(result["level"], "未知")
+	result["terrain_known"] = (result.get("public_data", {}) as Dictionary).has("terrain")
+	return result
+
+
+func _strip_dynamic_public_data(p_record: Dictionary) -> void:
+	var public_data: Dictionary = p_record.get("public_data", {})
+	for key in DYNAMIC_PUBLIC_FIELDS:
+		public_data.erase(key)
+	p_record["stale"] = true
+	p_record["stale_reason"] = "当前没有人口覆盖，实时环境不可知"
 
 
 func _default_settlement(p_zone_id: int, p_population: int, p_name: String) -> Dictionary:

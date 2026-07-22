@@ -97,6 +97,7 @@ text = "载体优先级（0~5）"
 theme_override_font_sizes/font_size = 18
 
 [node name="TeacherLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "教师 / 专家"
 [node name="TeacherWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
@@ -105,6 +106,7 @@ layout_mode = 2
 max_value = 5.0
 step = 0.1
 [node name="LearnerLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "学徒 / 学生"
 [node name="LearnerWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
@@ -113,6 +115,7 @@ layout_mode = 2
 max_value = 5.0
 step = 0.1
 [node name="RecordLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "记录副本"
 [node name="RecordWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
@@ -121,6 +124,7 @@ layout_mode = 2
 max_value = 5.0
 step = 0.1
 [node name="ArtifactLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "样机 / 工具"
 [node name="ArtifactWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
@@ -130,16 +134,18 @@ max_value = 5.0
 step = 0.1
 
 [node name="DomainTitle" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "领域保存权重"
 theme_override_font_sizes/font_size = 18
 
-[node name="DomainWeights" type="GridContainer" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+[node name="DomainWeights" type="VBoxContainer" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
 unique_name_in_owner = true
 layout_mode = 2
-columns = 2
+theme_override_constants/separation = 6
 
 [node name="CrisisLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "危机姿态"
 [node name="CrisisPosture" type="OptionButton" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
@@ -152,6 +158,7 @@ layout_mode = 2
 autowrap_mode = 2
 
 [node name="PolicyPanel" type="PanelContainer" parent="Content"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -175,6 +182,7 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
 [node name="ActionPanel" type="PanelContainer" parent="Content"]
+unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(455, 0)
 
@@ -186,85 +194,90 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="TeachingTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="TeachingSection" type="VBoxContainer" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
 layout_mode = 2
-text = "实际教学计划"
+theme_override_constants/separation = 8
+
+[node name="TeachingTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
+layout_mode = 2
+text = "教学调控"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 21
 
-[node name="TeachingNodeOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="TeachingTargetLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
+layout_mode = 2
+text = "传承目标"
+
+[node name="TeachingNodeOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 unique_name_in_owner = true
 layout_mode = 2
-[node name="TeacherCountLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+
+[node name="TeachingMethodLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 layout_mode = 2
-text = "教师人数"
-[node name="TeacherCount" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+text = "教学组织方式"
+
+[node name="TeachingMethodOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 1.0
-max_value = 100.0
-value = 1.0
-[node name="StudentCountLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+
+[node name="TeachingIntensityLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 layout_mode = 2
-text = "学习者人数"
-[node name="StudentCount" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+text = "投入强度"
+
+[node name="TeachingIntensityOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 1.0
-max_value = 1000.0
-value = 4.0
-[node name="TeachingHoursLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
-layout_mode = 2
-text = "每日课时"
-[node name="TeachingHours" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+
+[node name="TeachingAllocationPreview" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 1.0
-max_value = 16.0
-value = 4.0
-[node name="EmergencyCourse" type="CheckButton" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "抢救式教学（覆盖快、深度受限）"
-[node name="StartTeachingButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+autowrap_mode = 2
+
+[node name="StartTeachingButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(0, 48)
 text = "开始教学计划"
 
-[node name="PreservationTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="PreservationSection" type="VBoxContainer" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PreservationTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 layout_mode = 2
 text = "避难保存容量预览"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 21
-[node name="ShelterPeopleLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="ShelterPeopleLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 layout_mode = 2
 text = "纳入人口"
-[node name="ShelterPeople" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="ShelterPeople" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 1000000.0
-[node name="ArchiveVolumeLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="ArchiveVolumeLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 layout_mode = 2
 text = "档案干燥体积（m³）"
-[node name="ArchiveVolume" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="ArchiveVolume" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 100000.0
 step = 0.5
-[node name="ArtifactMassLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="ArtifactMassLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 layout_mode = 2
 text = "样机与工具质量（kg）"
-[node name="ArtifactMass" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="ArtifactMass" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 10000000.0
-[node name="PreviewPreservationButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="PreviewPreservationButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(0, 48)
 text = "预览确定装载事实"
-[node name="PreservationPreview" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+[node name="PreservationPreview" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 2

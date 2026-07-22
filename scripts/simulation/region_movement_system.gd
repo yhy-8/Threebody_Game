@@ -36,9 +36,16 @@ func start_operation(p_type: String, p_origin_zone_id: int, p_destination_zone_i
 		return {"success": false, "message": "未知区域行动类型"}
 	if p_population_count <= 0:
 		return {"success": false, "message": "行动至少需要 1 名成员"}
-	var locally_available: int = int(p_settlement_system.get_population(p_origin_zone_id))
-	if p_population_count > locally_available or p_population_count > p_entities.get_idle_population():
-		return {"success": false, "message": "出发区域闲置人口不足（需要 %d，当地可用 %d）" % [p_population_count, maxi(0, locally_available)]}
+	var local_assigned := 0
+	for building in p_entities.get_buildings_in_zone(p_origin_zone_id):
+		if not building.destroyed and (building.active or building.under_construction):
+			local_assigned += building.assigned_workers
+	if p_origin_zone_id == p_settlement_system.capital_zone_id:
+		local_assigned += p_entities.population.breeders
+	var locally_available := maxi(0, int(p_settlement_system.get_population(p_origin_zone_id)) - local_assigned)
+	locally_available = mini(locally_available, p_entities.get_idle_population())
+	if p_population_count > locally_available:
+		return {"success": false, "message": "出发区域闲置人口不足（需要 %d，当地可用 %d）" % [p_population_count, locally_available]}
 	var route_plan: Dictionary = plan_route(p_origin_zone_id, p_destination_zone_id, p_planet_zones, p_settlement_system, p_type == "exploration")
 	if not route_plan.get("success", false):
 		return route_plan
@@ -216,9 +223,8 @@ func _breadth_first_route(p_origin_zone_id: int, p_destination_zone_id: int, p_p
 			if came_from.has(neighbor):
 				continue
 			if p_settlement_system != null:
-				var level := int(p_settlement_system.get_zone_knowledge(neighbor).get("level", 0))
 				var allowed_destination := neighbor == p_destination_zone_id and p_allow_unknown_destination
-				if level < p_settlement_system.ZoneKnowledgeLevel.FAMILIAR and not allowed_destination:
+				if not p_settlement_system.is_zone_visible(neighbor) and not allowed_destination:
 					continue
 			came_from[neighbor] = current
 			if neighbor == p_destination_zone_id:

@@ -85,10 +85,7 @@ func _setup_zone_selector() -> void:
 		var summary: Dictionary = summary_value
 		if not bool(summary.get("known", false)):
 			continue
-		if GameState.settlement_system.capital_zone_id >= 0 and int(summary.get("knowledge_level", 0)) < GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR:
-			continue
 		var zone_id := int(summary.get("id", -1))
-		var zone = GameState.planet_zones.get_zone(zone_id)
 		%ObservedZoneOption.add_item("区域 #%02d · %s · %s" % [
 			zone_id, summary.get("terrain", "未知"), summary.get("knowledge_name", "未知"),
 		], zone_id)
@@ -136,6 +133,8 @@ func _refresh_panels() -> void:
 		navigation_button.disabled = awaiting_capital
 	if awaiting_capital:
 		_refresh_capital_selection()
+	else:
+		_refresh_zone_selector_if_needed()
 	%StarmapButton.disabled = not GameState.can_access_starmap()
 	if awaiting_capital:
 		%StarmapButton.disabled = true
@@ -181,15 +180,25 @@ func _refresh_panels() -> void:
 	%RegionObservationView.refresh_from_state(state)
 	var zone_knowledge: Dictionary = GameState.get_zone_knowledge(GameState.observed_zone_id)
 	var public_data: Dictionary = zone_knowledge.get("public_data", {})
-	var buildings: Array = GameState.entities.get_buildings_in_zone(GameState.observed_zone_id) if int(zone_knowledge.get("level", 0)) >= GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR else []
-	%RegionInfoLabel.text = "区域 #%02d · %s%s\n地形  %s\n纬度  %.0f°\n经度  %.0f°\n\n温度  %.1f℃\n辐射  %.2f\n光照  %.0f%%\n\n人口  %d\n建筑  %d 座\n未知  %s" % [
-		zone.zone_id, zone_knowledge.get("level_name", "未知"), "（资料过时）" if zone_knowledge.get("stale", false) else "",
-		public_data.get("terrain", "未知"), public_data.get("latitude", zone.lat_center), public_data.get("longitude", zone.lon_center),
-		public_data.get("temperature", 0.0), public_data.get("radiation", 0.0), float(public_data.get("light_intensity", 0.0)) * 100.0,
-		GameState.settlement_system.get_population(zone.zone_id), buildings.size(), "、".join(zone_knowledge.get("unknown_fields", [])),
-	]
+	var live_visible := bool(zone_knowledge.get("live_visible", false))
+	var buildings: Array = GameState.entities.get_buildings_in_zone(GameState.observed_zone_id) if live_visible else []
+	if live_visible:
+		%RegionInfoLabel.text = "区域 #%02d · %s\n地形  %s  ·  %.0f° / %.0f°\n温度  %.1f℃  ·  近地气温 %.1f℃\n辐射  %.2f  ·  光照 %.0f%%\n大气  %s\n人口  %d  ·  建筑 %d 座" % [
+			zone.zone_id, zone_knowledge.get("level_name", "未知"), public_data.get("terrain", "未知"),
+			public_data.get("latitude", zone.lat_center), public_data.get("longitude", zone.lon_center),
+			public_data.get("temperature", 0.0), public_data.get("air_temperature", public_data.get("temperature", 0.0)),
+			public_data.get("radiation", 0.0), float(public_data.get("light_intensity", 0.0)) * 100.0,
+			public_data.get("atmosphere_state", "未知"), GameState.settlement_system.get_population(zone.zone_id), buildings.size(),
+		]
+	elif zone_knowledge.get("terrain_known", false):
+		%RegionInfoLabel.text = "区域 #%02d · 实时未知\n地形记录  %s  ·  %.0f° / %.0f°\n\n当前无人覆盖。\n温度、辐射、光照与大气状态未知。" % [
+			zone.zone_id, public_data.get("terrain", "未知"), public_data.get("latitude", zone.lat_center),
+			public_data.get("longitude", zone.lon_center),
+		]
+	else:
+		%RegionInfoLabel.text = "区域 #%02d · 未知\n\n文明尚未观察或踏足此地。" % zone.zone_id
 	%RegionInfoLabel.tooltip_text = "这里只展示文明在当前认知等级下已知的区域信息。"
-	%RecordObservationButton.disabled = int(zone_knowledge.get("level", 0)) < GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR
+	%RecordObservationButton.disabled = not live_visible or GameState.settlement_system.get_population(zone.zone_id) <= 0
 	var sky_lines: Array[String] = []
 	for source_index in range(3):
 		var observation: Dictionary = %RegionObservationView.get_body_altitude_azimuth(source_index)
@@ -226,6 +235,16 @@ func _refresh_panels() -> void:
 	]
 	_update_alert(public_data)
 	_refresh_guidance()
+
+
+func _refresh_zone_selector_if_needed() -> void:
+	var visible_ids: Array[int] = []
+	for summary_value in GameState.get_public_zone_summaries():
+		var summary: Dictionary = summary_value
+		if bool(summary.get("known", false)):
+			visible_ids.append(int(summary.get("id", -1)))
+	if visible_ids != _selectable_zone_ids:
+		_setup_zone_selector()
 
 
 func _update_alert(p_public_zone: Dictionary) -> void:
@@ -407,7 +426,7 @@ func _apply_guidance_highlight(p_semantic_target: String) -> void:
 	var target: Control = null
 	if p_semantic_target == "time.controls":
 		target = %PauseButton
-	elif p_semantic_target in ["population.assignment", "region.construction", "exploration.plan"]:
+	elif p_semantic_target in ["population.assignment", "region.construction", "region.food_security", "exploration.plan"]:
 		target = %ZoneViewButton
 	elif p_semantic_target == "knowledge.teaching_plans":
 		target = %KnowledgePolicyButton

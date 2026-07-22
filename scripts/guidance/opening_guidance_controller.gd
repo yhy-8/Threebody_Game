@@ -2,18 +2,18 @@ class_name OpeningGuidanceController
 extends RefCounted
 ## Serializable, event-driven onboarding presentation; never mutates simulation domains.
 
-const GUIDANCE_VERSION := 2
+const GUIDANCE_VERSION := 3
 
 enum GuidanceMode { FULL, COMPACT, OFF }
-enum OpeningPhase { AWAITING_CAPITAL, SURVIVAL, KNOWLEDGE, CONSTRUCTION, OBSERVATION, EXPLORATION, COMPLETE, RULES_TIME, AUTONOMY }
+enum OpeningPhase { AWAITING_CAPITAL, RULES_TIME, FOOD_SECURITY, SURVIVAL, KNOWLEDGE, OBSERVATION, EXPLORATION, AUTONOMY, COMPLETE }
 
 const MODE_NAMES: Dictionary = {GuidanceMode.FULL: "完整引导", GuidanceMode.COMPACT: "精简提示", GuidanceMode.OFF: "关闭引导"}
 const TASKS: Array[Dictionary] = [
 	{"id": "opening:capital", "phase": OpeningPhase.AWAITING_CAPITAL, "event": "capital_confirmed", "target": "settlement.capital_selection", "skippable": false, "text": "比较候选区域的已知环境与未知项，确认文明发源地。"},
 	{"id": "opening:time_controls", "phase": OpeningPhase.RULES_TIME, "event": "time_control_used", "target": "time.controls", "skippable": true, "text": "对照规则倒计与文明当前观测，亲自暂停或继续一次模拟。"},
+	{"id": "opening:first_food_source", "phase": OpeningPhase.FOOD_SECURITY, "event": "food_production_started", "target": "region.food_security", "skippable": false, "text": "先搭建藻类采集与粗加工营地，分配人员，并让食物产出真正开始。"},
 	{"id": "opening:survival_allocation", "phase": OpeningPhase.SURVIVAL, "event": "population_assignment_changed", "target": "population.assignment", "skippable": true, "text": "完成一次真实人口或生存岗位调整。"},
-	{"id": "opening:first_teaching_plan", "phase": OpeningPhase.KNOWLEDGE, "event": "teaching_plan_progressed", "target": "knowledge.teaching_plans", "skippable": true, "text": "让一项教学计划真实运行；掌握者与学习者会占用生产劳动。"},
-	{"id": "opening:first_construction", "phase": OpeningPhase.CONSTRUCTION, "event": "construction_started", "target": "region.construction", "skippable": true, "text": "让一项合法建设进入施工，而不领取额外材料。"},
+	{"id": "opening:first_teaching_plan", "phase": OpeningPhase.KNOWLEDGE, "event": "teaching_plan_progressed", "target": "knowledge.teaching_plans", "skippable": true, "text": "选择传承目标和投入强度，让一项教学计划真实运行。"},
 	{"id": "opening:first_observation", "phase": OpeningPhase.OBSERVATION, "event": "observation_recorded", "target": "observation.record", "skippable": true, "text": "记录一次当地天空观察；看见天体不等于能预测灾害。"},
 	{"id": "opening:first_expedition", "phase": OpeningPhase.EXPLORATION, "event": "expedition_departed", "target": "exploration.plan", "skippable": true, "text": "配置真实队员和补给，让第一支勘探队出发，或暂缓此步。"},
 	{"id": "opening:autonomy", "phase": OpeningPhase.AUTONOMY, "event": "guidance_closed", "target": "guidance.handbook", "skippable": true, "text": "开局循环已经结束。记住顶部‘引导’可重新打开手册，然后进入自主发展。"}
@@ -142,10 +142,10 @@ func get_state() -> Dictionary:
 
 
 func load_state(p_data: Dictionary) -> bool:
-	if int(p_data.get("guidance_version", GUIDANCE_VERSION)) <= 0:
+	if int(p_data.get("guidance_version", -1)) != GUIDANCE_VERSION:
 		return false
 	mode = clampi(int(p_data.get("mode", GuidanceMode.FULL)), GuidanceMode.FULL, GuidanceMode.OFF)
-	phase = clampi(int(p_data.get("phase", OpeningPhase.AWAITING_CAPITAL)), OpeningPhase.AWAITING_CAPITAL, OpeningPhase.AUTONOMY)
+	phase = clampi(int(p_data.get("phase", OpeningPhase.AWAITING_CAPITAL)), OpeningPhase.AWAITING_CAPITAL, OpeningPhase.COMPLETE)
 	completed_task_ids.assign(p_data.get("completed_task_ids", []))
 	skipped_task_ids.assign(p_data.get("skipped_task_ids", []))
 	dismissed_hint_ids.assign(p_data.get("dismissed_hint_ids", []))

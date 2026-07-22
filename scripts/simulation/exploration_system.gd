@@ -60,7 +60,7 @@ func update_staleness(p_game_day: float, p_settlement_system) -> void:
 	for zone_key in p_settlement_system.zone_knowledge:
 		var zone_id := int(zone_key)
 		var record: Dictionary = p_settlement_system.zone_knowledge[zone_key]
-		if int(record.get("level", 0)) < p_settlement_system.ZoneKnowledgeLevel.SURVEYED:
+		if int(record.get("knowledge_level", 0)) < p_settlement_system.ZoneKnowledgeLevel.SURVEYED:
 			continue
 		if p_game_day - float(record.get("updated_game_day", 0.0)) >= 90.0:
 			p_settlement_system.mark_knowledge_stale(zone_id, "上次地面勘探已超过 90 天")

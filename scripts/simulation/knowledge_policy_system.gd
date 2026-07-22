@@ -113,6 +113,11 @@ func get_visible_policies() -> Array:
 			if not knowledge_system.has_capability(str(capability)):
 				visible = false
 				break
+		if visible and policy_id not in active_policy_ids:
+			for prerequisite_id in definition.get("prerequisite_policy_ids", []):
+				if prerequisite_id not in active_policy_ids:
+					visible = false
+					break
 		if visible:
 			var view := definition.duplicate(true)
 			view["id"] = policy_id

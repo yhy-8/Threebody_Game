@@ -56,11 +56,11 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 		"worker_capacity": 5, "per_worker_output": {"algae_fuel": 3.0},
 		"consumption": {}, "build_time": 2.0, "storage_capacity": 0,
 	},
-	"algae_food_synth": {
-		"name": "建造藻类食物合成器", "description": "将原生藻类合成为基础可食用维生物质。",
-		"resource_cost": {"iron": 25}, "tech_requirement": "", "requires_zone": true,
-		"worker_capacity": 5, "per_worker_output": {"food": 2.5},
-		"consumption": {}, "build_time": 2.0, "storage_capacity": 0,
+	"algae_foraging": {
+		"name": "搭建藻类采集与粗加工营地", "description": "依靠人工采集、清洗、晾晒与火烤处理当地藻类，不需要电力或工业设备。",
+		"resource_cost": {}, "tech_requirement": "", "requires_zone": true,
+		"worker_capacity": 16, "per_worker_output": {"food": 1.5},
+		"consumption": {}, "build_time": 0.75, "storage_capacity": 0,
 	},
 	"iron_mine": {
 		"name": "建造铁矿场", "description": "在指定区域开采铁矿石。",
@@ -280,6 +280,16 @@ func get_construction_decisions() -> Array:
 		var dec: Decision = d as Decision
 		if dec.category == "construction":
 			result.append(dec)
+	return result
+
+
+func get_visible_construction_decisions(p_tech_tree) -> Array:
+	var result: Array = []
+	for decision in get_construction_decisions():
+		if decision.tech_requirement.is_empty():
+			result.append(decision)
+		elif p_tech_tree != null and p_tech_tree.is_unlocked(decision.tech_requirement):
+			result.append(decision)
 	return result
 
 

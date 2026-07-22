@@ -55,7 +55,10 @@ func _test_construction_transaction() -> void:
 	var initial_iron: float = entities.get_resource("iron")
 	var initial_history: int = decisions.enacted_history.size()
 	var initial_id: int = decisions._next_building_id
-	for invalid_zone in [-1, 72, 999]:
+	var visible_building_ids: Array = decisions.get_visible_construction_decisions(tech).map(func(decision): return decision.id)
+	_expect("build_algae_foraging" in visible_building_ids, "开局没有公开原始藻类食物来源")
+	_expect("build_copper_mine" not in visible_building_ids and "build_farm" not in visible_building_ids, "建造列表泄露了未解锁建筑")
+	for invalid_zone in [-1, ZoneScript.TOTAL_ZONES, 999]:
 		var failed: Dictionary = decisions.execute_decision("build_algae_collector", entities, tech, zones, invalid_zone)
 		_expect(not failed.get("success", false), "非法区域建造成功：%d" % invalid_zone)
 		_expect(is_equal_approx(entities.get_resource("iron"), initial_iron), "非法区域建造扣除了资源")

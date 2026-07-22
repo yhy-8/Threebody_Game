@@ -255,6 +255,7 @@ offset_top = 54.0
 offset_right = -20.0
 offset_bottom = 292.0
 autowrap_mode = 2
+clip_text = true
 theme_override_colors/font_color = Color(0.76, 0.82, 0.96, 1)
 theme_override_font_sizes/font_size = 17
 
