@@ -294,16 +294,6 @@ func apply_knowledge_shock(p_shock: Dictionary) -> Dictionary:
 	return {"degraded_node_ids": degraded, "source_id": p_shock.get("source_id", "")}
 
 
-func migrate_legacy_technology(p_technology_state: Dictionary) -> void:
-	initialize_new_civilization()
-	for legacy_id in p_technology_state.get("unlocked", []):
-		for node_id in graph.nodes:
-			var legacy_ids: Array = graph.nodes[node_id].get("legacy_tech_ids", [])
-			if legacy_id in legacy_ids:
-				_migrate_apply_with_prerequisites(node_id)
-	_rebuild_capabilities()
-
-
 func developer_unlock_all() -> void:
 	for node_id in graph.nodes:
 		_set_peak_state(node_id, KnowledgeState.APPLIED, "developer:unlock_all")
@@ -438,18 +428,6 @@ func _try_restore(p_node_id: String) -> void:
 		runtime["degradation_factors"] = []
 		_set_state(p_node_id, int(runtime.get("previous_peak_state", KnowledgeState.MASTERED)))
 		_rebuild_capabilities()
-
-
-func _migrate_apply_with_prerequisites(p_node_id: String) -> void:
-	for prerequisite_id in graph.nodes[p_node_id].get("prerequisite_ids", []):
-		_migrate_apply_with_prerequisites(prerequisite_id)
-	var runtime: Dictionary = runtime_nodes[p_node_id]
-	runtime["clue_strength"] = 1.0
-	runtime["research_progress"] = 1.0
-	runtime["living_transmission"] = maxf(float(runtime["living_transmission"]), 0.55)
-	runtime["record_integrity"] = maxf(float(runtime["record_integrity"]), 0.45)
-	runtime["practice_level"] = maxf(float(runtime["practice_level"]), 0.55)
-	_set_peak_state(p_node_id, KnowledgeState.APPLIED, "migration:legacy")
 
 
 func _rebuild_capabilities() -> void:

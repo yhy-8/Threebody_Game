@@ -19,12 +19,9 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if %SaveBrowser.visible:
 		return
-	if event.is_action_pressed("ui_cancel"):
+	if event.is_action_pressed("ui_cancel") and %SaveOverlay.visible:
 		get_viewport().set_input_as_handled()
-		if %SaveOverlay.visible:
-			_close_save_panel()
-		else:
-			_on_resume_pressed()
+		_close_save_panel()
 
 
 func _on_resume_pressed() -> void:

@@ -28,16 +28,14 @@ class SaveInfo:
 	var universe_name: String
 	var save_time: String
 	var game_day: float
-	var is_legacy: bool
 
 	func _init(p_filepath: String, p_save_name: String, p_universe_name: String,
-			p_save_time: String, p_game_day: float, p_is_legacy: bool = false) -> void:
+			p_save_time: String, p_game_day: float) -> void:
 		filepath = p_filepath
 		save_name = p_save_name
 		universe_name = p_universe_name
 		save_time = p_save_time
 		game_day = p_game_day
-		is_legacy = p_is_legacy
 
 
 ## 返回 {universe_name: [SaveInfo, ...]}
@@ -128,17 +126,20 @@ func save_game(simulator, save_name: String, universe_name: String) -> bool:
 	while FileAccess.file_exists(path):
 		unique_suffix += "_1"
 		path = get_save_directory().path_join("%s__%s_%s__%s.sav" % [safe_universe, timestamp, unique_suffix, safe_save])
-	var state: Dictionary = source.to_dict()
-	var state_payload: String = JSON.stringify(state)
+	var encoded_state := JSON.stringify(source.to_dict())
+	var normalized_state = JSON.parse_string(encoded_state)
+	if not normalized_state is Dictionary:
+		return false
+	var state: Dictionary = normalized_state
+	if source.has_method("validate_serialized_state") and not source.validate_serialized_state(state):
+		return false
 	var data: Dictionary = {
 		"save_name": save_name,
 		"universe_name": universe_name,
 		"save_time": save_time,
 		"game_day": source.game_time,
-		"is_legacy": false,
 		"state": state,
-		"state_payload": state_payload,
-		"state_checksum": state_payload.sha256_text(),
+		"state_checksum": JSON.stringify(state).sha256_text(),
 	}
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
@@ -217,8 +218,7 @@ func _read_save_info(path: String) -> SaveInfo:
 		data.get("save_name", "未知存档"),
 		data.get("universe_name", "未知宇宙"),
 		data.get("save_time", ""),
-		float(data.get("game_day", 0.0)),
-		data.get("is_legacy", false)
+		float(data.get("game_day", 0.0))
 	)
 
 
@@ -226,15 +226,8 @@ func _is_valid_save_document(data) -> bool:
 	if not data is Dictionary or not data.get("state", null) is Dictionary:
 		return false
 	var state: Dictionary = data["state"]
-	if data.has("state_payload"):
-		var payload: String = str(data["state_payload"])
-		if payload.is_empty() or not data.has("state_checksum") or payload.sha256_text() != str(data["state_checksum"]):
-			return false
-		var payload_json := JSON.new()
-		if payload_json.parse(payload) != OK or not payload_json.get_data() is Dictionary:
-			return false
-		state = payload_json.get_data()
-		data["state"] = state
+	if JSON.stringify(state).sha256_text() != str(data.get("state_checksum", "")):
+		return false
 	if not GameState.validate_serialized_state(state):
 		return false
 	return true

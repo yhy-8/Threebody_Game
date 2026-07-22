@@ -1,5 +1,5 @@
 extends Node
-## 难度配置、稳定星历切换、存档迁移与文明预测信息边界回归。
+## 难度配置、稳定星历切换、存档版本拒绝与文明预测信息边界回归。
 
 const DifficultyConfigScript = preload("res://resources/configs/scenario_difficulty_config.gd")
 const DifficultyPresetScript = preload("res://resources/configs/difficulty_preset.gd")
@@ -15,7 +15,7 @@ var _transition_count := 0
 func _ready() -> void:
 	_test_difficulty_config()
 	_test_stable_transition_and_persistence()
-	_test_extreme_and_legacy()
+	_test_extreme_and_version_rejection()
 	_test_public_forecast_boundary()
 	if _failures == 0:
 		print("SCENARIO_PROGRESSION_TEST_OK")
@@ -90,7 +90,7 @@ func _test_stable_transition_and_persistence() -> void:
 	_expect(GameState.observation_network != null and GameState.satellite_network != null and GameState.hazard_forecast_service != null, "观测或预测状态没有随存档恢复")
 
 
-func _test_extreme_and_legacy() -> void:
+func _test_extreme_and_version_rejection() -> void:
 	var config = load("res://resources/configs/scenario_difficulties.tres")
 	var result: Dictionary = config.create_snapshot(&"extreme")
 	var snapshot: Dictionary = result["snapshot"]
@@ -103,16 +103,16 @@ func _test_extreme_and_legacy() -> void:
 	_expect(GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))).get("success", false), "重复极限场景首都确认失败")
 	_expect(_positions_close(first_positions, _positions()), "相同场景种子没有生成相同初态")
 
-	var legacy: Dictionary = GameState.to_dict()
-	var legacy_positions := _positions()
-	legacy.erase("scenario")
-	legacy.erase("observation_network")
-	legacy.erase("satellite_network")
-	legacy.erase("hazard_forecasts")
-	legacy["schema_version"] = 2
-	_expect(GameState.from_dict(legacy), "旧存档迁移失败")
-	_expect(GameState.scenario_manager.difficulty_id == "legacy" and GameState.scenario_manager.simulation_phase == "CHAOTIC_NBODY", "旧存档被错误补发稳定纪元")
-	_expect(_positions_close(legacy_positions, _positions()), "旧存档天体状态在迁移时被重置")
+	var current_state: Dictionary = GameState.to_dict()
+	var current_positions := _positions()
+	var obsolete := current_state.duplicate(true)
+	obsolete["schema_version"] = GameState.SAVE_SCHEMA_VERSION - 1
+	_expect(not GameState.from_dict(obsolete), "旧 schema 存档没有被拒绝")
+	_expect(_positions_close(current_positions, _positions()), "拒绝旧 schema 时覆盖了当前天体状态")
+	var incomplete := current_state.duplicate(true)
+	incomplete.erase("scenario")
+	_expect(not GameState.from_dict(incomplete), "缺少当前场景字段的存档没有被拒绝")
+	_expect(_positions_close(current_positions, _positions()), "拒绝不完整存档时覆盖了当前天体状态")
 
 
 func _test_public_forecast_boundary() -> void:

@@ -54,20 +54,6 @@ func initialize_new(p_zone_manager, p_population: int, p_scenario_rules: Diction
 	return true
 
 
-func initialize_legacy(p_zone_manager, p_population: int) -> void:
-	_initialize_empty_zones()
-	capital_zone_id = 0
-	familiar_zone_ids = [0]
-	region_population[0] = maxi(0, p_population)
-	var zone = p_zone_manager.get_zone(0)
-	zone_knowledge[0] = _knowledge_record(
-		ZoneKnowledgeLevel.FAMILIAR, _build_familiar_view(zone, 0.58, 0.0), 0.58, 0.0,
-		["地下矿藏精确储量", "长期气候规律"]
-	)
-	settlements[0] = _default_settlement(0, p_population, "迁移后的中心聚落")
-	candidate_views.clear()
-
-
 func confirm_capital(p_zone_id: int, p_zone_manager, p_population: int, p_game_day: float) -> Dictionary:
 	if capital_zone_id >= 0:
 		return {"success": false, "message": "文明发源地已经确认；迁都需要独立操作"}
@@ -126,6 +112,7 @@ func get_public_zone_summaries(p_zone_manager, p_entities) -> Array:
 			"temp": public_data.get("temperature", 0.0),
 			"rad": public_data.get("radiation", 0.0),
 			"light": public_data.get("light_intensity", 0.0),
+			"atmosphere_state": public_data.get("atmosphere_state", "未知"),
 			"terrain": public_data.get("terrain", "未知"),
 			"buildings": p_entities.get_buildings_in_zone(zone_id).size() if level >= ZoneKnowledgeLevel.FAMILIAR else 0,
 			"stale": record.get("stale", false),
@@ -147,8 +134,10 @@ func refresh_known_environment(p_zone_manager, p_game_day: float) -> void:
 		var zone = p_zone_manager.get_zone(int(zone_id))
 		var public_data: Dictionary = record.get("public_data", {})
 		public_data["temperature"] = zone.temperature
+		public_data["air_temperature"] = zone.air_temperature
 		public_data["radiation"] = zone.radiation
 		public_data["light_intensity"] = zone.light_intensity
+		public_data["atmosphere_state"] = zone.get_atmosphere_state()
 		public_data["updated_game_day"] = p_game_day
 		record["updated_game_day"] = p_game_day
 		record["stale"] = false
@@ -389,8 +378,10 @@ func _build_observed_view(p_zone, p_confidence: float, p_game_day: float) -> Dic
 		"longitude": p_zone.lon_center,
 		"terrain": p_zone.terrain_type,
 		"temperature": p_zone.temperature,
+		"air_temperature": p_zone.air_temperature,
 		"radiation": p_zone.radiation,
 		"light_intensity": p_zone.light_intensity,
+		"atmosphere_state": p_zone.get_atmosphere_state(),
 		"surface_signs": _surface_signs(p_zone.terrain_type, p_zone.light_intensity),
 		"confidence": p_confidence,
 		"updated_game_day": p_game_day,

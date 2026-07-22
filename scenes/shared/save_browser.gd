@@ -122,11 +122,10 @@ func _add_save_item(save) -> void:
 	button.button_group = _item_group
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	button.custom_minimum_size = Vector2(0.0, 82.0)
-	button.text = "  %s\n  第 %d 天  ·  %s%s" % [
+	button.text = "  %s\n  第 %d 天  ·  %s" % [
 		save.save_name,
 		int(save.game_day),
 		save.save_time,
-		"  ·  旧格式" if save.is_legacy else "",
 	]
 	button.tooltip_text = "%s / %s\n%s" % [save.universe_name, save.save_name, save.filepath]
 	button.add_theme_font_size_override("font_size", 17)

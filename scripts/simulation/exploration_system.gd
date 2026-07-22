@@ -29,8 +29,10 @@ func complete_survey(p_operation: Dictionary, p_planet_zones, p_settlement_syste
 		"longitude": zone.lon_center,
 		"terrain": zone.terrain_type,
 		"temperature": snappedf(zone.temperature, 0.5),
+		"air_temperature": snappedf(zone.air_temperature, 0.5),
 		"radiation": snappedf(zone.radiation, 0.05),
 		"light_intensity": snappedf(zone.light_intensity, 0.01),
+		"atmosphere_state": zone.get_atmosphere_state(),
 		"route_familiarity": "勘探队完成一次地面往返",
 		"resource_estimates": {
 			"iron": _estimate_interval(float(zone.resource_deposits.get("iron", 0.0)), 0.2),

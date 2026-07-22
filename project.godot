@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 EventBus="*res://scripts/autoload/event_bus.gd"
 SaveManager="*res://scripts/autoload/save_manager.gd"
 GameState="*res://scripts/autoload/game_state.gd"
+GlobalInputRouter="*res://scripts/autoload/global_input_router.gd"
 
 [display]
 

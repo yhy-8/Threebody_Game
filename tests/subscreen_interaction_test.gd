@@ -55,6 +55,7 @@ func _ready() -> void:
 	await _discard(zone_scene)
 	for entry in [
 		["res://scenes/tech_tree/tech_tree.tscn", "科技树"],
+		["res://scenes/knowledge/knowledge_policy.tscn", "知识政策"],
 		["res://scenes/decision/decision.tscn", "政策界面"],
 		["res://scenes/starmap/starmap_view.tscn", "星图"],
 	]:
@@ -67,22 +68,43 @@ func _ready() -> void:
 			_expect(policy_box.get_child(0).get_instance_id() == first_card_id, "政策界面周期刷新仍在重建卡片")
 		await _check_space_pause(scene, entry[1])
 		await _discard(scene)
+	_check_global_back_targets()
 
 	if _failures == 0:
 		print("SUBSCREEN_INTERACTION_TEST_OK")
 	get_tree().quit(_failures)
 
 
-func _check_space_pause(scene: Node, screen_name: String) -> void:
+func _check_space_pause(_scene: Node, screen_name: String) -> void:
 	GameState.paused = false
 	var event := InputEventKey.new()
 	event.keycode = KEY_SPACE
 	event.pressed = true
-	scene._input(event)
-	_expect(GameState.paused, "%s 中空格没有暂停模拟" % screen_name)
-	scene._input(event)
-	_expect(not GameState.paused, "%s 中再次按空格没有继续模拟" % screen_name)
+	Input.parse_input_event(event)
 	await get_tree().process_frame
+	_expect(GameState.paused, "%s 中空格没有暂停模拟" % screen_name)
+	var physical_event := InputEventKey.new()
+	physical_event.physical_keycode = KEY_SPACE
+	physical_event.pressed = true
+	Input.parse_input_event(physical_event)
+	await get_tree().process_frame
+	_expect(not GameState.paused, "%s 中再次按空格没有继续模拟" % screen_name)
+
+
+func _check_global_back_targets() -> void:
+	var expected := {
+		"main_screen": "res://scenes/game/game_menu.tscn",
+		"game_menu": "res://scenes/game/main_screen.tscn",
+		"zone_view": "res://scenes/game/main_screen.tscn",
+		"knowledge_tree": "res://scenes/game/main_screen.tscn",
+		"knowledge_policy": "res://scenes/tech_tree/tech_tree.tscn",
+		"decision": "res://scenes/game/main_screen.tscn",
+		"starmap": "res://scenes/game/main_screen.tscn",
+	}
+	for screen_name in expected:
+		_expect(GlobalInputRouter.resolve_back_target(screen_name) == expected[screen_name], "%s 的 Esc 返回目标错误" % screen_name)
+	GameState.settings_return_scene = "res://scenes/game/game_menu.tscn"
+	_expect(GlobalInputRouter.resolve_back_target("settings") == GameState.settings_return_scene, "设置界面 Esc 没有返回调用方")
 
 
 func _spawn(path: String) -> Node:

@@ -66,10 +66,9 @@ func _test_persistence_roundtrip() -> void:
 	var tampered_path: String = SaveManager.get_save_directory().path_join("__tampered_%d.sav" % Time.get_ticks_usec())
 	var tampered := FileAccess.open(tampered_path, FileAccess.WRITE)
 	if tampered != null:
-		var payload: String = JSON.stringify(GameState.to_dict())
 		tampered.store_string(JSON.stringify({
 			"save_name": "篡改档", "universe_name": "__篡改档", "save_time": "2026-01-01 00:00:00",
-			"game_day": 0.0, "state": GameState.to_dict(), "state_payload": payload, "state_checksum": "bad",
+			"game_day": 0.0, "state": GameState.to_dict(), "state_checksum": "bad",
 		}))
 		tampered.close()
 		_created_paths.append(tampered_path)

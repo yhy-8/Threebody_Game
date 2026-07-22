@@ -27,6 +27,13 @@ const TERRAIN_TYPES: Array[String] = ["平原", "高原", "山地", "峡谷", "�
 const LATITUDE_DIVISIONS: int = 6
 const LONGITUDE_DIVISIONS: int = 12
 const TOTAL_ZONES: int = LATITUDE_DIVISIONS * LONGITUDE_DIVISIONS
+const CLIMATE_MODEL_VERSION: int = 2
+const KELVIN_OFFSET: float = 273.15
+const REFERENCE_RADIATING_TEMPERATURE_K: float = 255.0
+const NITROGEN_CONDENSATION_K: float = 77.36
+const NITROGEN_TRIPLE_POINT_K: float = 63.15
+const OXYGEN_CONDENSATION_K: float = 90.19
+const OXYGEN_TRIPLE_POINT_K: float = 54.36
 
 
 class PlanetZone:
@@ -41,8 +48,11 @@ class PlanetZone:
 	var lon_right: float
 	var terrain_type: String
 	var temperature: float
+	var air_temperature: float
 	var radiation: float
 	var light_intensity: float
+	var nitrogen_gas_fraction: float
+	var oxygen_gas_fraction: float
 	var resource_deposits: Dictionary
 	var fertility: float
 	var algae_density: float
@@ -66,8 +76,11 @@ class PlanetZone:
 		lon_right = p_lon_right
 		terrain_type = p_terrain_type
 		temperature = -273.15
+		air_temperature = -273.15
 		radiation = 0.0
 		light_intensity = 0.0
+		nitrogen_gas_fraction = 1.0
+		oxygen_gas_fraction = 1.0
 		resource_deposits = p_resource_deposits
 		fertility = p_fertility
 		algae_density = p_algae_density
@@ -76,6 +89,19 @@ class PlanetZone:
 
 	func get_work_efficiency() -> float:
 		return _calc_work_efficiency(temperature)
+
+	func get_atmospheric_mass_fraction() -> float:
+		return clampf(0.01 + 0.78 * nitrogen_gas_fraction + 0.21 * oxygen_gas_fraction, 0.01, 1.0)
+
+	func get_atmosphere_state() -> String:
+		var mass_fraction := get_atmospheric_mass_fraction()
+		if mass_fraction >= 0.95:
+			return "稳定气态"
+		if mass_fraction >= 0.70:
+			return "局部液化"
+		if mass_fraction >= 0.25:
+			return "大气稀薄"
+		return "局部塌缩"
 
 	static func _calc_work_efficiency(temperature: float) -> float:
 		if temperature >= -10.0 and temperature <= 40.0:
@@ -91,20 +117,36 @@ class PlanetZone:
 var zones: Array = []
 var rotation_angle: float = 0.0
 var rotation_speed: float
-var thermal_inertia: float
-var diffusion_rate: float
 var dark_side_scatter: float
-var light_to_temp_scale: float = 500.0
-var base_temperature: float = -273.15
 var light_norm_divisor: float = 1.0
+var surface_response_rate: float
+var air_surface_exchange_rate: float
+var atmosphere_diffusion_rate: float
+var surface_diffusion_rate: float
+var atmosphere_redistribution: float
+var greenhouse_warming_c: float
+var condensation_rate: float
+var evaporation_rate: float
+var target_start_temperature: float
+var target_peak_light: float
+var reference_mean_insolation: float = 0.0
+var climate_calibration_offset_c: float = 0.0
 var _neighbor_cache: Dictionary = {}
 
 
 func _init(env_config: Dictionary = {}) -> void:
 	rotation_speed = env_config.get("rotation_speed", 15.0)
-	thermal_inertia = env_config.get("thermal_inertia", 0.08)
-	diffusion_rate = env_config.get("diffusion_rate", 0.15)
 	dark_side_scatter = env_config.get("dark_side_scatter", 0.05)
+	surface_response_rate = env_config.get("surface_response_rate", 0.08)
+	air_surface_exchange_rate = env_config.get("air_surface_exchange_rate", 0.24)
+	atmosphere_diffusion_rate = env_config.get("atmosphere_diffusion_rate", 0.38)
+	surface_diffusion_rate = env_config.get("surface_diffusion_rate", 0.035)
+	atmosphere_redistribution = env_config.get("atmosphere_redistribution", 0.82)
+	greenhouse_warming_c = env_config.get("greenhouse_warming_c", 33.0)
+	condensation_rate = env_config.get("condensation_rate", 0.35)
+	evaporation_rate = env_config.get("evaporation_rate", 0.12)
+	target_start_temperature = env_config.get("target_start_temp", 20.0)
+	target_peak_light = env_config.get("target_peak_light", 0.85)
 	_init_zones()
 	_build_neighbor_cache()
 
@@ -174,28 +216,70 @@ func _build_neighbor_cache() -> void:
 		_neighbor_cache[z.zone_id] = neighbors
 
 
-func _apply_diffusion(game_days_elapsed: float) -> void:
-	if diffusion_rate <= 0.0 or game_days_elapsed <= 0.0:
+func _apply_two_layer_diffusion(game_days_elapsed: float) -> void:
+	if game_days_elapsed <= 0.0:
 		return
 
-	var neighbor_avg: Array = []
+	var surface_neighbor_averages: Array[float] = []
+	var air_neighbor_averages: Array[float] = []
 	for zone in zones:
 		var z: PlanetZone = zone as PlanetZone
-		var nids: Array = _neighbor_cache.get(z.zone_id, [])
-		if nids.size() > 0:
-			var total_t: float = 0.0
-			for nid in nids:
-				var nid_int: int = nid
-				var nz: PlanetZone = zones[nid_int] as PlanetZone
-				total_t += nz.temperature
-			neighbor_avg.append(total_t / nids.size())
+		var neighbor_ids: Array = _neighbor_cache.get(z.zone_id, [])
+		var surface_total := 0.0
+		var air_total := 0.0
+		for neighbor_id in neighbor_ids:
+			var neighbor: PlanetZone = zones[int(neighbor_id)] as PlanetZone
+			surface_total += neighbor.temperature
+			air_total += neighbor.air_temperature
+		if neighbor_ids.is_empty():
+			surface_neighbor_averages.append(z.temperature)
+			air_neighbor_averages.append(z.air_temperature)
 		else:
-			neighbor_avg.append(z.temperature)
+			surface_neighbor_averages.append(surface_total / float(neighbor_ids.size()))
+			air_neighbor_averages.append(air_total / float(neighbor_ids.size()))
 
-	var factor: float = min(1.0, diffusion_rate * abs(game_days_elapsed))
-	for i in zones.size():
-		var zone: PlanetZone = zones[i] as PlanetZone
-		zone.temperature += (neighbor_avg[i] - zone.temperature) * factor
+	var surface_factor := 1.0 - exp(-surface_diffusion_rate * game_days_elapsed)
+	for zone_index in zones.size():
+		var z: PlanetZone = zones[zone_index] as PlanetZone
+		var transport_multiplier := sqrt(_get_atmospheric_mass_fraction(z))
+		var air_factor := 1.0 - exp(-atmosphere_diffusion_rate * transport_multiplier * game_days_elapsed)
+		z.temperature = lerpf(z.temperature, surface_neighbor_averages[zone_index], surface_factor)
+		z.air_temperature = lerpf(z.air_temperature, air_neighbor_averages[zone_index], air_factor)
+
+
+func _get_atmospheric_mass_fraction(zone: PlanetZone) -> float:
+	return zone.get_atmospheric_mass_fraction()
+
+
+func _get_atmosphere_state(zone: PlanetZone) -> String:
+	return zone.get_atmosphere_state()
+
+
+func _gas_fraction_target(air_temperature_c: float, triple_point_k: float, condensation_point_k: float) -> float:
+	var air_temperature_k := air_temperature_c + KELVIN_OFFSET
+	var normalized := clampf(
+		(air_temperature_k - triple_point_k) / maxf(0.01, condensation_point_k - triple_point_k),
+		0.0,
+		1.0,
+	)
+	return normalized * normalized * (3.0 - 2.0 * normalized)
+
+
+func _update_atmospheric_phase(zone: PlanetZone, game_days_elapsed: float) -> void:
+	var nitrogen_target := _gas_fraction_target(
+		zone.air_temperature, NITROGEN_TRIPLE_POINT_K, NITROGEN_CONDENSATION_K
+	)
+	var oxygen_target := _gas_fraction_target(
+		zone.air_temperature, OXYGEN_TRIPLE_POINT_K, OXYGEN_CONDENSATION_K
+	)
+	var nitrogen_rate := condensation_rate if nitrogen_target < zone.nitrogen_gas_fraction else evaporation_rate
+	var oxygen_rate := condensation_rate if oxygen_target < zone.oxygen_gas_fraction else evaporation_rate
+	zone.nitrogen_gas_fraction = move_toward(
+		zone.nitrogen_gas_fraction, nitrogen_target, nitrogen_rate * game_days_elapsed
+	)
+	zone.oxygen_gas_fraction = move_toward(
+		zone.oxygen_gas_fraction, oxygen_target, oxygen_rate * game_days_elapsed
+	)
 
 
 func _get_zone_normal(zone: PlanetZone) -> Vector3:
@@ -218,37 +302,22 @@ func update(dt: float, time_scale: float, stars_data: Array, planet_position: Ve
 
 func initialize_temperatures(stars_data: Array, planet_position: Vector3) -> void:
 	var active_stars: Array = _collect_active_stars(stars_data, planet_position)
-
+	var forcing := _calculate_forcing(active_stars)
+	_calibrate_reference_climate(forcing)
 	for zone in zones:
 		var z: PlanetZone = zone as PlanetZone
-		var normal: Vector3 = _get_zone_normal(z)
-		var target_light: float = 0.0
-		var target_radiation: float = 0.0
+		z.nitrogen_gas_fraction = 1.0
+		z.oxygen_gas_fraction = 1.0
+		var target := _get_radiative_target(
+			z, float(forcing["lights"][z.zone_id]), float(forcing["mean_light"])
+		)
+		z.temperature = target
+		z.air_temperature = target
 
-		for star in active_stars:
-			var s: Dictionary = star as Dictionary
-			var star_dir: Vector3 = s["direction"]
-			var cos_angle: float = normal.dot(star_dir)
-			var dist: float = s["distance"]
-			var mass: float = s["mass"]
-
-			var scatter_factor: float
-			scatter_factor = maxf(dark_side_scatter, cos_angle)
-
-			var intensity: float = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
-			target_light += intensity
-
-			var safe_dist: float = max(5.0, dist)
-			var rad: float = mass * 200.0 / pow(safe_dist, 2.5) * scatter_factor
-			target_radiation += rad
-
-		var terrain_mod: float = TERRAIN_THERMAL_MODIFIER.get(z.terrain_type, 0.0)
-		z.temperature = base_temperature + target_light * light_to_temp_scale + terrain_mod
-		z.radiation = target_radiation
-		z.light_intensity = min(1.0, target_light / light_norm_divisor)
-
-	for _i in 10:
-		_apply_diffusion(1.0)
+	# 在固定开局光照下做小步长气候旋转，避免用线性绝对零度初值制造假极端区。
+	for _spinup_step in 48:
+		_advance_climate(forcing, 0.25, false)
+	_recenter_initial_climate()
 
 
 func _collect_active_stars(stars_data: Array, planet_position: Vector3) -> Array:
@@ -271,11 +340,23 @@ func _collect_active_stars(stars_data: Array, planet_position: Vector3) -> Array
 
 
 func _compute_zone_environments(active_stars: Array, game_days_elapsed: float) -> void:
+	var forcing := _calculate_forcing(active_stars)
+	if reference_mean_insolation <= 1e-9:
+		_calibrate_reference_climate(forcing)
+	_advance_climate(forcing, absf(game_days_elapsed), true)
+
+
+func _calculate_forcing(active_stars: Array) -> Dictionary:
+	var lights: Array[float] = []
+	var radiations: Array[float] = []
+	var weighted_light := 0.0
+	var total_weight := 0.0
+	var peak_light := 0.0
 	for zone in zones:
 		var z: PlanetZone = zone as PlanetZone
 		var normal: Vector3 = _get_zone_normal(z)
-		var target_light: float = 0.0
-		var target_radiation: float = 0.0
+		var local_light := 0.0
+		var local_radiation := 0.0
 
 		for star in active_stars:
 			var s: Dictionary = star as Dictionary
@@ -284,25 +365,88 @@ func _compute_zone_environments(active_stars: Array, game_days_elapsed: float) -
 			var dist: float = s["distance"]
 			var mass: float = s["mass"]
 
-			var scatter_factor: float
-			scatter_factor = maxf(dark_side_scatter, cos_angle)
-
-			var intensity: float = mass * 10.0 / (dist * dist + 100.0) * scatter_factor
-			target_light += intensity
+			var scatter_factor := maxf(dark_side_scatter, cos_angle)
+			local_light += mass * 10.0 / (dist * dist + 100.0) * scatter_factor
 
 			var safe_dist: float = max(5.0, dist)
-			var rad: float = mass * 200.0 / pow(safe_dist, 2.5) * scatter_factor
-			target_radiation += rad
+			local_radiation += mass * 200.0 / pow(safe_dist, 2.5) * scatter_factor
 
-		var terrain_mod: float = TERRAIN_THERMAL_MODIFIER.get(z.terrain_type, 0.0)
-		var target_temp: float = base_temperature + target_light * light_to_temp_scale + terrain_mod
+		lights.append(local_light)
+		radiations.append(local_radiation)
+		weighted_light += local_light * z.area_weight
+		total_weight += z.area_weight
+		peak_light = maxf(peak_light, local_light)
 
-		var inertia_factor: float = min(1.0, thermal_inertia * abs(game_days_elapsed))
-		z.temperature += (target_temp - z.temperature) * inertia_factor
-		z.radiation = target_radiation
-		z.light_intensity = min(1.0, target_light / light_norm_divisor)
+	return {
+		"lights": lights,
+		"radiations": radiations,
+		"mean_light": weighted_light / total_weight if total_weight > 0.0 else 0.0,
+		"peak_light": peak_light,
+	}
 
-	_apply_diffusion(game_days_elapsed)
+
+func _calibrate_reference_climate(forcing: Dictionary) -> void:
+	reference_mean_insolation = maxf(1e-9, float(forcing.get("mean_light", 0.0)))
+	light_norm_divisor = maxf(1e-9, float(forcing.get("peak_light", 0.0)) / maxf(0.01, target_peak_light))
+	climate_calibration_offset_c = 0.0
+	var weighted_target := 0.0
+	var total_weight := 0.0
+	for zone in zones:
+		var z: PlanetZone = zone as PlanetZone
+		weighted_target += _get_radiative_target(
+			z, float(forcing["lights"][z.zone_id]), float(forcing["mean_light"])
+		) * z.area_weight
+		total_weight += z.area_weight
+	if total_weight > 0.0:
+		climate_calibration_offset_c = target_start_temperature - weighted_target / total_weight
+
+
+func _get_radiative_target(zone: PlanetZone, local_light: float, current_mean_light: float) -> float:
+	var atmosphere_mass := _get_atmospheric_mass_fraction(zone)
+	var transport_fraction := clampf(atmosphere_redistribution * sqrt(atmosphere_mass), 0.0, 0.95)
+	var global_flux_ratio := current_mean_light / maxf(reference_mean_insolation, 1e-9)
+	var local_flux_ratio := local_light / maxf(current_mean_light, 1e-9)
+	var effective_flux_ratio := global_flux_ratio * lerpf(local_flux_ratio, 1.0, transport_fraction)
+	var radiating_temperature_k := REFERENCE_RADIATING_TEMPERATURE_K * pow(maxf(0.005, effective_flux_ratio), 0.25)
+	var terrain_modifier: float = TERRAIN_THERMAL_MODIFIER.get(zone.terrain_type, 0.0)
+	return (
+		radiating_temperature_k - KELVIN_OFFSET
+		+ greenhouse_warming_c * atmosphere_mass
+		+ terrain_modifier
+		+ climate_calibration_offset_c
+	)
+
+
+func _advance_climate(forcing: Dictionary, game_days_elapsed: float, update_phase_state: bool) -> void:
+	var mean_light := float(forcing.get("mean_light", 0.0))
+	for zone in zones:
+		var z: PlanetZone = zone as PlanetZone
+		z.radiation = float(forcing["radiations"][z.zone_id])
+		z.light_intensity = minf(1.0, float(forcing["lights"][z.zone_id]) / light_norm_divisor)
+		if update_phase_state:
+			_update_atmospheric_phase(z, game_days_elapsed)
+
+	if game_days_elapsed <= 0.0:
+		return
+	var surface_factor := 1.0 - exp(-surface_response_rate * game_days_elapsed)
+	var exchange_factor := 1.0 - exp(-air_surface_exchange_rate * game_days_elapsed)
+	for zone in zones:
+		var z: PlanetZone = zone as PlanetZone
+		var target := _get_radiative_target(z, float(forcing["lights"][z.zone_id]), mean_light)
+		z.temperature = lerpf(z.temperature, target, surface_factor)
+		var temperature_gap := z.temperature - z.air_temperature
+		z.temperature -= temperature_gap * exchange_factor * 0.35
+		z.air_temperature += temperature_gap * exchange_factor * 0.65
+	_apply_two_layer_diffusion(game_days_elapsed)
+
+
+func _recenter_initial_climate() -> void:
+	var average := get_average_environment()
+	var offset := target_start_temperature - float(average.get("temperature", target_start_temperature))
+	for zone in zones:
+		var z: PlanetZone = zone as PlanetZone
+		z.temperature += offset
+		z.air_temperature += offset
 
 
 func get_zone(zone_id: int) -> PlanetZone:
@@ -335,27 +479,35 @@ func get_zone_at(lat: float, lon: float) -> PlanetZone:
 func get_average_environment() -> Dictionary:
 	var total_weight: float = 0.0
 	var avg_temp: float = 0.0
+	var avg_air_temp: float = 0.0
 	var avg_rad: float = 0.0
 	var avg_light: float = 0.0
+	var avg_atmosphere_mass: float = 0.0
 
 	for zone in zones:
 		var z: PlanetZone = zone as PlanetZone
 		var w: float = z.area_weight
 		avg_temp += z.temperature * w
+		avg_air_temp += z.air_temperature * w
 		avg_rad += z.radiation * w
 		avg_light += z.light_intensity * w
+		avg_atmosphere_mass += _get_atmospheric_mass_fraction(z) * w
 		total_weight += w
 
 	if total_weight > 0.0:
 		avg_temp /= total_weight
+		avg_air_temp /= total_weight
 		avg_rad /= total_weight
 		avg_light /= total_weight
+		avg_atmosphere_mass /= total_weight
 
 	var result: Dictionary
 	result = {
 		"temperature": avg_temp,
+		"air_temperature": avg_air_temp,
 		"radiation": avg_rad,
 		"light_intensity": avg_light,
+		"atmosphere_pressure_fraction": avg_atmosphere_mass,
 	}
 	return result
 
@@ -375,8 +527,13 @@ func get_zone_environment(zone_id: int) -> Dictionary:
 		"lon_right": zone.lon_right,
 		"terrain_type": zone.terrain_type,
 		"temperature": zone.temperature,
+		"air_temperature": zone.air_temperature,
 		"radiation": zone.radiation,
 		"light_intensity": zone.light_intensity,
+		"nitrogen_gas_fraction": zone.nitrogen_gas_fraction,
+		"oxygen_gas_fraction": zone.oxygen_gas_fraction,
+		"atmosphere_pressure_fraction": _get_atmospheric_mass_fraction(zone),
+		"atmosphere_state": _get_atmosphere_state(zone),
 		"building_count": zone.building_ids.size(),
 		"area_weight": zone.area_weight,
 		"resource_deposits": zone.resource_deposits.duplicate(),
@@ -405,8 +562,11 @@ func get_all_zones_summary() -> Array:
 			"lat_i": z.lat_index,
 			"lon_i": z.lon_index,
 			"temp": z.temperature,
+			"air_temp": z.air_temperature,
 			"rad": z.radiation,
 			"light": z.light_intensity,
+			"atmosphere": _get_atmospheric_mass_fraction(z),
+			"atmosphere_state": _get_atmosphere_state(z),
 			"terrain": z.terrain_type,
 			"buildings": z.building_ids.size(),
 			"fertility": z.fertility,
@@ -439,41 +599,53 @@ func get_state() -> Dictionary:
 			"terrain_type": z.terrain_type,
 			"building_ids": z.building_ids.duplicate(),
 			"temperature": z.temperature,
+			"air_temperature": z.air_temperature,
 			"radiation": z.radiation,
 			"light_intensity": z.light_intensity,
+			"nitrogen_gas_fraction": z.nitrogen_gas_fraction,
+			"oxygen_gas_fraction": z.oxygen_gas_fraction,
 			"resource_deposits": z.resource_deposits.duplicate(),
 			"fertility": z.fertility,
 			"algae_density": z.algae_density,
 		})
 	var result: Dictionary
 	result = {
+		"climate_model_version": CLIMATE_MODEL_VERSION,
 		"rotation_angle": rotation_angle,
-		"light_to_temp_scale": light_to_temp_scale,
 		"light_norm_divisor": light_norm_divisor,
 		"dark_side_scatter": dark_side_scatter,
+		"reference_mean_insolation": reference_mean_insolation,
+		"climate_calibration_offset_c": climate_calibration_offset_c,
 		"zones": zones_data,
 	}
 	return result
 
 
-func load_state(data: Dictionary) -> void:
-	rotation_angle = data.get("rotation_angle", 0.0)
-	light_to_temp_scale = data.get("light_to_temp_scale", light_to_temp_scale)
-	light_norm_divisor = data.get("light_norm_divisor", light_norm_divisor)
-	dark_side_scatter = data.get("dark_side_scatter", dark_side_scatter)
-	var zones_data: Array = data.get("zones", [])
+func load_state(data: Dictionary) -> bool:
+	if int(data.get("climate_model_version", -1)) != CLIMATE_MODEL_VERSION:
+		return false
+	rotation_angle = float(data["rotation_angle"])
+	light_norm_divisor = float(data["light_norm_divisor"])
+	dark_side_scatter = float(data["dark_side_scatter"])
+	reference_mean_insolation = float(data["reference_mean_insolation"])
+	climate_calibration_offset_c = float(data["climate_calibration_offset_c"])
+	var zones_data: Array = data["zones"]
+	if zones_data.size() != TOTAL_ZONES:
+		return false
 	for zd in zones_data:
 		var zd_dict: Dictionary = zd
-		var zone: PlanetZone = get_zone(zd_dict.get("zone_id", -1))
-		if zone != null:
-			zone.terrain_type = zd_dict.get("terrain_type", zone.terrain_type)
-			zone.building_ids = zd_dict.get("building_ids", [])
-			zone.temperature = zd_dict.get("temperature", -273.15)
-			zone.radiation = zd_dict.get("radiation", 0.0)
-			zone.light_intensity = zd_dict.get("light_intensity", 0.0)
-			if "resource_deposits" in zd_dict:
-				zone.resource_deposits = zd_dict["resource_deposits"]
-			if "fertility" in zd_dict:
-				zone.fertility = zd_dict["fertility"]
-			if "algae_density" in zd_dict:
-				zone.algae_density = zd_dict["algae_density"]
+		var zone: PlanetZone = get_zone(int(zd_dict["zone_id"]))
+		if zone == null:
+			return false
+		zone.terrain_type = str(zd_dict["terrain_type"])
+		zone.building_ids = (zd_dict["building_ids"] as Array).duplicate()
+		zone.temperature = float(zd_dict["temperature"])
+		zone.air_temperature = float(zd_dict["air_temperature"])
+		zone.radiation = float(zd_dict["radiation"])
+		zone.light_intensity = float(zd_dict["light_intensity"])
+		zone.nitrogen_gas_fraction = float(zd_dict["nitrogen_gas_fraction"])
+		zone.oxygen_gas_fraction = float(zd_dict["oxygen_gas_fraction"])
+		zone.resource_deposits = (zd_dict["resource_deposits"] as Dictionary).duplicate()
+		zone.fertility = float(zd_dict["fertility"])
+		zone.algae_density = float(zd_dict["algae_density"])
+	return true

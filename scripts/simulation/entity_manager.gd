@@ -187,9 +187,6 @@ class PopulationManager:
 		breeders = data.get("breeders", 0)
 		stored_population = data.get("stored_population", 0)
 		storage_capacity = data.get("storage_capacity", 0)
-		if "assignments" in data:
-			var assignments: Dictionary = data["assignments"]
-			breeders += assignments.get("breeding", 0)
 		automation_multiplier = data.get("automation_multiplier", 1.0)
 		_growth_accumulator = data.get("growth_accumulator", 0.0)
 		_starvation_loss_accumulator = maxf(0.0, float(data.get("starvation_loss_accumulator", 0.0)))

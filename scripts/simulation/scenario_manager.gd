@@ -10,8 +10,8 @@ const TRANSITION_STATE_VERSION := 1
 const ThreeBodyScript = preload("res://scripts/simulation/three_body.gd")
 const StableEphemerisScript = preload("res://scripts/simulation/stable_ephemeris_provider.gd")
 
-var difficulty_id: String = "legacy"
-var difficulty_display_name: String = "旧存档"
+var difficulty_id: String = ""
+var difficulty_display_name: String = ""
 var difficulty_config_version: int = 0
 var stable_years: float = 0.0
 var days_per_year: float = 365.0
@@ -54,21 +54,6 @@ func create_scenario(p_snapshot: Dictionary, p_seed: int, p_environment) -> bool
 	transition_event_triggered = false
 	_apply_snapshot(ephemeris.snapshot_at(0.0), false)
 	return true
-
-
-func create_legacy(p_environment) -> void:
-	environment = p_environment
-	difficulty_id = "legacy"
-	difficulty_display_name = "旧存档"
-	difficulty_config_version = 0
-	stable_years = 0.0
-	days_per_year = 365.0
-	chaos_start_day = 0.0
-	simulation_phase = CHAOTIC_NBODY
-	scenario_seed = 0
-	chaos_started = true
-	actual_transition_day = 0.0
-	transition_event_triggered = true
 
 
 func update(p_game_day: float, p_dt: float) -> void:

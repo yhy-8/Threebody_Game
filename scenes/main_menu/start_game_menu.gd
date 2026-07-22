@@ -229,8 +229,6 @@ func _default_guidance_index() -> int:
 	file.close()
 	if not parsed is Dictionary:
 		return 0
-	if not parsed.has("guidance_mode"):
-		return 0 if bool(parsed.get("enable_tutorial", true)) else 2
 	return {"full": 0, "compact": 1, "off": 2}.get(str(parsed.get("guidance_mode", "full")), 0)
 
 

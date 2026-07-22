@@ -20,6 +20,7 @@ func _ready() -> void:
 	%ModeLight.pressed.connect(_set_mode.bind("light"))
 	%ZoneMap.zone_selected.connect(_on_zone_selected)
 	%CloseBuildButton.pressed.connect(_close_build_menu)
+	EventBus.game_paused.connect(_on_global_pause_changed)
 	if GameState.game_started:
 		selected_zone_id = GameState.observed_zone_id
 		%ZoneMap.set_selected_zone(selected_zone_id)
@@ -34,21 +35,17 @@ func _process(p_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
-		GameState.toggle_pause()
-		_show_message("模拟已暂停" if GameState.paused else "模拟已继续", true)
+	if event.is_action_pressed("ui_cancel") and %BuildOverlay.visible:
 		get_viewport().set_input_as_handled()
-		return
-	if event.is_action_pressed("ui_cancel"):
-		get_viewport().set_input_as_handled()
-		if %BuildOverlay.visible:
-			_close_build_menu()
-		else:
-			_on_back_pressed()
+		_close_build_menu()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
 		var modes := ["temperature", "radiation", "light"]
 		_set_mode(modes[(modes.find(view_mode) + 1) % modes.size()])
 		get_viewport().set_input_as_handled()
+
+
+func _on_global_pause_changed(p_paused: bool) -> void:
+	_show_message("模拟已暂停" if p_paused else "模拟已继续", true)
 
 
 func _set_mode(p_mode: String) -> void:
@@ -495,7 +492,11 @@ func _update_detail_values() -> void:
 	_detail_labels["latitude"].text = "纬度中心：%.0f°" % public_data.get("latitude", zone.lat_center)
 	_detail_labels["longitude"].text = "经度中心：%.0f°" % public_data.get("longitude", zone.lon_center)
 	_detail_labels["terrain"].text = "地形：%s%s" % [public_data.get("terrain", "未知"), "（资料过时）" if knowledge.get("stale", false) else ""]
-	_detail_labels["zone_environment"].text = "温度 %.1f℃  |  辐射 %.2f  |  光照 %.0f%%" % [public_data.get("temperature", 0.0), public_data.get("radiation", 0.0), float(public_data.get("light_intensity", 0.0)) * 100.0]
+	_detail_labels["zone_environment"].text = "地表 %.1f℃  |  近地气温 %.1f℃  |  大气 %s\n辐射 %.2f  |  光照 %.0f%%" % [
+		public_data.get("temperature", 0.0), public_data.get("air_temperature", public_data.get("temperature", 0.0)),
+		public_data.get("atmosphere_state", "未知"), public_data.get("radiation", 0.0),
+		float(public_data.get("light_intensity", 0.0)) * 100.0,
+	]
 	_detail_labels["work_efficiency"].text = "当地人口：%d  |  认知可信度 %.0f%%" % [GameState.settlement_system.get_population(selected_zone_id), float(knowledge.get("confidence", 0.0)) * 100.0]
 	var estimates: Dictionary = public_data.get("resource_estimates", {})
 	_detail_labels["deposits"].text = "矿藏估计：铁 %s  铜 %s  稀有 %s" % [_estimate_label(estimates, "iron"), _estimate_label(estimates, "copper"), _estimate_label(estimates, "rare_mineral")]

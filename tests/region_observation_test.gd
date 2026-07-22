@@ -61,12 +61,14 @@ func _ready() -> void:
 	var saved := GameState.to_dict()
 	_expect(saved.get("observed_zone_id", -1) == 17, "观察区域未写入存档")
 	_expect(GameState.from_dict(saved) and GameState.observed_zone_id == 17, "观察区域存档往返失败")
-	var legacy := saved.duplicate(true)
-	legacy.erase("observed_zone_id")
-	for section in ["settlement", "regional_logistics", "region_operations", "exploration", "opening_guidance"]:
-		legacy.erase(section)
-	legacy["schema_version"] = 4
-	_expect(GameState.from_dict(legacy) and GameState.observed_zone_id == 0 and GameState.settlement_system.capital_zone_id == 0, "旧存档没有迁移到熟悉的区域 0")
+	var obsolete := saved.duplicate(true)
+	obsolete["schema_version"] = GameState.SAVE_SCHEMA_VERSION - 1
+	_expect(not GameState.from_dict(obsolete), "旧 schema 存档没有被拒绝")
+	_expect(GameState.observed_zone_id == 17, "拒绝旧 schema 时覆盖了当前观察区域")
+	var incomplete := saved.duplicate(true)
+	incomplete.erase("regional_logistics")
+	_expect(not GameState.from_dict(incomplete), "缺少当前区域字段的存档没有被拒绝")
+	_expect(GameState.observed_zone_id == 17, "拒绝不完整存档时覆盖了当前状态")
 
 	view.queue_free()
 	GameState.reset()

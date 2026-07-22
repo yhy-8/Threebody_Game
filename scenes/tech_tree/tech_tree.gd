@@ -16,6 +16,7 @@ func _ready() -> void:
 	%DomainFilter.item_selected.connect(_on_domain_selected)
 	%SearchInput.text_changed.connect(_on_search_changed)
 	%RiskViewButton.toggled.connect(_on_risk_toggled)
+	EventBus.game_paused.connect(_on_global_pause_changed)
 	_setup_filters()
 	_refresh_display()
 
@@ -29,15 +30,8 @@ func _process(p_delta: float) -> void:
 			_update_tooltip(_hovered_node_id)
 
 
-func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
-		GameState.toggle_pause()
-		_show_message("模拟已暂停" if GameState.paused else "模拟已继续", true)
-		get_viewport().set_input_as_handled()
-		return
-	if event.is_action_pressed("ui_cancel"):
-		get_viewport().set_input_as_handled()
-		_on_back_pressed()
+func _on_global_pause_changed(p_paused: bool) -> void:
+	_show_message("模拟已暂停" if p_paused else "模拟已继续", true)
 
 
 func _setup_filters() -> void:

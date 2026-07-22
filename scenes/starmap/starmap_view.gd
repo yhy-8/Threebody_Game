@@ -18,6 +18,7 @@ var _render_elapsed: float = 0.0
 
 func _ready() -> void:
 	EventBus.screen_changed.emit("starmap")
+	EventBus.game_paused.connect(_on_global_pause_changed)
 	%BackButton.pressed.connect(_on_back_pressed)
 	%PauseButton.pressed.connect(_on_pause_pressed)
 	%LockButton.pressed.connect(_on_lock_toggled)
@@ -227,16 +228,9 @@ func _handle_continuous_input(p_delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if GameState.game_over:
 		return
-	if event.is_action_pressed("ui_cancel"):
+	if event.is_action_pressed("ui_cancel") and %HelpPanel.visible:
 		get_viewport().set_input_as_handled()
-		if %HelpPanel.visible:
-			%HelpPanel.visible = false
-		else:
-			_on_back_pressed()
-		return
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
-		_on_pause_pressed()
-		get_viewport().set_input_as_handled()
+		%HelpPanel.visible = false
 		return
 	if %HelpPanel.visible:
 		return
@@ -295,6 +289,10 @@ func _dict_to_vector(value) -> Vector3:
 
 func _on_pause_pressed() -> void:
 	GameState.toggle_pause()
+	_update_pause_button()
+
+
+func _on_global_pause_changed(_p_paused: bool) -> void:
 	_update_pause_button()
 
 

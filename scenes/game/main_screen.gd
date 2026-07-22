@@ -101,16 +101,12 @@ func _input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	if event.is_action_pressed("ui_cancel"):
-		get_viewport().set_input_as_handled()
 		if %DeveloperOverlay.visible:
+			get_viewport().set_input_as_handled()
 			_close_developer_tools()
 		elif %GuidanceControlOverlay.visible:
+			get_viewport().set_input_as_handled()
 			_close_guidance_controls()
-		else:
-			_on_menu_pressed()
-	elif event.keycode == KEY_SPACE:
-		_on_pause_pressed()
-		get_viewport().set_input_as_handled()
 	elif event.keycode in [KEY_PLUS, KEY_EQUAL, KEY_KP_ADD]:
 		_change_speed(1)
 		get_viewport().set_input_as_handled()

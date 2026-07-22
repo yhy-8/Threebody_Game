@@ -7,7 +7,7 @@ signal developer_mode_changed(enabled: bool)
 signal scenario_phase_changed(new_phase: String, transition_day: float)
 
 const SETTINGS_PATH := "res://settings.json"
-const SAVE_SCHEMA_VERSION := 6
+const SAVE_SCHEMA_VERSION := 7
 const FIXED_SIMULATION_STEP_DAYS := 0.02
 const MAX_SIMULATION_SUBSTEPS := 512
 const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
@@ -198,11 +198,14 @@ func reset() -> void:
 func toggle_pause() -> void:
 	if settlement_system != null and settlement_system.capital_zone_id < 0:
 		paused = true
+		EventBus.game_paused.emit(paused)
+		state_updated.emit()
 		return
 	paused = not paused
 	if opening_guidance != null:
 		opening_guidance.handle_domain_event("time_control_used", {"source_id": "time-control:first"})
 	EventBus.game_paused.emit(paused)
+	state_updated.emit()
 
 
 func set_time_scale(p_scale: float) -> void:
@@ -296,7 +299,7 @@ func developer_unlock_all_technologies() -> bool:
 	tech_tree.research_progress.clear()
 	if knowledge_system != null:
 		knowledge_system.developer_unlock_all()
-		_sync_legacy_technology_from_knowledge()
+		_sync_technology_effects_from_knowledge()
 	if hazard_forecast_service != null:
 		hazard_forecast_service.invalidate()
 		_update_observation_systems(game_time, 0.0)
@@ -414,16 +417,13 @@ func _connect_scenario_signals() -> void:
 		scenario_manager.phase_changed.connect(_on_scenario_phase_changed)
 
 
-func _initialize_knowledge_systems(p_legacy_technology: Dictionary = {}) -> bool:
+func _initialize_knowledge_systems() -> bool:
 	knowledge_system = KnowledgeSystemScript.new()
 	if not knowledge_system.graph.is_valid():
 		push_error("知识图配置无效：%s" % "; ".join(knowledge_system.graph.validation_errors))
 		return false
-	if p_legacy_technology.is_empty():
-		if not knowledge_system.initialize_new_civilization():
-			return false
-	else:
-		knowledge_system.migrate_legacy_technology(p_legacy_technology)
+	if not knowledge_system.initialize_new_civilization():
+		return false
 	discovery_system = DiscoverySystemScript.new(knowledge_system)
 	research_project_system = ResearchProjectSystemScript.new(knowledge_system)
 	engineering_project_system = EngineeringProjectSystemScript.new(knowledge_system)
@@ -433,7 +433,7 @@ func _initialize_knowledge_systems(p_legacy_technology: Dictionary = {}) -> bool
 	knowledge_inheritance = KnowledgeInheritanceScript.new(knowledge_system)
 	if not knowledge_system.capability_changed.is_connected(_on_knowledge_capability_changed):
 		knowledge_system.capability_changed.connect(_on_knowledge_capability_changed)
-	_sync_legacy_technology_from_knowledge()
+	_sync_technology_effects_from_knowledge()
 	return true
 
 
@@ -460,10 +460,7 @@ func _resolve_guidance_mode(p_opening_options: Dictionary) -> int:
 	match str(value).to_lower():
 		"compact": return OpeningGuidanceControllerScript.GuidanceMode.COMPACT
 		"off": return OpeningGuidanceControllerScript.GuidanceMode.OFF
-		_:
-			if not _runtime_settings.has("guidance_mode") and not bool(_runtime_settings.get("enable_tutorial", true)):
-				return OpeningGuidanceControllerScript.GuidanceMode.OFF
-			return OpeningGuidanceControllerScript.GuidanceMode.FULL
+		_: return OpeningGuidanceControllerScript.GuidanceMode.FULL
 
 
 func confirm_capital(p_zone_id: int) -> Dictionary:
@@ -724,22 +721,22 @@ func record_local_observation(p_zone_id: int) -> Dictionary:
 
 
 func _on_knowledge_capability_changed(_p_capability_id: String, _p_level: int) -> void:
-	_sync_legacy_technology_from_knowledge()
+	_sync_technology_effects_from_knowledge()
 	if hazard_forecast_service != null:
 		hazard_forecast_service.invalidate()
 
 
-func _sync_legacy_technology_from_knowledge() -> void:
+func _sync_technology_effects_from_knowledge() -> void:
 	if knowledge_system == null or tech_tree == null:
 		return
 	for node_id in knowledge_system.graph.nodes:
 		if knowledge_system.get_node_state(node_id) != KnowledgeSystemScript.KnowledgeState.APPLIED:
 			continue
-		for legacy_id in knowledge_system.graph.nodes[node_id].get("legacy_tech_ids", []):
-			var legacy_node = tech_tree.get_node(str(legacy_id))
-			if legacy_node != null:
-				legacy_node.unlocked = true
-				legacy_node.researching = false
+		for effect_id in knowledge_system.graph.nodes[node_id].get("technology_effect_ids", []):
+			var effect_node = tech_tree.get_node(str(effect_id))
+			if effect_node != null:
+				effect_node.unlocked = true
+				effect_node.researching = false
 	entities.apply_technology_effects(tech_tree)
 
 
@@ -1081,44 +1078,6 @@ func _process_storage_damage(p_game_days_dt: float) -> void:
 func _init_zone_temperatures() -> void:
 	var stars_data: Array = environment.get_stars_data()
 	var planet_position: Vector3 = environment.get_planet_position()
-
-	planet_zones.light_to_temp_scale = 500.0
-	planet_zones.initialize_temperatures(stars_data, planet_position)
-
-	var total_weight: float = 0.0
-	var avg_raw_light: float = 0.0
-	var avg_terrain_mod: float = 0.0
-	var max_raw_light: float = 0.0
-
-	for z_item in planet_zones.zones:
-		var z = z_item
-		var w: float = z.area_weight
-		var terrain_mod: float = PlanetZoneManagerScript.TERRAIN_THERMAL_MODIFIER.get(z.terrain_type, 0.0)
-		var raw_light: float = (z.temperature - planet_zones.base_temperature - terrain_mod) / 500.0
-		avg_raw_light += raw_light * w
-		avg_terrain_mod += terrain_mod * w
-		total_weight += w
-		if raw_light > max_raw_light:
-			max_raw_light = raw_light
-
-	if total_weight > 0.0:
-		avg_raw_light /= total_weight
-		avg_terrain_mod /= total_weight
-
-	var target_avg_temp: float = _env_config.get("target_start_temp", 20.0)
-	if avg_raw_light > 1e-6:
-		planet_zones.light_to_temp_scale = (
-			(target_avg_temp - planet_zones.base_temperature - avg_terrain_mod) / avg_raw_light
-		)
-	else:
-		planet_zones.light_to_temp_scale = 500.0
-
-	var target_peak: float = _env_config.get("target_peak_light", 0.85)
-	if max_raw_light > 1e-6:
-		planet_zones.light_norm_divisor = max_raw_light / target_peak
-	else:
-		planet_zones.light_norm_divisor = 1.0
-
 	planet_zones.initialize_temperatures(stars_data, planet_position)
 
 
@@ -1246,8 +1205,23 @@ func to_dict() -> Dictionary:
 
 
 func validate_serialized_state(data) -> bool:
-	if not data is Dictionary:
+	if not data is Dictionary or int(data.get("schema_version", -1)) != SAVE_SCHEMA_VERSION:
 		return false
+	for required_section in [
+		"entities", "technology", "knowledge", "research_projects", "engineering_projects",
+		"discoveries", "inheritance", "knowledge_policy", "education", "preservation_plan",
+		"settlement", "regional_logistics", "region_operations", "exploration", "opening_guidance",
+		"decision", "planet_zones", "config", "research_output_rate", "scenario",
+		"observation_network", "satellite_network", "hazard_forecasts",
+	]:
+		if not data.get(required_section, null) is Dictionary:
+			return false
+	for required_value in [
+		"time", "paused", "game_over", "universe_name", "observed_zone_id", "time_scale",
+		"simulation_accumulator", "last_autosave_day", "rng_state",
+	]:
+		if not data.has(required_value):
+			return false
 	if not data.get("stars", []) is Array or data.get("stars", []).is_empty():
 		return false
 	for star_data in data.get("stars", []):
@@ -1259,8 +1233,21 @@ func validate_serialized_state(data) -> bool:
 			return false
 		if not star_data.get("color", null) is Dictionary:
 			return false
-		if star_data.has("trail") and not star_data["trail"] is Array:
+		if not star_data.get("trail", null) is Array:
 			return false
+		for star_value in ["mass", "radius", "is_planet"]:
+			if not star_data.has(star_value):
+				return false
+		for vector_data in [star_data["position"], star_data["velocity"]]:
+			for axis in ["x", "y", "z"]:
+				if not vector_data.has(axis):
+					return false
+		for channel in ["r", "g", "b", "a"]:
+			if not star_data["color"].has(channel):
+				return false
+		for point_data in star_data["trail"]:
+			if not point_data is Dictionary or not point_data.has("x") or not point_data.has("y") or not point_data.has("z"):
+				return false
 	var entities_data = data.get("entities", null)
 	if not entities_data is Dictionary:
 		return false
@@ -1283,42 +1270,53 @@ func validate_serialized_state(data) -> bool:
 	if not technology_data.get("research_points", {}) is Dictionary or not technology_data.get("research_progress", {}) is Dictionary:
 		return false
 	var zones_data = data.get("planet_zones", null)
-	if not zones_data is Dictionary or not zones_data.get("zones", null) is Array:
+	if (
+		not zones_data is Dictionary
+		or int(zones_data.get("climate_model_version", -1)) != PlanetZoneManagerScript.CLIMATE_MODEL_VERSION
+		or not zones_data.get("zones", null) is Array
+		or zones_data["zones"].size() != PlanetZoneManagerScript.TOTAL_ZONES
+	):
 		return false
+	for climate_value in [
+		"rotation_angle", "light_norm_divisor", "dark_side_scatter",
+		"reference_mean_insolation", "climate_calibration_offset_c",
+	]:
+		if not zones_data.has(climate_value):
+			return false
 	for zone_data in zones_data.get("zones", []):
 		if not zone_data is Dictionary:
 			return false
-		if not zone_data.get("building_ids", []) is Array or not zone_data.get("resource_deposits", {}) is Dictionary:
+		if (
+			not zone_data.get("building_ids", null) is Array
+			or not zone_data.get("resource_deposits", null) is Dictionary
+			or not zone_data.has("air_temperature")
+			or not zone_data.has("nitrogen_gas_fraction")
+			or not zone_data.has("oxygen_gas_fraction")
+		):
 			return false
-	var decision_data = data.get("decision", data.get("policy", null))
+		for zone_value in [
+			"zone_id", "terrain_type", "temperature", "radiation", "light_intensity",
+			"fertility", "algae_density",
+		]:
+			if not zone_data.has(zone_value):
+				return false
+	var decision_data = data.get("decision", null)
 	if not decision_data is Dictionary:
 		return false
-	if data.has("decision") and (
-			not decision_data.get("active_policies", []) is Array
-			or not decision_data.get("cooldowns", {}) is Dictionary
-			or not decision_data.get("enacted_history", []) is Array
+	if (
+		not decision_data.get("active_policies", []) is Array
+		or not decision_data.get("cooldowns", {}) is Dictionary
+		or not decision_data.get("enacted_history", []) is Array
 	):
 		return false
-	if data.has("config"):
-		if not data["config"] is Dictionary:
+	for section in ["simulation", "environment", "research", "storage_damage", "damage_rates", "dehydrate", "population"]:
+		if not data["config"].get(section, null) is Dictionary:
 			return false
-		for section in ["simulation", "environment", "research", "storage_damage", "damage_rates", "dehydrate", "population", "technology", "buildings"]:
-			if data["config"].has(section) and not data["config"][section] is Dictionary:
-				return false
-	if data.has("scenario"):
-		if not data["scenario"] is Dictionary or not ScenarioManagerScript.new().validate_state(data["scenario"]):
-			return false
-	for optional_section in [
-		"observation_network", "satellite_network", "hazard_forecasts",
-		"knowledge", "research_projects", "engineering_projects", "discoveries",
-		"inheritance", "knowledge_policy", "education", "preservation_plan",
-		"settlement", "regional_logistics", "region_operations", "exploration", "opening_guidance",
-	]:
-		if data.has(optional_section) and not data[optional_section] is Dictionary:
-			return false
-	if data.has("knowledge") and not data["knowledge"].get("nodes", null) is Dictionary:
+	if not ScenarioManagerScript.new().validate_state(data["scenario"]):
 		return false
-	if data.has("observed_zone_id") and (
+	if not data["knowledge"].get("nodes", null) is Dictionary:
+		return false
+	if (
 		(not data["observed_zone_id"] is int and not data["observed_zone_id"] is float)
 		or not is_equal_approx(float(data["observed_zone_id"]), floor(float(data["observed_zone_id"])))
 		or int(data["observed_zone_id"]) < 0
@@ -1331,46 +1329,42 @@ func validate_serialized_state(data) -> bool:
 
 
 func _validate_regional_serialized_sections(p_data: Dictionary) -> bool:
-	if p_data.has("settlement"):
-		var settlement_data: Dictionary = p_data["settlement"]
-		if not settlement_data.get("zone_knowledge", null) is Dictionary:
-			return false
-		if not settlement_data.get("region_population", null) is Dictionary or not settlement_data.get("settlements", null) is Dictionary:
-			return false
-		if not settlement_data.get("candidate_views", []) is Array or not settlement_data.get("familiar_zone_ids", []) is Array:
-			return false
-		var capital_value = settlement_data.get("capital_zone_id", -1)
-		if (not capital_value is int and not capital_value is float) or not is_equal_approx(float(capital_value), floor(float(capital_value))):
-			return false
-		if int(capital_value) < -1 or int(capital_value) >= PlanetZoneManagerScript.TOTAL_ZONES:
-			return false
-		for record in settlement_data["zone_knowledge"].values():
-			if not record is Dictionary or not record.get("public_data", null) is Dictionary:
-				return false
-	if p_data.has("regional_logistics"):
-		var logistics_data: Dictionary = p_data["regional_logistics"]
-		for key in ["local_inventories", "operation_reserves", "network_connections"]:
-			if not logistics_data.get(key, null) is Dictionary:
-				return false
-		for inventory in logistics_data["local_inventories"].values():
-			if not inventory is Dictionary:
-				return false
-	if p_data.has("region_operations"):
-		var operation_data: Dictionary = p_data["region_operations"]
-		if not operation_data.get("operations", null) is Dictionary:
-			return false
-		for operation in operation_data["operations"].values():
-			if not operation is Dictionary or not operation.get("route", null) is Array or not operation.get("cargo", null) is Dictionary:
-				return false
-	if p_data.has("exploration") and not p_data["exploration"].get("survey_log", null) is Array:
+	var settlement_data: Dictionary = p_data["settlement"]
+	if not settlement_data.get("zone_knowledge", null) is Dictionary:
 		return false
-	if p_data.has("opening_guidance"):
-		var guidance_data: Dictionary = p_data["opening_guidance"]
-		for key in ["completed_task_ids", "skipped_task_ids", "dismissed_hint_ids", "handbook_seen_concept_ids", "processed_source_ids"]:
-			if not guidance_data.get(key, null) is Array:
-				return false
-		if not guidance_data.get("deferred_task_reasons", null) is Dictionary:
+	if not settlement_data.get("region_population", null) is Dictionary or not settlement_data.get("settlements", null) is Dictionary:
+		return false
+	if not settlement_data.get("candidate_views", []) is Array or not settlement_data.get("familiar_zone_ids", []) is Array:
+		return false
+	var capital_value = settlement_data.get("capital_zone_id", -1)
+	if (not capital_value is int and not capital_value is float) or not is_equal_approx(float(capital_value), floor(float(capital_value))):
+		return false
+	if int(capital_value) < -1 or int(capital_value) >= PlanetZoneManagerScript.TOTAL_ZONES:
+		return false
+	for record in settlement_data["zone_knowledge"].values():
+		if not record is Dictionary or not record.get("public_data", null) is Dictionary:
 			return false
+	var logistics_data: Dictionary = p_data["regional_logistics"]
+	for key in ["local_inventories", "operation_reserves", "network_connections"]:
+		if not logistics_data.get(key, null) is Dictionary:
+			return false
+	for inventory in logistics_data["local_inventories"].values():
+		if not inventory is Dictionary:
+			return false
+	var operation_data: Dictionary = p_data["region_operations"]
+	if not operation_data.get("operations", null) is Dictionary:
+		return false
+	for operation in operation_data["operations"].values():
+		if not operation is Dictionary or not operation.get("route", null) is Array or not operation.get("cargo", null) is Dictionary:
+			return false
+	if not p_data["exploration"].get("survey_log", null) is Array:
+		return false
+	var guidance_data: Dictionary = p_data["opening_guidance"]
+	for key in ["completed_task_ids", "skipped_task_ids", "dismissed_hint_ids", "handbook_seen_concept_ids", "processed_source_ids"]:
+		if not guidance_data.get(key, null) is Array:
+			return false
+	if not guidance_data.get("deferred_task_reasons", null) is Dictionary:
+		return false
 	return true
 
 
@@ -1378,21 +1372,20 @@ func from_dict(data: Dictionary) -> bool:
 	if not validate_serialized_state(data):
 		return false
 	reset()
-	game_time = data.get("time", 0.0)
-	paused = data.get("paused", false)
-	game_over = data.get("game_over", false)
-	universe_name = data.get("universe_name", "未命名宇宙")
-	observed_zone_id = int(data.get("observed_zone_id", 0))
+	game_time = float(data["time"])
+	paused = bool(data["paused"])
+	game_over = bool(data["game_over"])
+	universe_name = str(data["universe_name"])
+	observed_zone_id = int(data["observed_zone_id"])
 	game_started = true
-	time_scale = clampf(float(data.get("time_scale", 1.0)), 0.1, 10.0)
-	_simulation_accumulator = clampf(float(data.get("simulation_accumulator", 0.0)), 0.0, FIXED_SIMULATION_STEP_DAYS)
-	last_autosave_day = int(data.get("last_autosave_day", -1))
-	var saved_rates: Dictionary = data.get("research_output_rate", {})
+	time_scale = clampf(float(data["time_scale"]), 0.1, 10.0)
+	_simulation_accumulator = clampf(float(data["simulation_accumulator"]), 0.0, FIXED_SIMULATION_STEP_DAYS)
+	last_autosave_day = int(data["last_autosave_day"])
+	var saved_rates: Dictionary = data["research_output_rate"]
 	for research_type in research_output_rate:
 		research_output_rate[research_type] = maxf(0.0, float(saved_rates.get(research_type, 0.0)))
 
-	var saved_config = data.get("config", {})
-	config = saved_config.duplicate(true) if saved_config is Dictionary and not saved_config.is_empty() else _default_config()
+	config = (data["config"] as Dictionary).duplicate(true)
 	_env_config = config.get("environment", {})
 	_research_config = config.get("research", {})
 	_storage_damage_config = config.get("storage_damage", {})
@@ -1404,117 +1397,87 @@ func from_dict(data: Dictionary) -> bool:
 	environment = ThreeBodySimScript.new()
 	environment.stars.clear()
 
-	var stars_data: Array = data.get("stars", [])
-	if not stars_data.is_empty():
-		for sd in stars_data:
-			var s: Dictionary = sd
-			var pos: Dictionary = s["position"]
-			var vel: Dictionary = s["velocity"]
-			var col: Dictionary = s["color"]
-			# Access inner class via the preloaded script
-			var StarDataClass = ThreeBodySimScript.StarData
-			var star = StarDataClass.new(
-				s.get("mass", 1000.0),
-				Vector3(pos.get("x", 0.0), pos.get("y", 0.0), pos.get("z", 0.0)),
-				Vector3(vel.get("x", 0.0), vel.get("y", 0.0), vel.get("z", 0.0)),
-				Color(col.get("r", 1.0), col.get("g", 1.0), col.get("b", 1.0), col.get("a", 1.0)),
-				s.get("radius", 20.0),
-				s.get("is_planet", false),
-			)
-			for point_data in s.get("trail", []):
-				if point_data is Dictionary:
-					star.trail.append(Vector3(point_data.get("x", 0.0), point_data.get("y", 0.0), point_data.get("z", 0.0)))
-			environment.stars.append(star)
+	var stars_data: Array = data["stars"]
+	for sd in stars_data:
+		var s: Dictionary = sd
+		var pos: Dictionary = s["position"]
+		var vel: Dictionary = s["velocity"]
+		var col: Dictionary = s["color"]
+		var StarDataClass = ThreeBodySimScript.StarData
+		var star = StarDataClass.new(
+			float(s["mass"]),
+			Vector3(float(pos["x"]), float(pos["y"]), float(pos["z"])),
+			Vector3(float(vel["x"]), float(vel["y"]), float(vel["z"])),
+			Color(float(col["r"]), float(col["g"]), float(col["b"]), float(col["a"])),
+			float(s["radius"]),
+			bool(s["is_planet"]),
+		)
+		for point_data in s["trail"]:
+			var point: Dictionary = point_data
+			star.trail.append(Vector3(float(point["x"]), float(point["y"]), float(point["z"])))
+		environment.stars.append(star)
 
 	environment.time_scale = 1.0
-	if data.has("rng_state"):
-		environment.rng.state = int(str(data["rng_state"]))
+	environment.rng.state = int(str(data["rng_state"]))
 
 	scenario_manager = ScenarioManagerScript.new()
-	if data.has("scenario"):
-		if not scenario_manager.load_state(data["scenario"], environment, game_time):
-			return false
-	else:
-		scenario_manager.create_legacy(environment)
+	if not scenario_manager.load_state(data["scenario"], environment, game_time):
+		return false
 	_connect_scenario_signals()
 
 	entities = EntityManagerScript.new(config)
-	if data.has("entities"):
-		entities.load_state(data["entities"])
+	entities.load_state(data["entities"])
 
 	tech_tree = TechTreeScript.new(config)
-	if data.has("technology"):
-		tech_tree.load_state(data["technology"])
+	tech_tree.load_state(data["technology"])
 	_connect_tech_tree_signals()
-	if data.has("knowledge"):
-		if not _initialize_knowledge_systems() or not knowledge_system.load_state(data["knowledge"]):
-			return false
-	else:
-		if not _initialize_knowledge_systems(data.get("technology", {})):
-			return false
-	if data.has("research_projects") and not research_project_system.load_state(data["research_projects"]):
+	if not _initialize_knowledge_systems() or not knowledge_system.load_state(data["knowledge"]):
 		return false
-	if data.has("engineering_projects") and not engineering_project_system.load_state(data["engineering_projects"]):
+	if not research_project_system.load_state(data["research_projects"]):
 		return false
-	if data.has("discoveries") and not discovery_system.load_state(data["discoveries"]):
+	if not engineering_project_system.load_state(data["engineering_projects"]):
 		return false
-	if data.has("inheritance") and not knowledge_inheritance.load_state(data["inheritance"]):
+	if not discovery_system.load_state(data["discoveries"]):
 		return false
-	if data.has("knowledge_policy") and not knowledge_policy_system.load_state(data["knowledge_policy"]):
+	if not knowledge_inheritance.load_state(data["inheritance"]):
 		return false
-	if data.has("education") and not education_system.load_state(data["education"]):
+	if not knowledge_policy_system.load_state(data["knowledge_policy"]):
 		return false
-	if data.has("preservation_plan") and not preservation_allocator.load_state(data["preservation_plan"]):
+	if not education_system.load_state(data["education"]):
 		return false
-	_sync_legacy_technology_from_knowledge()
+	if not preservation_allocator.load_state(data["preservation_plan"]):
+		return false
+	_sync_technology_effects_from_knowledge()
 
 	decision_manager = DecisionManagerScript.new(config)
-	if data.has("decision"):
-		decision_manager.load_state(data["decision"])
-	elif data.has("policy"):
-		var policy_data: Dictionary = data["policy"]
-		decision_manager.load_state({"current_state": policy_data.get("current_state", "normal")})
+	decision_manager.load_state(data["decision"])
 
 	planet_zones = PlanetZoneManagerScript.new(_env_config)
-	if data.has("planet_zones"):
-		planet_zones.load_state(data["planet_zones"])
+	if not planet_zones.load_state(data["planet_zones"]):
+		return false
 	settlement_system = SettlementSystemScript.new()
-	if data.has("settlement"):
-		if not settlement_system.load_state(data["settlement"]):
-			return false
-	else:
-		settlement_system.initialize_legacy(planet_zones, entities.population.total)
+	if not settlement_system.load_state(data["settlement"]):
+		return false
 	regional_logistics = RegionalLogisticsSystemScript.new()
-	if data.has("regional_logistics"):
-		if not regional_logistics.load_state(data["regional_logistics"]):
-			return false
-	elif settlement_system.capital_zone_id >= 0:
-		regional_logistics.initialize_at_capital(settlement_system.capital_zone_id, entities)
+	if not regional_logistics.load_state(data["regional_logistics"]):
+		return false
 	region_movement_system = RegionMovementSystemScript.new()
-	if data.has("region_operations") and not region_movement_system.load_state(data["region_operations"]):
+	if not region_movement_system.load_state(data["region_operations"]):
 		return false
 	exploration_system = ExplorationSystemScript.new()
-	if data.has("exploration") and not exploration_system.load_state(data["exploration"]):
+	if not exploration_system.load_state(data["exploration"]):
 		return false
 	opening_guidance = OpeningGuidanceControllerScript.new()
-	if data.has("opening_guidance"):
-		if not opening_guidance.initialize(int(data["opening_guidance"].get("mode", OpeningGuidanceControllerScript.GuidanceMode.FULL)), data["opening_guidance"]):
-			return false
-	else:
-		opening_guidance.initialize(OpeningGuidanceControllerScript.GuidanceMode.OFF)
-		if settlement_system.capital_zone_id >= 0:
-			opening_guidance.handle_domain_event("capital_confirmed", {"source_id": "legacy:capital"})
+	if not opening_guidance.initialize(int(data["opening_guidance"]["mode"]), data["opening_guidance"]):
+		return false
 	if settlement_system.capital_zone_id < 0:
 		paused = true
 	observation_network = ObservationNetworkScript.new()
-	if data.has("observation_network"):
-		observation_network.load_state(data["observation_network"])
+	observation_network.load_state(data["observation_network"])
 	satellite_network = SatelliteNetworkScript.new()
-	if data.has("satellite_network"):
-		satellite_network.load_state(data["satellite_network"])
+	satellite_network.load_state(data["satellite_network"])
 	hazard_forecast_service = HazardForecastServiceScript.new()
-	if data.has("hazard_forecasts"):
-		hazard_forecast_service.load_state(data["hazard_forecasts"])
+	hazard_forecast_service.load_state(data["hazard_forecasts"])
 	_refresh_external_workforce_reservation()
 	entities.apply_technology_effects(tech_tree)
 	entities.enforce_population_invariants()
@@ -1526,9 +1489,12 @@ func _default_config() -> Dictionary:
 	result = {
 		"simulation": {"time_scale_min": 0.1, "time_scale_max": 10.0},
 		"environment": {
-			"rotation_speed": 15.0, "thermal_inertia": 0.08,
-			"diffusion_rate": 0.15, "dark_side_scatter": 0.05,
+			"rotation_speed": 15.0, "dark_side_scatter": 0.05,
 			"target_start_temp": 20.0, "target_peak_light": 0.85,
+			"surface_response_rate": 0.08, "air_surface_exchange_rate": 0.24,
+			"atmosphere_diffusion_rate": 0.38, "surface_diffusion_rate": 0.035,
+			"atmosphere_redistribution": 0.82, "greenhouse_warming_c": 33.0,
+			"condensation_rate": 0.35, "evaporation_rate": 0.12,
 		},
 		"research": {
 			"basic_population_divisor": 500.0, "institute_output_per_day": 1.0,

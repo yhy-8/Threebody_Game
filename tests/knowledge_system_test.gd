@@ -1,5 +1,5 @@
 extends Node
-## Knowledge lifecycle, discovery, projects, inheritance, policies, preservation, and migration.
+## Knowledge lifecycle, discovery, projects, inheritance, policies, preservation, and persistence.
 
 const KnowledgeSystemScript = preload("res://scripts/simulation/knowledge_system.gd")
 
@@ -15,7 +15,6 @@ func _ready() -> void:
 	_test_discovery_research_and_engineering()
 	_test_policy_education_and_preservation()
 	_test_degradation_and_restore()
-	_test_legacy_migration()
 	_test_persistence()
 	GameState.reset()
 	if _failures == 0:
@@ -116,14 +115,6 @@ func _test_degradation_and_restore() -> void:
 	_expect(not GameState.knowledge_system.has_capability("symbolic_recording"), "退化知识仍提供工程能力")
 	GameState.knowledge_system.apply_teaching_result({"node_id": "symbolic_record", "living_gain": 0.3, "practice_gain": 0.3})
 	_expect(GameState.knowledge_system.get_node_state("symbolic_record") == KnowledgeSystemScript.KnowledgeState.APPLIED, "教师与实践共同恢复后未回到原峰值状态")
-
-
-func _test_legacy_migration() -> void:
-	var migrated = KnowledgeSystemScript.new()
-	migrated.migrate_legacy_technology({"unlocked": ["telescope", "computer"]})
-	_expect(migrated.get_node_state("optical_observation") == KnowledgeSystemScript.KnowledgeState.APPLIED, "旧望远镜科技没有迁移到光学观测")
-	_expect(migrated.get_node_state("measurement") == KnowledgeSystemScript.KnowledgeState.APPLIED, "旧科技迁移没有补齐最低基础知识链")
-	_expect(migrated.has_capability("telescope") and migrated.has_capability("computer"), "旧存档迁移丢失已有设施能力")
 
 
 func _test_persistence() -> void:

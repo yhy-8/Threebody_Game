@@ -46,12 +46,6 @@ func _ready() -> void:
 	_switch_tab(Tab.GAME)
 
 
-func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel"):
-		get_viewport().set_input_as_handled()
-		_on_back()
-
-
 func _switch_tab(tab: Tab) -> void:
 	current_tab = tab
 	for child in tab_content.get_children():
@@ -177,7 +171,7 @@ func _load_settings() -> void:
 		return
 	time_scale_val = data.get("time_scale", 1.0)
 	auto_save_interval = data.get("auto_save_interval", 5)
-	guidance_mode = str(data.get("guidance_mode", "full" if bool(data.get("enable_tutorial", true)) else "off"))
+	guidance_mode = str(data.get("guidance_mode", "full"))
 	show_notifications = data.get("show_notifications", true)
 	developer_mode = data.get("developer_mode", false)
 	fullscreen = data.get("fullscreen", false)

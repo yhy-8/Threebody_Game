@@ -10,6 +10,7 @@ var _policy_controls: Dictionary = {}
 
 func _ready() -> void:
 	EventBus.screen_changed.emit("decision")
+	EventBus.game_paused.connect(_on_global_pause_changed)
 	%BackButton.pressed.connect(_on_back_pressed)
 	_build_policy_cards()
 	_refresh_display()
@@ -22,16 +23,9 @@ func _process(p_delta: float) -> void:
 		_refresh_display()
 
 
-func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
-		GameState.toggle_pause()
-		%MessageLabel.text = "模拟已暂停" if GameState.paused else "模拟已继续"
-		%MessageLabel.modulate = Color(0.72, 0.82, 1.0)
-		get_viewport().set_input_as_handled()
-		return
-	if event.is_action_pressed("ui_cancel"):
-		get_viewport().set_input_as_handled()
-		_on_back_pressed()
+func _on_global_pause_changed(p_paused: bool) -> void:
+	%MessageLabel.text = "模拟已暂停" if p_paused else "模拟已继续"
+	%MessageLabel.modulate = Color(0.72, 0.82, 1.0)
 
 
 func _refresh_display() -> void:
