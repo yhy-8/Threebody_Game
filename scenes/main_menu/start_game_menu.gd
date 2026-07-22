@@ -1,7 +1,7 @@
 extends Control
 ## 开始游戏菜单 — 新建宇宙 / 继续游戏 / 加载存档
 
-enum State { MAIN, NAMING, DIFFICULTY }
+enum State { MAIN, NAMING, DIFFICULTY, GUIDANCE }
 
 const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
 
@@ -10,10 +10,12 @@ var message_timer: float = 0.0
 var _pending_universe_name: String = ""
 var _difficulty_config
 var _difficulty_ids: Array[StringName] = []
+var _pending_scenario_snapshot: Dictionary = {}
 
 @onready var main_vbox: VBoxContainer = %MainVBox
 @onready var naming_container: Control = %NamingContainer
 @onready var difficulty_container: Control = %DifficultyContainer
+@onready var guidance_container: Control = %GuidanceContainer
 @onready var name_input: LineEdit = %NameInput
 @onready var message_label: Label = %MessageLabel
 @onready var save_browser: Control = %SaveBrowser
@@ -27,6 +29,12 @@ func _ready() -> void:
 	%DifficultyOption.item_selected.connect(_on_difficulty_selected)
 	%ConfirmDifficultyBtn.pressed.connect(_on_confirm_difficulty)
 	%BackToNameBtn.pressed.connect(_on_back_to_naming)
+	%ConfirmGuidanceBtn.pressed.connect(_on_confirm_guidance)
+	%BackToDifficultyBtn.pressed.connect(_on_back_to_difficulty)
+	%GuidanceOption.add_item("完整引导", 0)
+	%GuidanceOption.add_item("精简提示", 1)
+	%GuidanceOption.add_item("关闭引导", 2)
+	%GuidanceOption.select(_default_guidance_index())
 	save_browser.close_requested.connect(_on_browser_closed)
 	save_browser.save_selected.connect(_do_load_game)
 	_load_difficulty_config()
@@ -48,6 +56,11 @@ func _input(event: InputEvent) -> void:
 					_on_confirm_difficulty()
 				elif event.keycode == KEY_ESCAPE:
 					_on_back_to_naming()
+			State.GUIDANCE:
+				if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+					_on_confirm_guidance()
+				elif event.keycode == KEY_ESCAPE:
+					_on_back_to_difficulty()
 			State.MAIN:
 				if event.keycode == KEY_ESCAPE:
 					_on_back_to_initial()
@@ -92,6 +105,7 @@ func _on_load_game() -> void:
 	main_vbox.visible = false
 	naming_container.visible = false
 	difficulty_container.visible = false
+	guidance_container.visible = false
 	save_browser.open_browser()
 
 
@@ -155,11 +169,26 @@ func _on_confirm_difficulty() -> void:
 	if not result.get("success", false):
 		_show_message("；".join(result.get("errors", PackedStringArray(["难度配置无效"]))), Color(1.0, 0.39, 0.39))
 		return
-	_do_start_new_game(_pending_universe_name, result["snapshot"])
+	_pending_scenario_snapshot = result["snapshot"].duplicate(true)
+	state = State.GUIDANCE
+	_refresh_ui()
 
 
-func _do_start_new_game(universe_name: String, p_scenario_snapshot: Dictionary) -> void:
-	if not GameState.new_game(universe_name, {}, p_scenario_snapshot):
+func _on_back_to_difficulty() -> void:
+	state = State.DIFFICULTY
+	_refresh_ui()
+
+
+func _on_confirm_guidance() -> void:
+	if _pending_scenario_snapshot.is_empty():
+		_show_message("场景快照不可用，请返回重新选择难度", Color(1.0, 0.39, 0.39))
+		return
+	var guidance_mode: int = %GuidanceOption.get_item_id(%GuidanceOption.selected)
+	_do_start_new_game(_pending_universe_name, _pending_scenario_snapshot, guidance_mode)
+
+
+func _do_start_new_game(universe_name: String, p_scenario_snapshot: Dictionary, p_guidance_mode: int) -> void:
+	if not GameState.new_game(universe_name, {}, p_scenario_snapshot, {"guidance_mode": p_guidance_mode}):
 		_show_message("场景初始化失败，请检查难度配置", Color(1.0, 0.39, 0.39))
 		return
 	if not SaveManager.save_game(GameState, "初始存档", universe_name):
@@ -186,7 +215,23 @@ func _refresh_ui() -> void:
 	main_vbox.visible = state == State.MAIN
 	naming_container.visible = state == State.NAMING
 	difficulty_container.visible = state == State.DIFFICULTY
+	guidance_container.visible = state == State.GUIDANCE
 	save_browser.visible = false
+
+
+func _default_guidance_index() -> int:
+	if not FileAccess.file_exists(GameState.SETTINGS_PATH):
+		return 0
+	var file := FileAccess.open(GameState.SETTINGS_PATH, FileAccess.READ)
+	if file == null:
+		return 0
+	var parsed = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not parsed is Dictionary:
+		return 0
+	if not parsed.has("guidance_mode"):
+		return 0 if bool(parsed.get("enable_tutorial", true)) else 2
+	return {"full": 0, "compact": 1, "off": 2}.get(str(parsed.get("guidance_mode", "full")), 0)
 
 
 func _load_difficulty_config() -> void:

@@ -311,6 +311,19 @@ func get_zone(zone_id: int) -> PlanetZone:
 	return null
 
 
+func get_zone_normal(zone_id: int) -> Vector3:
+	var zone := get_zone(zone_id)
+	if zone == null:
+		return Vector3.ZERO
+	return _get_zone_normal(zone)
+
+
+func get_zone_neighbors(zone_id: int) -> Array:
+	if get_zone(zone_id) == null:
+		return []
+	return (_neighbor_cache.get(zone_id, []) as Array).duplicate()
+
+
 func get_zone_at(lat: float, lon: float) -> PlanetZone:
 	for zone in zones:
 		var z: PlanetZone = zone as PlanetZone

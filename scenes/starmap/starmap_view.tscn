@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scenes/starmap/starmap_view.gd" id="1_script"]
 [ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+[ext_resource type="Script" path="res://scripts/rendering/celestial_view_renderer.gd" id="3_renderer"]
 
 [node name="StarmapView" type="Control"]
 layout_mode = 3
@@ -31,6 +32,7 @@ unique_name_in_owner = true
 
 [node name="CelestialBodies" type="Node3D" parent="Viewport3D/SubViewport/StarMap3D"]
 unique_name_in_owner = true
+script = ExtResource("3_renderer")
 
 [node name="Trails" type="Node3D" parent="Viewport3D/SubViewport/StarMap3D"]
 unique_name_in_owner = true

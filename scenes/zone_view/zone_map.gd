@@ -60,8 +60,9 @@ func _draw() -> void:
 			cell_size
 		)
 		var value: float = _zone_value(zone)
+		var known := bool(zone.get("known", false))
 		var ratio: float = clampf((value - value_min) / maxf(value_max - value_min, 0.0001), 0.0, 1.0)
-		draw_rect(rect, _heat_color(ratio), true)
+		draw_rect(rect, _heat_color(ratio) if known else Color(0.035, 0.04, 0.07, 1.0), true)
 
 		var zone_id: int = zone.get("id", -1)
 		var border_color := Color(0.12, 0.15, 0.24, 0.9)
@@ -80,7 +81,7 @@ func _draw() -> void:
 				str(buildings), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 11, Color(1.0, 0.82, 0.35))
 		if zone_id == _hovered_zone_id:
 			draw_string(ThemeDB.fallback_font, rect.position + Vector2(4.0, 15.0),
-				_value_text(value), HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 8.0, 11, Color.WHITE)
+				_value_text(value) if known else "未知", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 8.0, 11, Color.WHITE)
 
 	var range_text := "%s范围：%s — %s" % [_mode_name(), _value_text(value_min), _value_text(value_max)]
 	draw_string(ThemeDB.fallback_font, Vector2(grid.position.x, size.y - 8.0), range_text,
@@ -96,9 +97,13 @@ func _value_range() -> Vector2:
 	var value_max: float = -INF
 	for zone_data in zones_summary:
 		var zone: Dictionary = zone_data
+		if not bool(zone.get("known", false)):
+			continue
 		var value: float = _zone_value(zone)
 		value_min = min(value_min, value)
 		value_max = max(value_max, value)
+	if value_min == INF:
+		return Vector2(0.0, 1.0)
 	return Vector2(value_min, value_max)
 
 

@@ -60,6 +60,7 @@ func _test_stable_transition_and_persistence() -> void:
 	var snapshot: Dictionary = result["snapshot"]
 	snapshot["scenario_seed"] = "424242"
 	_expect(GameState.new_game("__稳定转换", {}, snapshot), "稳定场景创建失败")
+	_expect(GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))).get("success", false), "稳定场景首都确认失败")
 	_expect(GameState.scenario_manager.simulation_phase == "STABLE_EPHEMERIS", "非零稳定期没有进入规定星历")
 	_expect(GameState.scenario_manager.ephemeris.validate_stable_window().is_empty(), "稳定窗口存在提前碰撞")
 	GameState.game_time = 1.25
@@ -95,9 +96,11 @@ func _test_extreme_and_legacy() -> void:
 	var snapshot: Dictionary = result["snapshot"]
 	snapshot["scenario_seed"] = "998877"
 	_expect(GameState.new_game("__极限一", {}, snapshot), "极限场景创建失败")
+	_expect(GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))).get("success", false), "极限场景首都确认失败")
 	var first_positions := _positions()
 	_expect(GameState.scenario_manager.simulation_phase == "CHAOTIC_NBODY" and GameState.scenario_manager.chaos_started, "极限难度未从第 0 天进入 N 体模拟")
 	_expect(GameState.new_game("__极限二", {}, snapshot), "同种子极限场景重建失败")
+	_expect(GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))).get("success", false), "重复极限场景首都确认失败")
 	_expect(_positions_close(first_positions, _positions()), "相同场景种子没有生成相同初态")
 
 	var legacy: Dictionary = GameState.to_dict()
@@ -161,6 +164,7 @@ func _test_public_forecast_boundary() -> void:
 	var game_snapshot: Dictionary = config.create_snapshot(&"normal")["snapshot"]
 	game_snapshot["scenario_seed"] = "13579"
 	_expect(GameState.new_game("__观测闭环", {}, game_snapshot), "观测闭环测试场景创建失败")
+	_expect(GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))).get("success", false), "观测闭环首都确认失败")
 	for tech_id in ["telescope", "computer", "observatory"]:
 		GameState.tech_tree.get_node(tech_id).unlocked = true
 	var BuildingClass = preload("res://scripts/simulation/entity_manager.gd").GameBuilding

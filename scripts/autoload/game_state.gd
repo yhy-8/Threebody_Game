@@ -7,7 +7,7 @@ signal developer_mode_changed(enabled: bool)
 signal scenario_phase_changed(new_phase: String, transition_day: float)
 
 const SETTINGS_PATH := "res://settings.json"
-const SAVE_SCHEMA_VERSION := 4
+const SAVE_SCHEMA_VERSION := 6
 const FIXED_SIMULATION_STEP_DAYS := 0.02
 const MAX_SIMULATION_SUBSTEPS := 512
 const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
@@ -22,6 +22,19 @@ const ScenarioManagerScript = preload("res://scripts/simulation/scenario_manager
 const ObservationNetworkScript = preload("res://scripts/simulation/observation_network.gd")
 const SatelliteNetworkScript = preload("res://scripts/simulation/satellite_network.gd")
 const HazardForecastServiceScript = preload("res://scripts/simulation/hazard_forecast_service.gd")
+const KnowledgeSystemScript = preload("res://scripts/simulation/knowledge_system.gd")
+const DiscoverySystemScript = preload("res://scripts/simulation/discovery_system.gd")
+const ResearchProjectSystemScript = preload("res://scripts/simulation/research_project_system.gd")
+const EngineeringProjectSystemScript = preload("res://scripts/simulation/engineering_project_system.gd")
+const KnowledgePolicySystemScript = preload("res://scripts/simulation/knowledge_policy_system.gd")
+const EducationSystemScript = preload("res://scripts/simulation/education_system.gd")
+const PreservationAllocatorScript = preload("res://scripts/simulation/preservation_allocator.gd")
+const KnowledgeInheritanceScript = preload("res://scripts/simulation/knowledge_inheritance.gd")
+const SettlementSystemScript = preload("res://scripts/simulation/settlement_system.gd")
+const RegionalLogisticsSystemScript = preload("res://scripts/simulation/regional_logistics_system.gd")
+const RegionMovementSystemScript = preload("res://scripts/simulation/region_movement_system.gd")
+const ExplorationSystemScript = preload("res://scripts/simulation/exploration_system.gd")
+const OpeningGuidanceControllerScript = preload("res://scripts/guidance/opening_guidance_controller.gd")
 
 # ── 子系统引用 ──
 var environment       ## ThreeBodySimulation
@@ -33,6 +46,19 @@ var scenario_manager  ## ScenarioManager
 var observation_network  ## ObservationNetwork
 var satellite_network  ## SatelliteNetwork
 var hazard_forecast_service  ## HazardForecastService
+var knowledge_system  ## KnowledgeSystem
+var discovery_system  ## DiscoverySystem
+var research_project_system  ## ResearchProjectSystem
+var engineering_project_system  ## EngineeringProjectSystem
+var knowledge_policy_system  ## KnowledgePolicySystem
+var education_system  ## EducationSystem
+var preservation_allocator  ## PreservationAllocator
+var knowledge_inheritance  ## KnowledgeInheritance
+var settlement_system  ## SettlementSystem
+var regional_logistics  ## RegionalLogisticsSystem
+var region_movement_system  ## RegionMovementSystem
+var exploration_system  ## ExplorationSystem
+var opening_guidance  ## OpeningGuidanceController
 
 # ── 游戏状态 ────────────────────────────────────────
 var game_time: float = 0.0
@@ -41,6 +67,7 @@ var paused: bool = false
 var game_over: bool = false
 var game_started: bool = false
 var universe_name: String = "未命名宇宙"
+var observed_zone_id: int = 0
 var last_autosave_day: int = -1
 var developer_mode: bool = false
 var settings_return_scene: String = "res://scenes/main_menu/initial_menu.tscn"
@@ -77,7 +104,7 @@ func _process(p_delta: float) -> void:
 	update(min(p_delta, 0.1))
 
 
-func new_game(p_universe_name: String, p_config: Dictionary = {}, p_scenario_snapshot: Dictionary = {}) -> bool:
+func new_game(p_universe_name: String, p_config: Dictionary = {}, p_scenario_snapshot: Dictionary = {}, p_opening_options: Dictionary = {}) -> bool:
 	var resolved_scenario := p_scenario_snapshot.duplicate(true)
 	if resolved_scenario.is_empty():
 		resolved_scenario = _load_default_scenario_snapshot()
@@ -113,6 +140,9 @@ func new_game(p_universe_name: String, p_config: Dictionary = {}, p_scenario_sna
 	observation_network = ObservationNetworkScript.new()
 	satellite_network = SatelliteNetworkScript.new()
 	hazard_forecast_service = HazardForecastServiceScript.new()
+	if not _initialize_knowledge_systems():
+		reset()
+		return false
 
 	game_started = true
 	game_over = false
@@ -122,6 +152,9 @@ func new_game(p_universe_name: String, p_config: Dictionary = {}, p_scenario_sna
 	_connect_scenario_signals()
 	_connect_tech_tree_signals()
 	_init_zone_temperatures()
+	if not _initialize_regional_systems_new(p_opening_options):
+		reset()
+		return false
 	_update_observation_systems(0.0, 0.0)
 	EventBus.game_started.emit(universe_name)
 	return true
@@ -133,6 +166,7 @@ func reset() -> void:
 	game_over = false
 	game_started = false
 	game_time = 0.0
+	observed_zone_id = 0
 	last_autosave_day = -1
 	_simulation_accumulator = 0.0
 	_autosave_elapsed_seconds = 0.0
@@ -145,17 +179,50 @@ func reset() -> void:
 	observation_network = null
 	satellite_network = null
 	hazard_forecast_service = null
+	knowledge_system = null
+	discovery_system = null
+	research_project_system = null
+	engineering_project_system = null
+	knowledge_policy_system = null
+	education_system = null
+	preservation_allocator = null
+	knowledge_inheritance = null
+	settlement_system = null
+	regional_logistics = null
+	region_movement_system = null
+	exploration_system = null
+	opening_guidance = null
 	research_output_rate = {"basic": 0.0, "applied": 0.0, "theoretical": 0.0}
 
 
 func toggle_pause() -> void:
+	if settlement_system != null and settlement_system.capital_zone_id < 0:
+		paused = true
+		return
 	paused = not paused
+	if opening_guidance != null:
+		opening_guidance.handle_domain_event("time_control_used", {"source_id": "time-control:first"})
 	EventBus.game_paused.emit(paused)
 
 
 func set_time_scale(p_scale: float) -> void:
 	time_scale = clamp(p_scale, _time_scale_min, _time_scale_max)
 	EventBus.time_scale_changed.emit(time_scale)
+
+
+func set_observed_zone(p_zone_id: int) -> bool:
+	if planet_zones == null or planet_zones.get_zone(p_zone_id) == null:
+		return false
+	if not developer_mode and settlement_system != null:
+		var knowledge: Dictionary = settlement_system.get_zone_knowledge(p_zone_id)
+		var required_level := SettlementSystemScript.ZoneKnowledgeLevel.OBSERVED if settlement_system.capital_zone_id < 0 else SettlementSystemScript.ZoneKnowledgeLevel.FAMILIAR
+		if int(knowledge.get("level", SettlementSystemScript.ZoneKnowledgeLevel.UNKNOWN)) < required_level:
+			return false
+	if observed_zone_id == p_zone_id:
+		return true
+	observed_zone_id = p_zone_id
+	state_updated.emit()
+	return true
 
 
 func set_developer_mode(p_enabled: bool) -> void:
@@ -167,13 +234,18 @@ func set_developer_mode(p_enabled: bool) -> void:
 
 
 func can_access_starmap() -> bool:
-	return developer_mode or (tech_tree != null and tech_tree.is_unlocked("telescope"))
+	return developer_mode or (
+		knowledge_system != null and knowledge_system.has_capability("telescope")
+	) or (tech_tree != null and tech_tree.is_unlocked("telescope"))
 
 
 func apply_developer_values(p_values: Dictionary) -> bool:
 	if not developer_mode or not game_started or entities == null or tech_tree == null:
 		return false
 
+	var resources_before: Dictionary = {}
+	for resource_id in entities.resources:
+		resources_before[resource_id] = entities.get_resource(str(resource_id))
 	var population_values: Dictionary = p_values.get("population", {})
 	entities.population.total = maxi(0, int(population_values.get("total", entities.population.total)))
 	entities.population.stored_population = maxi(0, int(population_values.get("stored", entities.population.stored_population)))
@@ -192,6 +264,9 @@ func apply_developer_values(p_values: Dictionary) -> bool:
 	for research_id in research_values:
 		if tech_tree.research_points.has(research_id):
 			tech_tree.research_points[research_id] = maxf(0.0, float(research_values[research_id]))
+	if regional_logistics != null and settlement_system != null and settlement_system.capital_zone_id >= 0:
+		regional_logistics.reconcile_after_simulation(resources_before, entities, entities.buildings)
+		settlement_system.reconcile_population_total(entities.population.total, region_movement_system.get_reserved_population())
 
 	state_updated.emit()
 	return true
@@ -200,8 +275,13 @@ func apply_developer_values(p_values: Dictionary) -> bool:
 func developer_fill_resources(p_amount: float = 100000.0) -> bool:
 	if not developer_mode or entities == null:
 		return false
+	var resources_before: Dictionary = {}
+	for resource_id in entities.resources:
+		resources_before[resource_id] = entities.get_resource(str(resource_id))
 	for resource in entities.resources.values():
 		resource.amount = maxf(0.0, p_amount)
+	if regional_logistics != null and settlement_system != null and settlement_system.capital_zone_id >= 0:
+		regional_logistics.reconcile_after_simulation(resources_before, entities, entities.buildings)
 	state_updated.emit()
 	return true
 
@@ -214,11 +294,73 @@ func developer_unlock_all_technologies() -> bool:
 		tech_node.researching = false
 	tech_tree.researching_tech_id = ""
 	tech_tree.research_progress.clear()
+	if knowledge_system != null:
+		knowledge_system.developer_unlock_all()
+		_sync_legacy_technology_from_knowledge()
 	if hazard_forecast_service != null:
 		hazard_forecast_service.invalidate()
 		_update_observation_systems(game_time, 0.0)
 	state_updated.emit()
 	return true
+
+
+func start_knowledge_research(p_node_id: String) -> Dictionary:
+	if research_project_system == null or entities == null:
+		return {"success": false, "message": "知识研究系统尚未初始化"}
+	var result: Dictionary = research_project_system.start_project(p_node_id, {}, entities)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func toggle_knowledge_research(p_node_id: String) -> Dictionary:
+	if research_project_system == null:
+		return {"success": false, "message": "知识研究系统尚未初始化"}
+	var result: Dictionary = research_project_system.toggle_pause(p_node_id)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func start_knowledge_engineering(p_node_id: String, p_project_id: String) -> Dictionary:
+	if engineering_project_system == null or entities == null:
+		return {"success": false, "message": "知识工程系统尚未初始化"}
+	var result: Dictionary = engineering_project_system.start_project(p_node_id, p_project_id, entities)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func start_teaching_plan(p_plan: Dictionary) -> Dictionary:
+	if education_system == null or entities == null:
+		return {"success": false, "message": "教学系统尚未初始化"}
+	var result: Dictionary = education_system.start_plan(p_plan, entities)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func adopt_knowledge_policy(p_policy_id: String) -> Dictionary:
+	if knowledge_policy_system == null:
+		return {"success": false, "message": "知识政策系统尚未初始化"}
+	var result: Dictionary = knowledge_policy_system.adopt_policy(p_policy_id)
+	state_updated.emit()
+	return result
+
+
+func _refresh_external_workforce_reservation() -> void:
+	if entities == null:
+		return
+	var reserved := 0
+	if research_project_system != null:
+		reserved += research_project_system.get_reserved_workers()
+	if engineering_project_system != null:
+		reserved += engineering_project_system.get_reserved_workers()
+	if education_system != null:
+		reserved += education_system.get_reserved_workers()
+	if region_movement_system != null:
+		reserved += region_movement_system.get_reserved_population()
+	entities.set_external_reserved_workers(reserved)
 
 
 func _load_runtime_settings() -> void:
@@ -272,6 +414,335 @@ func _connect_scenario_signals() -> void:
 		scenario_manager.phase_changed.connect(_on_scenario_phase_changed)
 
 
+func _initialize_knowledge_systems(p_legacy_technology: Dictionary = {}) -> bool:
+	knowledge_system = KnowledgeSystemScript.new()
+	if not knowledge_system.graph.is_valid():
+		push_error("知识图配置无效：%s" % "; ".join(knowledge_system.graph.validation_errors))
+		return false
+	if p_legacy_technology.is_empty():
+		if not knowledge_system.initialize_new_civilization():
+			return false
+	else:
+		knowledge_system.migrate_legacy_technology(p_legacy_technology)
+	discovery_system = DiscoverySystemScript.new(knowledge_system)
+	research_project_system = ResearchProjectSystemScript.new(knowledge_system)
+	engineering_project_system = EngineeringProjectSystemScript.new(knowledge_system)
+	knowledge_policy_system = KnowledgePolicySystemScript.new(knowledge_system)
+	education_system = EducationSystemScript.new(knowledge_system)
+	preservation_allocator = PreservationAllocatorScript.new()
+	knowledge_inheritance = KnowledgeInheritanceScript.new(knowledge_system)
+	if not knowledge_system.capability_changed.is_connected(_on_knowledge_capability_changed):
+		knowledge_system.capability_changed.connect(_on_knowledge_capability_changed)
+	_sync_legacy_technology_from_knowledge()
+	return true
+
+
+func _initialize_regional_systems_new(p_opening_options: Dictionary) -> bool:
+	settlement_system = SettlementSystemScript.new()
+	if not settlement_system.initialize_new(planet_zones, entities.population.total, scenario_manager.get_rule_state(0.0)):
+		return false
+	regional_logistics = RegionalLogisticsSystemScript.new()
+	region_movement_system = RegionMovementSystemScript.new()
+	exploration_system = ExplorationSystemScript.new()
+	opening_guidance = OpeningGuidanceControllerScript.new()
+	if not opening_guidance.initialize(_resolve_guidance_mode(p_opening_options)):
+		return false
+	paused = true
+	var first_candidate: Dictionary = settlement_system.candidate_views[0]
+	observed_zone_id = int(first_candidate.get("zone_id", 0))
+	return true
+
+
+func _resolve_guidance_mode(p_opening_options: Dictionary) -> int:
+	var value = p_opening_options.get("guidance_mode", _runtime_settings.get("guidance_mode", "full"))
+	if value is int or value is float:
+		return clampi(int(value), OpeningGuidanceControllerScript.GuidanceMode.FULL, OpeningGuidanceControllerScript.GuidanceMode.OFF)
+	match str(value).to_lower():
+		"compact": return OpeningGuidanceControllerScript.GuidanceMode.COMPACT
+		"off": return OpeningGuidanceControllerScript.GuidanceMode.OFF
+		_:
+			if not _runtime_settings.has("guidance_mode") and not bool(_runtime_settings.get("enable_tutorial", true)):
+				return OpeningGuidanceControllerScript.GuidanceMode.OFF
+			return OpeningGuidanceControllerScript.GuidanceMode.FULL
+
+
+func confirm_capital(p_zone_id: int) -> Dictionary:
+	if settlement_system == null or regional_logistics == null:
+		return {"success": false, "message": "区域系统尚未初始化"}
+	var result: Dictionary = settlement_system.confirm_capital(p_zone_id, planet_zones, entities.population.total, game_time)
+	if not result.get("success", false):
+		return result
+	regional_logistics.initialize_at_capital(p_zone_id, entities)
+	settlement_system.refresh_settlement_status(regional_logistics, entities, knowledge_system, game_time)
+	observed_zone_id = p_zone_id
+	paused = false
+	if opening_guidance != null:
+		opening_guidance.handle_domain_event("capital_confirmed", {"source_id": "capital:%d" % p_zone_id})
+	EventBus.game_paused.emit(false)
+	state_updated.emit()
+	return result
+
+
+func get_public_zone_summaries() -> Array:
+	if settlement_system == null or planet_zones == null or entities == null:
+		return []
+	return settlement_system.get_public_zone_summaries(planet_zones, entities)
+
+
+func get_zone_knowledge(p_zone_id: int) -> Dictionary:
+	if settlement_system == null:
+		return {}
+	return settlement_system.get_zone_knowledge(p_zone_id)
+
+
+func start_region_expedition(p_origin_zone_id: int, p_target_zone_id: int, p_population_count: int = 5) -> Dictionary:
+	if exploration_system == null or region_movement_system == null or regional_logistics == null:
+		return {"success": false, "message": "勘探系统尚未初始化"}
+	var validation: Dictionary = exploration_system.can_plan_expedition(p_origin_zone_id, p_target_zone_id, planet_zones, settlement_system)
+	if not validation.get("success", false):
+		return validation
+	var result: Dictionary = region_movement_system.start_operation(
+		"exploration", p_origin_zone_id, p_target_zone_id, p_population_count, {}, planet_zones,
+		settlement_system, regional_logistics, entities, true
+	)
+	if result.get("success", false) and opening_guidance != null:
+		opening_guidance.handle_domain_event("expedition_departed", {"source_id": str(result.get("operation_id", ""))})
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func start_region_migration(p_origin_zone_id: int, p_target_zone_id: int, p_population_count: int, p_cargo: Dictionary = {}) -> Dictionary:
+	if region_movement_system == null or regional_logistics == null:
+		return {"success": false, "message": "迁徙系统尚未初始化"}
+	var result: Dictionary = region_movement_system.start_operation(
+		"migration", p_origin_zone_id, p_target_zone_id, p_population_count, p_cargo, planet_zones,
+		settlement_system, regional_logistics, entities, false
+	)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func plan_region_route(p_origin_zone_id: int, p_target_zone_id: int) -> Dictionary:
+	if region_movement_system == null:
+		return {"success": false, "message": "区域行动系统尚未初始化"}
+	return region_movement_system.plan_route(p_origin_zone_id, p_target_zone_id, planet_zones, settlement_system, false)
+
+
+func start_region_transport(p_origin_zone_id: int, p_target_zone_id: int, p_crew_count: int, p_cargo: Dictionary) -> Dictionary:
+	if region_movement_system == null or regional_logistics == null:
+		return {"success": false, "message": "运输系统尚未初始化"}
+	if p_cargo.is_empty():
+		return {"success": false, "message": "运输行动必须配置实际载荷"}
+	var result: Dictionary = region_movement_system.start_operation(
+		"transport", p_origin_zone_id, p_target_zone_id, p_crew_count, p_cargo, planet_zones,
+		settlement_system, regional_logistics, entities, true
+	)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func cancel_region_operation(p_operation_id: String) -> Dictionary:
+	if region_movement_system == null or settlement_system == null or regional_logistics == null:
+		return {"success": false, "message": "区域行动系统尚未初始化"}
+	var result: Dictionary = region_movement_system.cancel_operation(p_operation_id, settlement_system, regional_logistics)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func pause_region_operation(p_operation_id: String) -> Dictionary:
+	if region_movement_system == null:
+		return {"success": false, "message": "区域行动系统尚未初始化"}
+	var result: Dictionary = region_movement_system.pause_operation(p_operation_id)
+	state_updated.emit()
+	return result
+
+
+func resume_region_operation(p_operation_id: String) -> Dictionary:
+	if region_movement_system == null:
+		return {"success": false, "message": "区域行动系统尚未初始化"}
+	var result: Dictionary = region_movement_system.resume_operation(p_operation_id)
+	state_updated.emit()
+	return result
+
+
+func get_settlement_view(p_zone_id: int) -> Dictionary:
+	if settlement_system == null or regional_logistics == null:
+		return {}
+	settlement_system.refresh_settlement_status(regional_logistics, entities, knowledge_system, game_time)
+	return settlement_system.get_settlement(p_zone_id)
+
+
+func get_outpost_upgrade_status(p_zone_id: int) -> Dictionary:
+	if settlement_system == null or regional_logistics == null or region_movement_system == null:
+		return {"success": false, "message": "聚落系统尚未初始化"}
+	var route_available := false
+	if settlement_system.capital_zone_id >= 0:
+		route_available = region_movement_system.plan_route(
+			settlement_system.capital_zone_id, p_zone_id, planet_zones, settlement_system, false
+		).get("success", false)
+	return settlement_system.get_outpost_upgrade_requirements(
+		p_zone_id, regional_logistics, entities, knowledge_system, route_available, game_time
+	)
+
+
+func upgrade_outpost(p_zone_id: int) -> Dictionary:
+	var status := get_outpost_upgrade_status(p_zone_id)
+	if not status.get("success", false):
+		return status
+	var result: Dictionary = settlement_system.upgrade_outpost(
+		p_zone_id, regional_logistics, entities, knowledge_system, true, game_time
+	)
+	state_updated.emit()
+	return result
+
+
+func start_capital_relocation(p_target_zone_id: int) -> Dictionary:
+	if settlement_system == null or region_movement_system == null or regional_logistics == null:
+		return {"success": false, "message": "迁都系统尚未初始化"}
+	var origin_zone_id: int = settlement_system.capital_zone_id
+	if p_target_zone_id == origin_zone_id:
+		return {"success": false, "message": "目标区域已是首都"}
+	var target: Dictionary = settlement_system.get_settlement(p_target_zone_id)
+	if str(target.get("type", "")) != "settlement":
+		return {"success": false, "message": "迁都目标必须是已升级的常设聚落"}
+	if knowledge_system == null or not knowledge_system.has_capability("symbolic_recording"):
+		return {"success": false, "message": "迁都需要符号记录能力来转移档案与命令"}
+	for operation in region_movement_system.operations.values():
+		if str(operation.get("type", "")) == "capital_relocation" and int(operation.get("status", -1)) not in [
+			RegionMovementSystemScript.OperationStatus.ARRIVED,
+			RegionMovementSystemScript.OperationStatus.CANCELLED,
+		]:
+			return {"success": false, "message": "已有一次迁都行动在进行中"}
+	var result: Dictionary = region_movement_system.start_operation(
+		"capital_relocation", origin_zone_id, p_target_zone_id, 10, {"iron": 25.0}, planet_zones,
+		settlement_system, regional_logistics, entities, false
+	)
+	if result.get("success", false):
+		var operation_id := str(result.get("operation_id", ""))
+		region_movement_system.operations[operation_id]["carries_civil_records"] = true
+		region_movement_system.operations[operation_id]["coordination_efficiency_on_arrival"] = 0.85
+		result["message"] = "迁都队已出发：10 名组织人员、25 铁材与文明档案将实际运往目标聚落；到达前首都不变"
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func execute_regional_construction(p_decision_id: String, p_zone_id: int) -> Dictionary:
+	if settlement_system == null or regional_logistics == null:
+		return {"success": false, "message": "地方建设系统尚未初始化"}
+	var zone_knowledge: Dictionary = settlement_system.get_zone_knowledge(p_zone_id)
+	if int(zone_knowledge.get("level", 0)) < SettlementSystemScript.ZoneKnowledgeLevel.FAMILIAR:
+		return {"success": false, "message": "需要先熟悉或勘探该区域才能施工"}
+	var decision = decision_manager.available_decisions.get(p_decision_id)
+	if decision == null or decision.category != "construction":
+		return {"success": false, "message": "未知建设项目"}
+	var local_check: Dictionary = regional_logistics.can_pay_local_cost(p_zone_id, decision.resource_cost)
+	if not local_check.get("success", false):
+		return local_check
+	var result: Dictionary = decision_manager.execute_decision(p_decision_id, entities, tech_tree, planet_zones, p_zone_id)
+	if result.get("success", false):
+		regional_logistics.commit_local_cost(p_zone_id, decision.resource_cost)
+		if opening_guidance != null:
+			opening_guidance.handle_domain_event("construction_started", {"source_id": "building:%d" % int(result.get("building_id", -1))})
+	state_updated.emit()
+	return result
+
+
+func assign_regional_building_workers(p_building_id: int, p_count: int) -> Dictionary:
+	var building = entities.get_building(p_building_id) if entities != null else null
+	if building == null or settlement_system == null:
+		return {"success": false, "message": "建筑或区域系统不可用"}
+	var local_assigned := 0
+	for local_building in entities.get_buildings_in_zone(building.zone_id):
+		local_assigned += local_building.assigned_workers
+	var local_idle := maxi(0, settlement_system.get_population(building.zone_id) - local_assigned)
+	if p_count > local_idle:
+		return {"success": false, "message": "当地闲置人口不足（仅剩 %d）" % local_idle}
+	var result: Dictionary = entities.assign_worker_to_building(p_building_id, p_count)
+	if result.get("success", false) and opening_guidance != null:
+		opening_guidance.handle_domain_event("population_assignment_changed", {"source_id": "workers:%d:%d" % [p_building_id, building.assigned_workers]})
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
+func unassign_regional_building_workers(p_building_id: int, p_count: int) -> Dictionary:
+	if entities == null:
+		return {"success": false, "message": "人口系统不可用"}
+	var result: Dictionary = entities.unassign_worker_from_building(p_building_id, p_count)
+	if result.get("success", false) and opening_guidance != null:
+		opening_guidance.handle_domain_event("population_assignment_changed", {"source_id": "workers:%d:%d" % [p_building_id, entities.get_building(p_building_id).assigned_workers]})
+	state_updated.emit()
+	return result
+
+
+func assign_regional_breeders(p_count: int) -> Dictionary:
+	if entities == null or settlement_system == null or settlement_system.capital_zone_id < 0:
+		return {"success": false, "message": "首都人口系统不可用"}
+	var capital_id: int = settlement_system.capital_zone_id
+	var local_workers: int = 0
+	for building in entities.get_buildings_in_zone(capital_id):
+		local_workers += building.assigned_workers
+	var local_idle: int = maxi(0, settlement_system.get_population(capital_id) - local_workers - entities.population.breeders)
+	if p_count > local_idle:
+		return {"success": false, "message": "首都闲置人口不足（仅剩 %d）" % local_idle}
+	var result: Dictionary = entities.assign_breeders(p_count)
+	if result.get("success", false) and opening_guidance != null:
+		opening_guidance.handle_domain_event("population_assignment_changed", {"source_id": "breeders:%d" % entities.population.breeders})
+	state_updated.emit()
+	return result
+
+
+func unassign_regional_breeders(p_count: int) -> Dictionary:
+	if entities == null:
+		return {"success": false, "message": "人口系统不可用"}
+	var result: Dictionary = entities.unassign_breeders(p_count)
+	if result.get("success", false) and opening_guidance != null:
+		opening_guidance.handle_domain_event("population_assignment_changed", {"source_id": "breeders:%d" % entities.population.breeders})
+	state_updated.emit()
+	return result
+
+
+func record_local_observation(p_zone_id: int) -> Dictionary:
+	if discovery_system == null or settlement_system == null:
+		return {"success": false, "message": "观测系统尚未初始化"}
+	var knowledge: Dictionary = settlement_system.get_zone_knowledge(p_zone_id)
+	if int(knowledge.get("level", 0)) < SettlementSystemScript.ZoneKnowledgeLevel.FAMILIAR:
+		return {"success": false, "message": "当地无人长期活动，无法形成连续观测"}
+	var result: Dictionary = discovery_system.record_observation(
+		"zone-%d" % p_zone_id, "celestial_motion", {"duration": 1.0}, 0.55
+	)
+	if result.get("success", false) and opening_guidance != null:
+		var sequence := int(discovery_system.observation_metrics.get("celestial_motion", 0))
+		opening_guidance.handle_domain_event("observation_recorded", {"source_id": "observation:zone-%d:%d" % [p_zone_id, sequence]})
+	state_updated.emit()
+	return result
+
+
+func _on_knowledge_capability_changed(_p_capability_id: String, _p_level: int) -> void:
+	_sync_legacy_technology_from_knowledge()
+	if hazard_forecast_service != null:
+		hazard_forecast_service.invalidate()
+
+
+func _sync_legacy_technology_from_knowledge() -> void:
+	if knowledge_system == null or tech_tree == null:
+		return
+	for node_id in knowledge_system.graph.nodes:
+		if knowledge_system.get_node_state(node_id) != KnowledgeSystemScript.KnowledgeState.APPLIED:
+			continue
+		for legacy_id in knowledge_system.graph.nodes[node_id].get("legacy_tech_ids", []):
+			var legacy_node = tech_tree.get_node(str(legacy_id))
+			if legacy_node != null:
+				legacy_node.unlocked = true
+				legacy_node.researching = false
+	entities.apply_technology_effects(tech_tree)
+
+
 func _on_scenario_phase_changed(p_phase: String, p_transition_day: float) -> void:
 	scenario_phase_changed.emit(p_phase, p_transition_day)
 	EventBus.scenario_phase_changed.emit(p_phase, p_transition_day)
@@ -287,6 +758,9 @@ func _on_research_finished(p_tech_id: String, p_tech_name: String) -> void:
 
 func update(p_dt: float) -> void:
 	if paused or game_over or not game_started:
+		return
+	if settlement_system != null and settlement_system.capital_zone_id < 0:
+		paused = true
 		return
 	if environment == null:
 		return
@@ -313,7 +787,6 @@ func update(p_dt: float) -> void:
 
 
 func _advance_simulation(p_game_days_dt: float) -> void:
-
 	var dehydrated: bool = false
 	if decision_manager != null:
 		dehydrated = (decision_manager.current_state == decision_manager.CivilizationState.DEHYDRATED)
@@ -344,9 +817,30 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 
 	entities.set_policy_effects(decision_manager.active_policies)
 	entities.apply_technology_effects(tech_tree)
+	_refresh_external_workforce_reservation()
+	var resources_before: Dictionary = {}
+	for resource_id in entities.resources:
+		resources_before[resource_id] = entities.get_resource(str(resource_id))
 	entities.update(env_params, planet_zones, p_game_days_dt, dehydrated)
+	if regional_logistics != null and settlement_system != null and settlement_system.capital_zone_id >= 0:
+		regional_logistics.reconcile_after_simulation(resources_before, entities, entities.buildings)
+	if region_movement_system != null:
+		region_movement_system.update(
+			p_game_days_dt, settlement_system, regional_logistics, entities,
+			exploration_system, planet_zones, game_time + p_game_days_dt
+		)
+		_refresh_external_workforce_reservation()
+	if settlement_system != null:
+		var in_transit: int = region_movement_system.get_reserved_population() if region_movement_system != null else 0
+		settlement_system.reconcile_population_total(entities.population.total, in_transit)
+		settlement_system.refresh_known_environment(planet_zones, game_time + p_game_days_dt)
+		if regional_logistics != null:
+			settlement_system.refresh_settlement_status(regional_logistics, entities, knowledge_system, game_time + p_game_days_dt)
+	if exploration_system != null:
+		exploration_system.update_staleness(game_time + p_game_days_dt, settlement_system)
 
 	_process_research_output(p_game_days_dt)
+	_update_knowledge_evolution(game_time + p_game_days_dt, p_game_days_dt)
 
 	if dehydrated:
 		_process_storage_damage(p_game_days_dt)
@@ -425,6 +919,12 @@ func _process_research_output(p_game_days_dt: float) -> void:
 		frame_output["theoretical"] = frame_output["theoretical"] + output_rate
 		tech_tree.produce_research("theoretical", output_rate * p_game_days_dt)
 
+	if research_project_system != null:
+		research_project_system.update_day(p_game_days_dt, frame_output, entities)
+	if engineering_project_system != null:
+		engineering_project_system.update_day(p_game_days_dt, frame_output, entities)
+	_refresh_external_workforce_reservation()
+
 	# EMA 平滑
 	var step_alpha: float = clampf(alpha * p_game_days_dt, 0.0, 1.0)
 	for rtype in frame_output:
@@ -438,6 +938,31 @@ func _process_research_output(p_game_days_dt: float) -> void:
 		var auto_node = tech_tree.get_node("automation")
 		if auto_node != null and auto_node.unlocked and entities.population.automation_multiplier < auto_mult:
 			entities.population.automation_multiplier = auto_mult
+
+
+func _update_knowledge_evolution(p_game_day: float, p_delta_days: float) -> void:
+	if knowledge_system == null:
+		return
+	var active_building_types: Array[String] = []
+	for building in entities.buildings:
+		if building.active and not building.destroyed and not building.under_construction and building.building_type not in active_building_types:
+			active_building_types.append(building.building_type)
+	discovery_system.update_day(p_game_day, p_delta_days, {"active_building_types": active_building_types})
+	var teaching_results: Array = education_system.update_day(p_delta_days, {})
+	if opening_guidance != null:
+		for teaching_result_value in teaching_results:
+			var teaching_result: Dictionary = teaching_result_value
+			opening_guidance.handle_domain_event("teaching_plan_progressed", {
+				"source_id": "teaching-progress:%s" % str(teaching_result.get("plan_id", "")),
+			})
+	var retention_context: Dictionary = knowledge_policy_system.get_retention_context()
+	var teaching_workers: int = education_system.get_reserved_workers()
+	retention_context["education_coverage"] = clampf(
+		float(retention_context.get("education_coverage", 0.0))
+		+ float(teaching_workers) / maxf(1.0, float(entities.population.total)),
+		0.0, 1.0
+	)
+	knowledge_inheritance.update_day(p_game_day, retention_context)
 
 
 func _process_storage_damage(p_game_days_dt: float) -> void:
@@ -628,6 +1153,7 @@ func get_state() -> Dictionary:
 		"game_over": game_over,
 		"game_started": game_started,
 		"universe_name": universe_name,
+		"observed_zone_id": observed_zone_id,
 		"research_output_rate": research_output_rate.duplicate(),
 		"environment": {
 			"stars": stars_render_data,
@@ -641,10 +1167,23 @@ func get_state() -> Dictionary:
 		},
 		"entities": entities.get_state(),
 		"technology": tech_tree.get_state(),
+		"knowledge": knowledge_system.get_state(),
+		"research_projects": research_project_system.get_state(),
+		"engineering_projects": engineering_project_system.get_state(),
+		"discoveries": discovery_system.get_state(),
+		"inheritance": knowledge_inheritance.get_state(),
+		"knowledge_policy": knowledge_policy_system.get_state(),
+		"education": education_system.get_state(),
+		"preservation_plan": preservation_allocator.get_state(),
+		"settlement": settlement_system.get_state(),
+		"regional_logistics": regional_logistics.get_state(),
+		"region_operations": region_movement_system.get_state(),
+		"exploration": exploration_system.get_state(),
+		"opening_guidance": opening_guidance.get_state(),
 		"decision": decision_manager.get_state(),
 		"planet_zones": {
 			"rotation_angle": planet_zones.rotation_angle,
-			"zones_summary": planet_zones.get_all_zones_summary(),
+			"zones_summary": get_public_zone_summaries(),
 		},
 		"scenario": scenario_manager.get_rule_state(game_time),
 		"hazard_forecast": hazard_forecast_service.get_public_snapshot(),
@@ -673,9 +1212,23 @@ func to_dict() -> Dictionary:
 		"paused": paused,
 		"game_over": game_over,
 		"universe_name": universe_name,
+		"observed_zone_id": observed_zone_id,
 		"stars": stars_data,
 		"entities": entities.get_state(),
 		"technology": tech_tree.get_state(),
+		"knowledge": knowledge_system.get_state(),
+		"research_projects": research_project_system.get_state(),
+		"engineering_projects": engineering_project_system.get_state(),
+		"discoveries": discovery_system.get_state(),
+		"inheritance": knowledge_inheritance.get_state(),
+		"knowledge_policy": knowledge_policy_system.get_state(),
+		"education": education_system.get_state(),
+		"preservation_plan": preservation_allocator.get_state(),
+		"settlement": settlement_system.get_state(),
+		"regional_logistics": regional_logistics.get_state(),
+		"region_operations": region_movement_system.get_state(),
+		"exploration": exploration_system.get_state(),
+		"opening_guidance": opening_guidance.get_state(),
 		"decision": decision_manager.get_state(),
 		"planet_zones": planet_zones.get_state(),
 		"time_scale": time_scale,
@@ -755,8 +1308,68 @@ func validate_serialized_state(data) -> bool:
 	if data.has("scenario"):
 		if not data["scenario"] is Dictionary or not ScenarioManagerScript.new().validate_state(data["scenario"]):
 			return false
-	for optional_section in ["observation_network", "satellite_network", "hazard_forecasts"]:
+	for optional_section in [
+		"observation_network", "satellite_network", "hazard_forecasts",
+		"knowledge", "research_projects", "engineering_projects", "discoveries",
+		"inheritance", "knowledge_policy", "education", "preservation_plan",
+		"settlement", "regional_logistics", "region_operations", "exploration", "opening_guidance",
+	]:
 		if data.has(optional_section) and not data[optional_section] is Dictionary:
+			return false
+	if data.has("knowledge") and not data["knowledge"].get("nodes", null) is Dictionary:
+		return false
+	if data.has("observed_zone_id") and (
+		(not data["observed_zone_id"] is int and not data["observed_zone_id"] is float)
+		or not is_equal_approx(float(data["observed_zone_id"]), floor(float(data["observed_zone_id"])))
+		or int(data["observed_zone_id"]) < 0
+		or int(data["observed_zone_id"]) >= PlanetZoneManagerScript.TOTAL_ZONES
+	):
+		return false
+	if not _validate_regional_serialized_sections(data):
+		return false
+	return true
+
+
+func _validate_regional_serialized_sections(p_data: Dictionary) -> bool:
+	if p_data.has("settlement"):
+		var settlement_data: Dictionary = p_data["settlement"]
+		if not settlement_data.get("zone_knowledge", null) is Dictionary:
+			return false
+		if not settlement_data.get("region_population", null) is Dictionary or not settlement_data.get("settlements", null) is Dictionary:
+			return false
+		if not settlement_data.get("candidate_views", []) is Array or not settlement_data.get("familiar_zone_ids", []) is Array:
+			return false
+		var capital_value = settlement_data.get("capital_zone_id", -1)
+		if (not capital_value is int and not capital_value is float) or not is_equal_approx(float(capital_value), floor(float(capital_value))):
+			return false
+		if int(capital_value) < -1 or int(capital_value) >= PlanetZoneManagerScript.TOTAL_ZONES:
+			return false
+		for record in settlement_data["zone_knowledge"].values():
+			if not record is Dictionary or not record.get("public_data", null) is Dictionary:
+				return false
+	if p_data.has("regional_logistics"):
+		var logistics_data: Dictionary = p_data["regional_logistics"]
+		for key in ["local_inventories", "operation_reserves", "network_connections"]:
+			if not logistics_data.get(key, null) is Dictionary:
+				return false
+		for inventory in logistics_data["local_inventories"].values():
+			if not inventory is Dictionary:
+				return false
+	if p_data.has("region_operations"):
+		var operation_data: Dictionary = p_data["region_operations"]
+		if not operation_data.get("operations", null) is Dictionary:
+			return false
+		for operation in operation_data["operations"].values():
+			if not operation is Dictionary or not operation.get("route", null) is Array or not operation.get("cargo", null) is Dictionary:
+				return false
+	if p_data.has("exploration") and not p_data["exploration"].get("survey_log", null) is Array:
+		return false
+	if p_data.has("opening_guidance"):
+		var guidance_data: Dictionary = p_data["opening_guidance"]
+		for key in ["completed_task_ids", "skipped_task_ids", "dismissed_hint_ids", "handbook_seen_concept_ids", "processed_source_ids"]:
+			if not guidance_data.get(key, null) is Array:
+				return false
+		if not guidance_data.get("deferred_task_reasons", null) is Dictionary:
 			return false
 	return true
 
@@ -769,6 +1382,7 @@ func from_dict(data: Dictionary) -> bool:
 	paused = data.get("paused", false)
 	game_over = data.get("game_over", false)
 	universe_name = data.get("universe_name", "未命名宇宙")
+	observed_zone_id = int(data.get("observed_zone_id", 0))
 	game_started = true
 	time_scale = clampf(float(data.get("time_scale", 1.0)), 0.1, 10.0)
 	_simulation_accumulator = clampf(float(data.get("simulation_accumulator", 0.0)), 0.0, FIXED_SIMULATION_STEP_DAYS)
@@ -832,6 +1446,27 @@ func from_dict(data: Dictionary) -> bool:
 	if data.has("technology"):
 		tech_tree.load_state(data["technology"])
 	_connect_tech_tree_signals()
+	if data.has("knowledge"):
+		if not _initialize_knowledge_systems() or not knowledge_system.load_state(data["knowledge"]):
+			return false
+	else:
+		if not _initialize_knowledge_systems(data.get("technology", {})):
+			return false
+	if data.has("research_projects") and not research_project_system.load_state(data["research_projects"]):
+		return false
+	if data.has("engineering_projects") and not engineering_project_system.load_state(data["engineering_projects"]):
+		return false
+	if data.has("discoveries") and not discovery_system.load_state(data["discoveries"]):
+		return false
+	if data.has("inheritance") and not knowledge_inheritance.load_state(data["inheritance"]):
+		return false
+	if data.has("knowledge_policy") and not knowledge_policy_system.load_state(data["knowledge_policy"]):
+		return false
+	if data.has("education") and not education_system.load_state(data["education"]):
+		return false
+	if data.has("preservation_plan") and not preservation_allocator.load_state(data["preservation_plan"]):
+		return false
+	_sync_legacy_technology_from_knowledge()
 
 	decision_manager = DecisionManagerScript.new(config)
 	if data.has("decision"):
@@ -843,6 +1478,34 @@ func from_dict(data: Dictionary) -> bool:
 	planet_zones = PlanetZoneManagerScript.new(_env_config)
 	if data.has("planet_zones"):
 		planet_zones.load_state(data["planet_zones"])
+	settlement_system = SettlementSystemScript.new()
+	if data.has("settlement"):
+		if not settlement_system.load_state(data["settlement"]):
+			return false
+	else:
+		settlement_system.initialize_legacy(planet_zones, entities.population.total)
+	regional_logistics = RegionalLogisticsSystemScript.new()
+	if data.has("regional_logistics"):
+		if not regional_logistics.load_state(data["regional_logistics"]):
+			return false
+	elif settlement_system.capital_zone_id >= 0:
+		regional_logistics.initialize_at_capital(settlement_system.capital_zone_id, entities)
+	region_movement_system = RegionMovementSystemScript.new()
+	if data.has("region_operations") and not region_movement_system.load_state(data["region_operations"]):
+		return false
+	exploration_system = ExplorationSystemScript.new()
+	if data.has("exploration") and not exploration_system.load_state(data["exploration"]):
+		return false
+	opening_guidance = OpeningGuidanceControllerScript.new()
+	if data.has("opening_guidance"):
+		if not opening_guidance.initialize(int(data["opening_guidance"].get("mode", OpeningGuidanceControllerScript.GuidanceMode.FULL)), data["opening_guidance"]):
+			return false
+	else:
+		opening_guidance.initialize(OpeningGuidanceControllerScript.GuidanceMode.OFF)
+		if settlement_system.capital_zone_id >= 0:
+			opening_guidance.handle_domain_event("capital_confirmed", {"source_id": "legacy:capital"})
+	if settlement_system.capital_zone_id < 0:
+		paused = true
 	observation_network = ObservationNetworkScript.new()
 	if data.has("observation_network"):
 		observation_network.load_state(data["observation_network"])
@@ -852,6 +1515,7 @@ func from_dict(data: Dictionary) -> bool:
 	hazard_forecast_service = HazardForecastServiceScript.new()
 	if data.has("hazard_forecasts"):
 		hazard_forecast_service.load_state(data["hazard_forecasts"])
+	_refresh_external_workforce_reservation()
 	entities.apply_technology_effects(tech_tree)
 	entities.enforce_population_invariants()
 	return true
@@ -922,7 +1586,9 @@ func _load_default_scenario_snapshot() -> Dictionary:
 func _update_observation_systems(p_game_day: float, p_dt: float, p_env_params: Dictionary = {}) -> void:
 	if observation_network == null or satellite_network == null or hazard_forecast_service == null:
 		return
-	var has_telescope: bool = tech_tree != null and tech_tree.is_unlocked("telescope")
+	var has_telescope: bool = (
+		knowledge_system != null and knowledge_system.has_capability("telescope")
+	) or (tech_tree != null and tech_tree.is_unlocked("telescope"))
 	var public_measurement := p_env_params.duplicate(true)
 	if public_measurement.is_empty() and environment != null:
 		public_measurement = environment.get_environment_params()
@@ -946,14 +1612,17 @@ func _update_observation_systems(p_game_day: float, p_dt: float, p_env_params: D
 
 
 func _get_forecast_capabilities() -> Dictionary:
-	if tech_tree == null:
+	if tech_tree == null and knowledge_system == null:
 		return {}
 	return {
-		"hazard_warning": tech_tree.is_unlocked("telescope"),
-		"regional_hazard_projection": tech_tree.is_unlocked("observatory") and tech_tree.is_unlocked("computer"),
-		# 旧原型没有伤亡建模与知识传承能力；不能用混沌理论节点冒充它们。
-		"casualty_estimation": false,
-		"knowledge_loss_projection": false,
+		"hazard_warning": (
+			knowledge_system != null and knowledge_system.has_capability("hazard_warning")
+		) or (tech_tree != null and tech_tree.is_unlocked("telescope")),
+		"regional_hazard_projection": (
+			knowledge_system != null and knowledge_system.has_capability("regional_hazard_projection")
+		) or (tech_tree != null and tech_tree.is_unlocked("observatory") and tech_tree.is_unlocked("computer")),
+		"casualty_estimation": knowledge_system != null and knowledge_system.has_capability("casualty_estimation"),
+		"knowledge_loss_projection": knowledge_system != null and knowledge_system.has_capability("knowledge_loss_projection"),
 	}
 
 
@@ -983,14 +1652,14 @@ func _get_public_census_snapshot() -> Dictionary:
 
 
 func get_public_orbit_prediction(p_requested_steps: int, p_dt: float) -> Array:
-	if environment == null or hazard_forecast_service == null or tech_tree == null:
+	if environment == null or hazard_forecast_service == null:
 		return []
 	var snapshot: Dictionary = hazard_forecast_service.get_public_snapshot()
 	var level: int = snapshot.get("level", HazardForecastServiceScript.ForecastLevel.NONE)
 	if level < HazardForecastServiceScript.ForecastLevel.REGIONAL_RISK:
 		return []
 	var allowed_steps := 24
-	if tech_tree.is_unlocked("chaos_prediction"):
+	if (knowledge_system != null and knowledge_system.has_capability("chaos_prediction")) or (tech_tree != null and tech_tree.is_unlocked("chaos_prediction")):
 		allowed_steps = 80
 	var satellite_data: Dictionary = satellite_network.get_public_infrastructure()
 	if satellite_data.get("spatial_coverage", 0.0) >= 0.6:

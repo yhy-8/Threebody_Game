@@ -8,7 +8,7 @@ var current_tab: Tab = Tab.GAME
 # Settings data
 var time_scale_val: float = 1.0
 var auto_save_interval: int = 5
-var enable_tutorial: bool = true
+var guidance_mode: String = "full"
 var show_notifications: bool = true
 var developer_mode: bool = false
 var fullscreen: bool = false
@@ -118,6 +118,21 @@ func _build_game_tab() -> void:
 	vbox.add_theme_constant_override("separation", 10)
 	vbox.add_child(_make_slider("时间流逝速度", 0.1, 10.0, time_scale_val, 1, "x", func(v): time_scale_val = v))
 	vbox.add_child(_make_slider("自动保存间隔", 1.0, 30.0, float(auto_save_interval), 0, "分钟", func(v): auto_save_interval = int(v)))
+	var guidance_row := HBoxContainer.new()
+	var guidance_label := Label.new()
+	guidance_label.text = "默认开局引导"
+	guidance_label.custom_minimum_size = Vector2(200, 0)
+	guidance_row.add_child(guidance_label)
+	var guidance_option := OptionButton.new()
+	guidance_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for option in [["完整引导", "full"], ["精简提示", "compact"], ["关闭引导", "off"]]:
+		guidance_option.add_item(option[0])
+		guidance_option.set_item_metadata(guidance_option.item_count - 1, option[1])
+		if option[1] == guidance_mode:
+			guidance_option.select(guidance_option.item_count - 1)
+	guidance_option.item_selected.connect(func(index: int): guidance_mode = str(guidance_option.get_item_metadata(index)))
+	guidance_row.add_child(guidance_option)
+	vbox.add_child(guidance_row)
 	var developer_toggle := _make_checkbox("开发者模式（显示调试工具并绕过界面门槛）", developer_mode, func(v): developer_mode = v)
 	developer_toggle.tooltip_text = "开关本身不修改当前局；开发者工具执行的数值或科技修改会随存档保存"
 	vbox.add_child(developer_toggle)
@@ -162,7 +177,7 @@ func _load_settings() -> void:
 		return
 	time_scale_val = data.get("time_scale", 1.0)
 	auto_save_interval = data.get("auto_save_interval", 5)
-	enable_tutorial = data.get("enable_tutorial", true)
+	guidance_mode = str(data.get("guidance_mode", "full" if bool(data.get("enable_tutorial", true)) else "off"))
 	show_notifications = data.get("show_notifications", true)
 	developer_mode = data.get("developer_mode", false)
 	fullscreen = data.get("fullscreen", false)
@@ -185,7 +200,7 @@ func _save_settings() -> bool:
 	var data := {
 		"time_scale": time_scale_val,
 		"auto_save_interval": auto_save_interval,
-		"enable_tutorial": enable_tutorial,
+		"guidance_mode": guidance_mode,
 		"show_notifications": show_notifications,
 		"developer_mode": developer_mode,
 		"fullscreen": fullscreen,

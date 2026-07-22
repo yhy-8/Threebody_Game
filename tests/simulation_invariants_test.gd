@@ -73,6 +73,7 @@ func _test_storage_loss_step_invariance() -> void:
 	var results: Array = []
 	for schedule in schedules:
 		GameState.new_game("__损耗分步测试")
+		GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1)))
 		var storage = EntityScript.GameBuilding.new(1, "脱水仓", "storage_vault", 0, 0, {}, {}, 0.0, 0.0, false, true, 100.0, 100.0, 100)
 		GameState.entities.add_building(storage)
 		GameState.planet_zones.add_building_to_zone(0, 1)

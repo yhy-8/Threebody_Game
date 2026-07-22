@@ -6,6 +6,7 @@ func _ready() -> void:
 	var universe_name := "__自动回归_%d" % Time.get_ticks_usec()
 	GameState.set_developer_mode(true)
 	GameState.new_game(universe_name)
+	assert(GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))).get("success", false))
 	assert(GameState.can_access_starmap())
 	var applied: bool = GameState.apply_developer_values({
 		"population": {"total": 4321, "stored": 123, "breeders": 321},

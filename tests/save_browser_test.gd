@@ -7,6 +7,7 @@ var _failures: int = 0
 func _ready() -> void:
 	var universe_name := "__存档浏览器回归_%d" % Time.get_ticks_usec()
 	GameState.new_game(universe_name)
+	GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1)))
 	_expect(SaveManager.save_game(GameState, "可见存档", universe_name), "无法创建浏览器测试存档")
 	var save_path := SaveManager.get_current_save_path()
 

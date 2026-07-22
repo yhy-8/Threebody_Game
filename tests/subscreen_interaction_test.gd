@@ -6,18 +6,20 @@ var _failures: int = 0
 
 func _ready() -> void:
 	GameState.new_game("__子界面交互回归")
+	var capital_id := int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))
+	_expect(GameState.confirm_capital(capital_id).get("success", false), "无法确认交互测试首都")
 	GameState.entities.population.total = 100
 	GameState.entities.population.breeders = 0
 	GameState.entities.resources["iron"].amount = 1000.0
 	var build_result: Dictionary = GameState.decision_manager.execute_decision(
 		"build_algae_collector", GameState.entities, GameState.tech_tree,
-		GameState.planet_zones, 0
+		GameState.planet_zones, capital_id
 	)
 	_expect(build_result.get("success", false), "无法创建工人分配测试建筑")
 	var building_id: int = build_result.get("building_id", -1)
 
 	var zone_scene := await _spawn("res://scenes/zone_view/zone_view.tscn")
-	zone_scene._on_zone_selected(0)
+	zone_scene._on_zone_selected(capital_id)
 	await get_tree().process_frame
 	var breeder_plus_ten: Button = zone_scene.find_child("BreederPlus10", true, false)
 	var breeder_fill: Button = zone_scene.find_child("BreederFill", true, false)

@@ -19,6 +19,7 @@ func _ready() -> void:
 func _test_persistence_roundtrip() -> void:
 	var universe := "__往返回归_%d" % Time.get_ticks_usec()
 	GameState.new_game(universe)
+	GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1)))
 	GameState.time_scale = 5.0
 	GameState.paused = true
 	GameState.game_time = 12.5
@@ -77,6 +78,7 @@ func _test_persistence_roundtrip() -> void:
 
 func _test_fixed_step_and_prediction() -> void:
 	GameState.new_game("__固定步长回归")
+	GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1)))
 	var initial: Dictionary = GameState.to_dict()
 	GameState.update(1.0)
 	var once_positions: Array = _positions()

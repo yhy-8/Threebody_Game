@@ -1,0 +1,284 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/knowledge/knowledge_policy.gd" id="1_script"]
+[ext_resource type="Theme" path="res://resources/themes/default_theme.tres" id="2_theme"]
+
+[node name="KnowledgePolicy" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.02, 0.025, 0.065, 1)
+
+[node name="Toolbar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 24.0
+offset_top = 16.0
+offset_right = -24.0
+offset_bottom = 72.0
+theme_override_constants/separation = 12
+
+[node name="BackButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(120, 52)
+text = "← 知识图"
+
+[node name="Title" type="Label" parent="Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "知识政策与传承"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 26
+
+[node name="Hint" type="Label" parent="Toolbar"]
+layout_mode = 2
+text = "权重只影响资源分配顺序，不会凭空生成知识或容量"
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.62, 0.69, 0.86, 1)
+
+[node name="Content" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+offset_left = 24.0
+offset_top = 88.0
+offset_right = -24.0
+offset_bottom = -72.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 16
+
+[node name="PriorityPanel" type="PanelContainer" parent="Content"]
+layout_mode = 2
+custom_minimum_size = Vector2(390, 0)
+
+[node name="PriorityScroll" type="ScrollContainer" parent="Content/PriorityPanel"]
+layout_mode = 2
+
+[node name="PriorityVBox" type="VBoxContainer" parent="Content/PriorityPanel/PriorityScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="PriorityTitle" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "总体重视与保存权重"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 21
+
+[node name="PriorityValue" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "50 / 100"
+horizontal_alignment = 1
+
+[node name="PrioritySlider" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 100.0
+step = 1.0
+
+[node name="CarrierTitle" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "载体优先级（0~5）"
+theme_override_font_sizes/font_size = 18
+
+[node name="TeacherLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "教师 / 专家"
+[node name="TeacherWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 5.0
+step = 0.1
+[node name="LearnerLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "学徒 / 学生"
+[node name="LearnerWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 5.0
+step = 0.1
+[node name="RecordLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "记录副本"
+[node name="RecordWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 5.0
+step = 0.1
+[node name="ArtifactLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "样机 / 工具"
+[node name="ArtifactWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 5.0
+step = 0.1
+
+[node name="DomainTitle" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "领域保存权重"
+theme_override_font_sizes/font_size = 18
+
+[node name="DomainWeights" type="GridContainer" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+columns = 2
+
+[node name="CrisisLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+layout_mode = 2
+text = "危机姿态"
+[node name="CrisisPosture" type="OptionButton" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="RetentionLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+
+[node name="PolicyPanel" type="PanelContainer" parent="Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PolicyVBox" type="VBoxContainer" parent="Content/PolicyPanel"]
+layout_mode = 2
+
+[node name="PolicyTitle" type="Label" parent="Content/PolicyPanel/PolicyVBox"]
+layout_mode = 2
+text = "当前能力允许的制度"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 21
+
+[node name="PolicyScroll" type="ScrollContainer" parent="Content/PolicyPanel/PolicyVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PolicyList" type="VBoxContainer" parent="Content/PolicyPanel/PolicyVBox/PolicyScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ActionPanel" type="PanelContainer" parent="Content"]
+layout_mode = 2
+custom_minimum_size = Vector2(455, 0)
+
+[node name="ActionScroll" type="ScrollContainer" parent="Content/ActionPanel"]
+layout_mode = 2
+
+[node name="ActionVBox" type="VBoxContainer" parent="Content/ActionPanel/ActionScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="TeachingTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "实际教学计划"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 21
+
+[node name="TeachingNodeOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="TeacherCountLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "教师人数"
+[node name="TeacherCount" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 100.0
+value = 1.0
+[node name="StudentCountLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "学习者人数"
+[node name="StudentCount" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 1000.0
+value = 4.0
+[node name="TeachingHoursLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "每日课时"
+[node name="TeachingHours" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 16.0
+value = 4.0
+[node name="EmergencyCourse" type="CheckButton" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "抢救式教学（覆盖快、深度受限）"
+[node name="StartTeachingButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+text = "开始教学计划"
+
+[node name="PreservationTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "避难保存容量预览"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 21
+[node name="ShelterPeopleLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "纳入人口"
+[node name="ShelterPeople" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1000000.0
+[node name="ArchiveVolumeLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "档案干燥体积（m³）"
+[node name="ArchiveVolume" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 100000.0
+step = 0.5
+[node name="ArtifactMassLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+layout_mode = 2
+text = "样机与工具质量（kg）"
+[node name="ArtifactMass" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 10000000.0
+[node name="PreviewPreservationButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+text = "预览确定装载事实"
+[node name="PreservationPreview" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+text = "尚未预览"
+
+[node name="MessageLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -56.0
+offset_right = -24.0
+offset_bottom = -16.0
+horizontal_alignment = 1
+vertical_alignment = 1

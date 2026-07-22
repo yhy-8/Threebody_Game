@@ -338,6 +338,7 @@ var policy_efficiency_multiplier: float = 1.0
 var policy_output_multiplier: float = 1.0
 var social_stability: float = 1.0
 var population_health: float = 1.0
+var external_reserved_workers: int = 0
 var _active_policy_ids: Array = []
 var _config: Dictionary = {}
 var _next_building_id: int = 1
@@ -477,7 +478,11 @@ func get_total_building_workers() -> int:
 
 
 func get_idle_population() -> int:
-	return population.get_idle(get_total_building_workers())
+	return population.get_idle(get_total_building_workers() + external_reserved_workers)
+
+
+func set_external_reserved_workers(p_count: int) -> void:
+	external_reserved_workers = clampi(p_count, 0, population.total)
 
 
 func store_population_from_idle(p_count: int) -> Dictionary:
@@ -492,7 +497,10 @@ func store_population_from_idle(p_count: int) -> Dictionary:
 func prepare_population_reduction(p_target_total: int) -> void:
 	# 明确撤岗顺序：闲置人口先离开；仍超额时先撤生育岗位，再按建筑 ID 倒序撤岗。
 	p_target_total = maxi(0, p_target_total)
-	var excess: int = maxi(0, population.breeders + get_total_building_workers() - p_target_total)
+	var excess: int = maxi(0, population.breeders + get_total_building_workers() + external_reserved_workers - p_target_total)
+	var reserved_reduction := mini(external_reserved_workers, excess)
+	external_reserved_workers -= reserved_reduction
+	excess -= reserved_reduction
 	var breeder_reduction: int = mini(population.breeders, excess)
 	population.breeders -= breeder_reduction
 	excess -= breeder_reduction

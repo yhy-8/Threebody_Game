@@ -37,11 +37,45 @@ func _check_main_screen() -> void:
 	var scene := await _spawn("res://scenes/game/main_screen.tscn")
 	var toolbar: Control = scene.get_node("Toolbar")
 	var content: Control = scene.get_node("PanelContainer")
+	var observation: Control = scene.get_node("PanelContainer/ObservationPanel")
+	var left_hud: Control = scene.get_node("PanelContainer/LeftHud")
+	var right_hud: Control = scene.get_node("PanelContainer/RightHud")
+	var bottom_status: Control = scene.get_node("BottomStatus")
 	var hint: Control = scene.get_node("HintPanel")
 	var developer_panel: Control = scene.get_node("DeveloperOverlay/DeveloperPanel")
+	var capital_overlay: Control = scene.get_node("CapitalOverlay")
 	_expect(_ends_before(toolbar, content, true), "主界面工具栏与内容面板重叠")
-	_expect(_ends_before(content, hint, true), "主界面内容与底部提示重叠")
+	_expect(_ends_before(content, bottom_status, true), "主界面观测内容与全局状态栏重叠")
+	_expect(_ends_before(bottom_status, hint, true), "主界面全局状态栏与底部提示重叠")
+	_expect(observation.size.x > left_hud.size.x and observation.size.x > right_hud.size.x, "主界面中央观测画面不是视觉主体")
 	_expect(_inside_viewport(developer_panel), "开发者工具面板超出视口")
+	_expect(_inside_viewport(capital_overlay), "首都候选层超出视口")
+	_expect(capital_overlay.visible and scene.get_node("CapitalOverlay/CapitalVBox/CapitalSplit/CandidateScroll/CapitalCandidateList").get_child_count() > 0, "新局主界面没有显示可操作的首都候选")
+	scene.get_node("CapitalOverlay/CapitalVBox/ConfirmCapitalButton").pressed.emit()
+	await get_tree().process_frame
+	_expect(not capital_overlay.visible and GameState.settlement_system.capital_zone_id >= 0, "主界面确认首都后没有解除第 0 天选择层")
+	if not GameState.paused:
+		GameState.toggle_pause()
+	var guidance_overlay: Control = scene.get_node("GuidanceControlOverlay")
+	var world_before_guidance: String = JSON.stringify({"entities": GameState.entities.get_state(), "zones": GameState.planet_zones.get_state()})
+	scene.get_node("Toolbar/GuidanceControlButton").pressed.emit()
+	await get_tree().process_frame
+	_expect(guidance_overlay.visible and _inside_viewport(scene.get_node("GuidanceControlOverlay/Panel")), "局内引导手册无法打开或超出视口")
+	var defer_button: Button = scene.get_node("GuidanceControlOverlay/Panel/VBox/DeferGuidanceGroupButton")
+	defer_button.pressed.emit()
+	await get_tree().process_frame
+	_expect(GameState.opening_guidance.group_deferred and not scene.get_node("GuidancePanel").visible, "暂缓整组引导后任务卡仍常驻")
+	defer_button.pressed.emit()
+	await get_tree().process_frame
+	_expect(not GameState.opening_guidance.group_deferred, "局内引导手册无法恢复已暂缓任务")
+	var guidance_mode: OptionButton = scene.get_node("GuidanceControlOverlay/Panel/VBox/GuidanceModeOption")
+	guidance_mode.select(2)
+	guidance_mode.item_selected.emit(2)
+	_expect(GameState.opening_guidance.mode == GameState.opening_guidance.GuidanceMode.OFF, "局内引导手册无法关闭教学呈现")
+	guidance_mode.select(0)
+	guidance_mode.item_selected.emit(0)
+	_expect(world_before_guidance == JSON.stringify({"entities": GameState.entities.get_state(), "zones": GameState.planet_zones.get_state()}), "引导暂缓、关闭或恢复改变了世界状态")
+	scene.get_node("GuidanceControlOverlay/Panel/VBox/CloseGuidanceControlButton").pressed.emit()
 	await _discard(scene)
 
 
@@ -65,6 +99,13 @@ func _check_start_and_settings() -> void:
 	_expect(_inside_viewport(start_scene.get_node("DifficultyContainer")), "难度选择步骤超出视口")
 	_expect(_ends_before(difficulty_option, difficulty_description, true), "难度选项与说明重叠")
 	_expect(_ends_before(difficulty_description, difficulty_buttons, true), "难度说明与按钮行重叠")
+	start_scene.get_node("DifficultyContainer").visible = false
+	start_scene.get_node("GuidanceContainer").visible = true
+	await get_tree().process_frame
+	var guidance_option: Control = start_scene.get_node("GuidanceContainer/GuidanceOption")
+	var guidance_buttons: Control = start_scene.get_node("GuidanceContainer/GuidanceButtonRow")
+	_expect(_inside_viewport(start_scene.get_node("GuidanceContainer")), "引导模式步骤超出视口")
+	_expect(_ends_before(guidance_option, guidance_buttons, true), "引导模式选项与按钮行重叠")
 	await _discard(start_scene)
 
 	var settings_scene := await _spawn("res://scenes/main_menu/settings_screen.tscn")
@@ -79,6 +120,7 @@ func _check_start_and_settings() -> void:
 func _check_game_subscreens() -> void:
 	var scene_paths := [
 		"res://scenes/tech_tree/tech_tree.tscn",
+		"res://scenes/knowledge/knowledge_policy.tscn",
 		"res://scenes/zone_view/zone_view.tscn",
 		"res://scenes/decision/decision.tscn",
 		"res://scenes/starmap/starmap_view.tscn",

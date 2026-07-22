@@ -39,17 +39,23 @@ text = "← 返回"
 [node name="TitleLabel" type="Label" parent="Toolbar"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "科技树"
+text = "知识演化"
 horizontal_alignment = 1
 vertical_alignment = 1
 theme_override_font_sizes/font_size = 26
 
 [node name="HintLabel" type="Label" parent="Toolbar"]
 layout_mode = 2
-text = "左键研发  |  滚轮缩放  |  右键拖拽  |  空格暂停/继续"
+text = "节点只随认知显露  |  左键推进  |  滚轮缩放  |  右键拖拽"
 vertical_alignment = 1
 theme_override_colors/font_color = Color(0.62, 0.69, 0.86, 1)
 theme_override_font_sizes/font_size = 16
+
+[node name="KnowledgePolicyButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(140, 52)
+text = "知识政策"
 
 [node name="ResearchPanel" type="Panel" parent="."]
 layout_mode = 1
@@ -73,8 +79,24 @@ theme_override_constants/separation = 20
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "基础科研 0    应用科研 0    理论科研 0"
+text = "研究吞吐：基础 0 · 应用 0 · 理论 0"
 vertical_alignment = 1
+
+[node name="DomainFilter" type="OptionButton" parent="ResearchPanel/ResearchHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(150, 46)
+
+[node name="SearchInput" type="LineEdit" parent="ResearchPanel/ResearchHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(210, 46)
+placeholder_text = "搜索已知知识"
+
+[node name="RiskViewButton" type="CheckButton" parent="ResearchPanel/ResearchHBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "传承风险"
 
 [node name="ResearchLabel" type="Label" parent="ResearchPanel/ResearchHBox"]
 unique_name_in_owner = true
@@ -117,9 +139,9 @@ theme_override_font_sizes/font_size = 16
 [node name="TooltipPanel" type="Panel" parent="."]
 unique_name_in_owner = true
 visible = false
-custom_minimum_size = Vector2(360, 300)
-offset_right = 360.0
-offset_bottom = 300.0
+custom_minimum_size = Vector2(460, 500)
+offset_right = 460.0
+offset_bottom = 500.0
 mouse_filter = 2
 
 [node name="TooltipLabel" type="RichTextLabel" parent="TooltipPanel"]
