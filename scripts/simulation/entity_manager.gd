@@ -332,7 +332,6 @@ var resources: Dictionary = {}
 var population: PopulationManager
 var global_efficiency: float = 1.0
 var policy_efficiency_multiplier: float = 1.0
-var policy_output_multiplier: float = 1.0
 var social_stability: float = 1.0
 var population_health: float = 1.0
 var external_reserved_workers: int = 0
@@ -524,10 +523,9 @@ func enforce_population_invariants() -> void:
 
 func set_policy_effects(p_policy_ids: Array) -> void:
 	_active_policy_ids = p_policy_ids.duplicate()
-	population.policy_growth_multiplier = 3.0 if "boom" in _active_policy_ids else 1.0
-	population.policy_food_multiplier = 0.5 if "rationing" in _active_policy_ids else 1.0
-	policy_efficiency_multiplier = 0.8 if "rationing" in _active_policy_ids else 1.0
-	policy_output_multiplier = 2.5 if "industrial_drive" in _active_policy_ids else 1.0
+	population.policy_growth_multiplier = 1.0
+	population.policy_food_multiplier = 0.75 if "rationing" in _active_policy_ids else 1.0
+	policy_efficiency_multiplier = 0.9 if "rationing" in _active_policy_ids else 1.0
 
 
 func assign_worker_to_building(p_building_id: int, p_count: int) -> Dictionary:
@@ -589,7 +587,7 @@ func get_electricity_balance() -> Dictionary:
 	var consumption: float = 0.0
 	var effective_automation := (
 		population.automation_multiplier * global_efficiency
-		* policy_efficiency_multiplier * policy_output_multiplier
+		* policy_efficiency_multiplier
 	)
 	for b in buildings:
 		var building: GameBuilding = b as GameBuilding
@@ -615,13 +613,10 @@ func update(p_env_params: Dictionary, p_zone_manager = null, p_dt: float = 0.016
 		global_efficiency = min(1.0, global_efficiency + 0.01 * p_dt)
 
 	if "rationing" in _active_policy_ids:
-		social_stability = max(0.35, social_stability - 0.01 * p_dt)
-	if "industrial_drive" in _active_policy_ids:
-		social_stability = max(0.2, social_stability - 0.015 * p_dt)
-		population_health = max(0.25, population_health - 0.012 * p_dt)
-	if "rationing" not in _active_policy_ids and "industrial_drive" not in _active_policy_ids:
+		social_stability = max(0.35, social_stability - 0.004 * p_dt)
+		population_health = max(0.5, population_health - 0.002 * p_dt)
+	if "rationing" not in _active_policy_ids:
 		social_stability = min(1.0, social_stability + 0.003 * p_dt)
-	if "industrial_drive" not in _active_policy_ids:
 		population_health = min(1.0, population_health + 0.002 * p_dt)
 
 	population.storage_capacity = 0
@@ -738,7 +733,7 @@ func _record_building_outputs(p_building: GameBuilding, p_full_output: Dictionar
 
 
 func _get_effective_automation() -> float:
-	return population.automation_multiplier * global_efficiency * policy_efficiency_multiplier * policy_output_multiplier
+	return population.automation_multiplier * global_efficiency * policy_efficiency_multiplier
 
 
 func get_research_building_rate(p_building: GameBuilding, p_base_rate: float) -> float:

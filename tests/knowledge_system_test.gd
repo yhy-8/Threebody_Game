@@ -60,23 +60,40 @@ func _test_discovery_research_and_engineering() -> void:
 
 func _test_policy_education_and_preservation() -> void:
 	var before_state: int = GameState.knowledge_system.get_node_state("celestial_motion")
-	GameState.knowledge_policy_system.set_knowledge_priority(100.0)
-	_expect(GameState.knowledge_system.get_node_state("celestial_motion") == before_state, "知识重视度凭空改变了知识状态")
+	var retention_before: Dictionary = GameState.knowledge_policy_system.get_retention_context()
+	_expect(is_zero_approx(float(retention_before.get("education_coverage", -1.0))), "没有实际制度与教学却获得免费传承率")
+	var idle_before_policy: int = GameState.entities.get_idle_population()
 	var policy_result: Dictionary = GameState.adopt_knowledge_policy("designated_storytellers")
-	_expect(policy_result.get("success", false), "已具备口述能力却无法采用指定讲述者制度")
-	var plan := {
-		"plan_id": "plan:test:oral",
-		"node_id": "oral_tradition",
-		"teacher_count": 1,
-		"student_count": 4,
-		"hours_per_day": 4.0,
-		"practice_building_ids": [],
-		"emergency_course": false,
-	}
+	_expect(policy_result.get("success", false), "已具备口述能力却无法筹建指定讲述者制度")
+	_expect(
+		GameState.entities.get_idle_population() == idle_before_policy - 1
+		and "designated_storytellers" not in GameState.knowledge_policy_system.active_policy_ids,
+		"制度筹建没有占用组织人员，或未经实施时间直接生效",
+	)
+	GameState.knowledge_policy_system.update_day(3.0)
+	GameState._refresh_external_workforce_reservation()
+	_expect(
+		"designated_storytellers" in GameState.knowledge_policy_system.active_policy_ids
+		and float(GameState.knowledge_policy_system.get_retention_context().get("education_coverage", 0.0)) > 0.0,
+		"制度完成筹建后没有进入持续占岗的运行状态",
+	)
+	_expect(GameState.knowledge_system.get_node_state("celestial_motion") == before_state, "制度错误地直接改变了知识节点状态")
+	var teachable_ids: Array = GameState.education_system.get_teachable_node_views().map(func(view): return view["id"])
+	_expect("oral_tradition" not in teachable_ids and "simple_counting" in teachable_ids, "教学课程把传承制度本身当成了知识内容")
+	var plan: Dictionary = GameState.education_system.derive_plan(
+		"simple_counting", "oral", "routine", GameState.entities
+	)
+	_expect(not plan.is_empty(), "模拟层无法从课程、组织方式和投入级别推导教学计划")
+	var forged := plan.duplicate(true)
+	forged["method_id"] = "professional"
+	_expect(not GameState.education_system.validate_plan(forged, GameState.entities).get("success", true), "教学后端允许 UI 绕过专业教育能力和设施")
 	var idle_before: int = GameState.entities.get_idle_population()
 	var teaching: Dictionary = GameState.start_teaching_plan(plan)
 	_expect(teaching.get("success", false), "合法教学计划无法开始")
-	_expect(GameState.entities.get_idle_population() == idle_before - 5, "教师与学习者没有和生产岗位竞争劳动力")
+	_expect(
+		GameState.entities.get_idle_population() == idle_before - int(plan["teacher_count"]) - int(plan["student_count"]),
+		"教师与学习者没有和生产岗位竞争劳动力",
+	)
 	_expect("opening:first_teaching_plan" not in GameState.opening_guidance.completed_task_ids, "教学计划仅创建就被误判为已运行")
 	GameState._update_knowledge_evolution(GameState.game_time, 0.1)
 	_expect("opening:first_teaching_plan" in GameState.opening_guidance.completed_task_ids, "教学计划真实运行后没有推进引导")
@@ -123,7 +140,7 @@ func _test_persistence() -> void:
 	_expect(GameState.from_dict(saved), "知识体系存档无法读取")
 	_expect(GameState.knowledge_system.get_node_state("symbolic_record") == KnowledgeSystemScript.KnowledgeState.APPLIED, "知识节点状态存档往返失败")
 	_expect(GameState.knowledge_policy_system.active_policy_ids.has("designated_storytellers"), "知识政策存档往返失败")
-	_expect(GameState.education_system.plans.has("plan:test:oral"), "教学计划存档往返失败")
+	_expect(not GameState.education_system.plans.is_empty(), "教学计划存档往返失败")
 
 
 func _expect(p_condition: bool, p_message: String) -> void:

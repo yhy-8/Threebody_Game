@@ -205,6 +205,7 @@ func get_node_view(p_node_id: String) -> Dictionary:
 	var result: Dictionary = {
 		"id": p_node_id,
 		"domain": definition.get("domain", ""),
+		"teachable": bool(definition.get("teachable", true)),
 		"state": state,
 		"state_name": STATE_NAMES.get(state, "未知"),
 		"tier": int(definition.get("tier", 0)),
@@ -315,7 +316,11 @@ func get_state() -> Dictionary:
 
 
 func load_state(p_data: Dictionary) -> bool:
-	if not p_data.get("nodes", null) is Dictionary:
+	if (
+		int(p_data.get("state_version", -1)) != STATE_VERSION
+		or int(p_data.get("graph_data_version", -1)) != graph.data_version
+		or not p_data.get("nodes", null) is Dictionary
+	):
 		return false
 	_initialize_empty_runtime()
 	for node_id in p_data.get("nodes", {}):

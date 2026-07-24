@@ -7,7 +7,7 @@ signal developer_mode_changed(enabled: bool)
 signal scenario_phase_changed(new_phase: String, transition_day: float)
 
 const SETTINGS_PATH := "res://settings.json"
-const SAVE_SCHEMA_VERSION := 8
+const SAVE_SCHEMA_VERSION := 9
 const FIXED_SIMULATION_STEP_DAYS := 0.02
 const MAX_SIMULATION_SUBSTEPS := 512
 const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
@@ -344,10 +344,20 @@ func start_teaching_plan(p_plan: Dictionary) -> Dictionary:
 	return result
 
 
+func start_teaching_strategy(p_node_id: String, p_method_id: String, p_intensity_id: String) -> Dictionary:
+	if education_system == null or entities == null:
+		return {"success": false, "message": "教学系统尚未初始化"}
+	var result: Dictionary = education_system.start_strategy(p_node_id, p_method_id, p_intensity_id, entities)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return result
+
+
 func adopt_knowledge_policy(p_policy_id: String) -> Dictionary:
-	if knowledge_policy_system == null:
+	if knowledge_policy_system == null or entities == null:
 		return {"success": false, "message": "知识政策系统尚未初始化"}
-	var result: Dictionary = knowledge_policy_system.adopt_policy(p_policy_id)
+	var result: Dictionary = knowledge_policy_system.adopt_policy(p_policy_id, entities)
+	_refresh_external_workforce_reservation()
 	state_updated.emit()
 	return result
 
@@ -362,6 +372,8 @@ func _refresh_external_workforce_reservation() -> void:
 		reserved += engineering_project_system.get_reserved_workers()
 	if education_system != null:
 		reserved += education_system.get_reserved_workers()
+	if knowledge_policy_system != null:
+		reserved += knowledge_policy_system.get_reserved_workers()
 	if region_movement_system != null:
 		reserved += region_movement_system.get_reserved_population()
 	entities.set_external_reserved_workers(reserved)
@@ -909,9 +921,7 @@ func _process_research_output(p_game_days_dt: float) -> void:
 	var policy_research_mult: float = 1.0
 	if decision_manager != null:
 		if "rationing" in decision_manager.active_policies:
-			policy_research_mult *= 0.8
-		if "industrial_drive" in decision_manager.active_policies:
-			policy_research_mult *= 2.5
+			policy_research_mult *= 0.9
 	dehydrate_mult *= policy_research_mult
 	var pop_divisor: float = _research_config.get("basic_population_divisor", 500.0)
 	var institute_output: float = _research_config.get("institute_output_per_day", 1.0)
@@ -981,6 +991,8 @@ func _process_research_output(p_game_days_dt: float) -> void:
 func _update_knowledge_evolution(p_game_day: float, p_delta_days: float) -> void:
 	if knowledge_system == null:
 		return
+	knowledge_policy_system.update_day(p_delta_days)
+	_refresh_external_workforce_reservation()
 	var active_building_types: Array[String] = []
 	for building in entities.buildings:
 		if building.active and not building.destroyed and not building.under_construction and building.building_type not in active_building_types:

@@ -46,6 +46,7 @@ func _check_main_screen() -> void:
 	var hint: Control = scene.get_node("HintPanel")
 	var developer_panel: Control = scene.get_node("DeveloperOverlay/DeveloperPanel")
 	var capital_overlay: Control = scene.get_node("CapitalOverlay")
+	_expect(scene.get_node_or_null("Toolbar/KnowledgePolicyButton") == null, "主界面仍保留知识制度的跨层级入口")
 	_expect(_ends_before(toolbar, content, true), "主界面工具栏与内容面板重叠")
 	_expect(_ends_before(content, bottom_status, true), "主界面观测内容与全局状态栏重叠")
 	_expect(_ends_before(bottom_status, hint, true), "主界面全局状态栏与底部提示重叠")
@@ -132,13 +133,13 @@ func _check_game_subscreens() -> void:
 		var scene := await _spawn(scene_path)
 		var toolbar: Control = scene.get_node("Toolbar")
 		_expect(_inside_viewport(toolbar), "%s 工具栏超出视口" % scene_path)
+		if scene_path.ends_with("tech_tree.tscn"):
+			_expect(scene.get_node_or_null("Toolbar/KnowledgePolicyButton") != null, "知识图缺少知识制度入口")
 		if scene_path.ends_with("knowledge_policy.tscn"):
 			_expect(scene.get_node_or_null("Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection/TeacherCount") == null, "知识政策仍暴露教师人数微操")
-			_expect(not scene.get_node("Content/PriorityPanel/PriorityScroll/PriorityVBox/RecordWeight").visible, "未解锁记录载体仍显示占位")
+			_expect(scene.get_node_or_null("Content/PriorityPanel") == null, "知识政策仍显示没有实际分配器消费的装饰性权重")
+			_expect(scene.get_node_or_null("Content/PolicyPanel/PolicyVBox/InstitutionStatusLabel") != null, "知识制度缺少真实岗位与实施状态")
 			_expect(not scene.get_node("Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection").visible, "无避难设施时保存区仍显示占位")
-			var domain_rows: Node = scene.get_node("Content/PriorityPanel/PriorityScroll/PriorityVBox/DomainWeights")
-			for row in domain_rows.get_children():
-				_expect(row.get_child_count() == 2 and (row.get_child(1) as Control).size.x >= 180.0, "领域权重滑杆被挤压或与标签重叠")
 		if scene_path.ends_with("starmap_view.tscn"):
 			var bodies: Node = scene.get_node("Viewport3D/SubViewport/StarMap3D/CelestialBodies")
 			_expect(bodies.get_child_count() == 4, "3D 星图没有创建完整的三颗恒星与一颗行星")

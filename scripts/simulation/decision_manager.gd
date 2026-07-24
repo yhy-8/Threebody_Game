@@ -245,25 +245,11 @@ func _build_decisions(p_config: Dictionary) -> void:
 	)
 	available_decisions["rehydrate"] = rehydrate_dec
 
-	available_decisions["boom"] = Decision.new(
-		"boom", "大生育计划",
-		"消耗500食物，人口增长速度提高200%。再次点击可结束计划。",
-		"policy", {"food": 500}, "", {
-			"growth": "+200%", "food": "启用时消耗500",
-		}
-	)
 	available_decisions["rationing"] = Decision.new(
-		"rationing", "配给制",
-		"食物消耗减少50%，但生产效率降低20%，社会安定度持续下降。",
+		"rationing", "应急定量配给",
+		"按人口统一降低每日口粮标准；食物消耗减少25%，但劳动效率降低10%，健康与社会安定会缓慢恶化。再次点击可结束。",
 		"policy", {}, "", {
-			"food_consumption": "-50%", "efficiency": "-20%", "stability": "下降",
-		}
-	)
-	available_decisions["industrial_drive"] = Decision.new(
-		"industrial_drive", "工业强心剂",
-		"所有建筑与科研产出提高150%，人口健康和社会安定度持续下降。",
-		"policy", {}, "", {
-			"production": "+150%", "health": "下降", "stability": "大幅下降",
+			"food_consumption": "-25%", "efficiency": "-10%", "health": "缓慢下降", "stability": "缓慢下降",
 		}
 	)
 
@@ -311,7 +297,7 @@ func _check_policy_conditions(p_policy_id: String, p_entities = null) -> Diction
 	elif p_policy_id == "rehydrate":
 		if current_state != CivilizationState.DEHYDRATED:
 			return {"success": false, "message": "目前不在脱水状态，无需浸泡"}
-	elif p_policy_id in ["boom", "rationing", "industrial_drive"]:
+	elif p_policy_id == "rationing":
 		if current_state == CivilizationState.DEHYDRATED and p_policy_id not in active_policies:
 			return {"success": false, "message": "脱水状态下无法开启该政策"}
 	return {"success": true, "message": ""}
@@ -473,7 +459,7 @@ func _execute_policy(p_policy_id: String, p_entities) -> Dictionary:
 			pop.retrieve_population(stored)
 		return {"success": true, "message": "浸泡复苏完成：%d人苏醒" % stored, "building_id": -1}
 
-	elif p_policy_id in ["boom", "rationing", "industrial_drive"]:
+	elif p_policy_id == "rationing":
 		var decision: Decision = available_decisions[p_policy_id] as Decision
 		if p_policy_id in active_policies:
 			active_policies.erase(p_policy_id)

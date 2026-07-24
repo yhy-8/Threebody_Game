@@ -45,7 +45,7 @@ theme_override_font_sizes/font_size = 26
 
 [node name="Hint" type="Label" parent="Toolbar"]
 layout_mode = 2
-text = "权重只影响资源分配顺序，不会凭空生成知识或容量"
+text = "你决定制度、课程与投入；系统结算人员、工时、设施、时滞与传承结果"
 vertical_alignment = 1
 theme_override_colors/font_color = Color(0.62, 0.69, 0.86, 1)
 
@@ -60,106 +60,10 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 16
 
-[node name="PriorityPanel" type="PanelContainer" parent="Content"]
-layout_mode = 2
-custom_minimum_size = Vector2(390, 0)
-
-[node name="PriorityScroll" type="ScrollContainer" parent="Content/PriorityPanel"]
-layout_mode = 2
-
-[node name="PriorityVBox" type="VBoxContainer" parent="Content/PriorityPanel/PriorityScroll"]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 8
-
-[node name="PriorityTitle" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-layout_mode = 2
-text = "总体重视与保存权重"
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 21
-
-[node name="PriorityValue" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "50 / 100"
-horizontal_alignment = 1
-
-[node name="PrioritySlider" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-min_value = 0.0
-max_value = 100.0
-step = 1.0
-
-[node name="CarrierTitle" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-layout_mode = 2
-text = "载体优先级（0~5）"
-theme_override_font_sizes/font_size = 18
-
-[node name="TeacherLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "教师 / 专家"
-[node name="TeacherWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-max_value = 5.0
-step = 0.1
-[node name="LearnerLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "学徒 / 学生"
-[node name="LearnerWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-max_value = 5.0
-step = 0.1
-[node name="RecordLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "记录副本"
-[node name="RecordWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-max_value = 5.0
-step = 0.1
-[node name="ArtifactLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "样机 / 工具"
-[node name="ArtifactWeight" type="HSlider" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-max_value = 5.0
-step = 0.1
-
-[node name="DomainTitle" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "领域保存权重"
-theme_override_font_sizes/font_size = 18
-
-[node name="DomainWeights" type="VBoxContainer" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="CrisisLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "危机姿态"
-[node name="CrisisPosture" type="OptionButton" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="RetentionLabel" type="Label" parent="Content/PriorityPanel/PriorityScroll/PriorityVBox"]
-unique_name_in_owner = true
-layout_mode = 2
-autowrap_mode = 2
-
 [node name="PolicyPanel" type="PanelContainer" parent="Content"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(650, 0)
 size_flags_horizontal = 3
 
 [node name="PolicyVBox" type="VBoxContainer" parent="Content/PolicyPanel"]
@@ -170,6 +74,12 @@ layout_mode = 2
 text = "当前能力允许的制度"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 21
+
+[node name="InstitutionStatusLabel" type="Label" parent="Content/PolicyPanel/PolicyVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.78, 0.94, 1)
 
 [node name="PolicyScroll" type="ScrollContainer" parent="Content/PolicyPanel/PolicyVBox"]
 layout_mode = 2
@@ -207,7 +117,7 @@ theme_override_font_sizes/font_size = 21
 
 [node name="TeachingTargetLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 layout_mode = 2
-text = "传承目标"
+text = "课程内容（已掌握且可传授）"
 
 [node name="TeachingNodeOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 unique_name_in_owner = true
@@ -215,7 +125,7 @@ layout_mode = 2
 
 [node name="TeachingMethodLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 layout_mode = 2
-text = "教学组织方式"
+text = "教学组织方式（受能力与设施约束）"
 
 [node name="TeachingMethodOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
 unique_name_in_owner = true

@@ -2,6 +2,7 @@ extends Node
 ## 人口、效率、资源守恒与劳动力不变量回归测试。
 
 const EntityScript = preload("res://scripts/simulation/entity_manager.gd")
+const DecisionScript = preload("res://scripts/simulation/decision_manager.gd")
 
 var _failures: int = 0
 
@@ -10,6 +11,7 @@ func _ready() -> void:
 	_test_efficiency_step_invariance()
 	_test_resource_conservation()
 	_test_population_invariants()
+	_test_policy_control_boundaries()
 	_test_storage_loss_step_invariance()
 	if _failures == 0:
 		print("SIMULATION_INVARIANTS_TEST_OK")
@@ -62,6 +64,22 @@ func _test_population_invariants() -> void:
 	entities.enforce_population_invariants()
 	_expect(entities.population.breeders + entities.get_total_building_workers() <= 1, "减员后仍有幽灵劳动力")
 	_expect(not entities.store_population_from_idle(1).get("success", false), "公共入库 API 重复占用了在岗人口")
+
+
+func _test_policy_control_boundaries() -> void:
+	var decisions = DecisionScript.new()
+	var policy_ids: Array = decisions.get_policy_decisions().map(func(decision): return decision.id)
+	_expect("boom" not in policy_ids and "industrial_drive" not in policy_ids, "文明政策仍提供无机制支撑的永久生育或免费产出倍增")
+	var entities = EntityScript.new(_base_config())
+	entities.set_policy_effects(["rationing"])
+	_expect(
+		is_equal_approx(entities.population.policy_food_multiplier, 0.75)
+		and is_equal_approx(entities.policy_efficiency_multiplier, 0.9)
+		and is_equal_approx(entities.population.policy_growth_multiplier, 1.0),
+		"应急配给没有按口粮—效率取舍结算，或仍在凭空修改人口增长",
+	)
+	entities.update({"heat_level": 0.5}, null, 1.0, false)
+	_expect(entities.social_stability < 1.0 and entities.population_health < 1.0, "应急配给没有结算健康与安定代价")
 
 
 func _test_storage_loss_step_invariance() -> void:

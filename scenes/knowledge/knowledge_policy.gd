@@ -1,38 +1,31 @@
 extends Control
-## Knowledge institutions, teaching jobs, carrier priorities, and shelter allocation facts.
+## Knowledge institutions, teaching jobs, and shelter allocation facts.
 
-const DOMAIN_NAMES: Dictionary = {
-	"memory": "社会记忆", "measurement": "数学测量", "materials": "工具材料", "energy": "工程能源",
-	"astronomy": "天文航天", "life": "生命环境", "survival": "生存庇护", "natural_law": "自然规律", "engineering": "复杂工程",
-}
-const TEACHING_INTENSITIES: Array[Dictionary] = [
-	{"id": "light", "name": "轻度维持", "population_share": 0.03, "hours": 2.0, "emergency": false},
-	{"id": "normal", "name": "常规传承", "population_share": 0.08, "hours": 4.0, "emergency": false},
-	{"id": "strong", "name": "重点普及", "population_share": 0.15, "hours": 6.0, "emergency": false},
-	{"id": "crisis", "name": "危机抢救", "population_share": 0.20, "hours": 8.0, "emergency": true},
-]
-
-var _domain_sliders: Dictionary = {}
+var _refresh_elapsed: float = 0.0
+var _policy_signature: String = ""
 
 
 func _ready() -> void:
 	EventBus.screen_changed.emit("knowledge_policy")
 	%BackButton.pressed.connect(_on_back_pressed)
-	%PrioritySlider.value_changed.connect(_on_priority_changed)
-	%TeacherWeight.value_changed.connect(_on_carrier_changed.bind("teachers"))
-	%LearnerWeight.value_changed.connect(_on_carrier_changed.bind("learners"))
-	%RecordWeight.value_changed.connect(_on_carrier_changed.bind("records"))
-	%ArtifactWeight.value_changed.connect(_on_carrier_changed.bind("artifacts"))
-	%CrisisPosture.item_selected.connect(_on_crisis_posture_selected)
-	%TeachingNodeOption.item_selected.connect(_on_teaching_selection_changed)
+	%TeachingNodeOption.item_selected.connect(_on_teaching_target_changed)
 	%TeachingMethodOption.item_selected.connect(_on_teaching_selection_changed)
 	%TeachingIntensityOption.item_selected.connect(_on_teaching_selection_changed)
 	%StartTeachingButton.pressed.connect(_on_start_teaching)
 	%PreviewPreservationButton.pressed.connect(_on_preview_preservation)
 	EventBus.game_paused.connect(_on_global_pause_changed)
-	_setup_static_controls()
-	_rebuild_policy_list()
+	_setup_preservation_controls()
+	_refresh_policy_display(true)
 	_rebuild_teaching_nodes()
+	_refresh_status()
+
+
+func _process(p_delta: float) -> void:
+	_refresh_elapsed += p_delta
+	if _refresh_elapsed < 0.25:
+		return
+	_refresh_elapsed = 0.0
+	_refresh_policy_display()
 	_refresh_status()
 
 
@@ -40,58 +33,10 @@ func _on_global_pause_changed(p_paused: bool) -> void:
 	_show_message("模拟已暂停" if p_paused else "模拟已继续", true)
 
 
-func _setup_static_controls() -> void:
-	var policy = GameState.knowledge_policy_system
-	%PrioritySlider.value = policy.knowledge_priority
-	%TeacherWeight.value = policy.carrier_weights["teachers"]
-	%LearnerWeight.value = policy.carrier_weights["learners"]
-	%RecordWeight.value = policy.carrier_weights["records"]
-	%ArtifactWeight.value = policy.carrier_weights["artifacts"]
-	var has_oral_teaching: bool = GameState.knowledge_system.has_capability("oral_teaching")
+func _setup_preservation_controls() -> void:
 	var has_records: bool = GameState.knowledge_system.has_capability("symbolic_recording")
 	var has_artifacts: bool = GameState.knowledge_system.has_capability("hand_tools")
-	_set_control_pair_visible(%TeacherLabel, %TeacherWeight, has_oral_teaching)
-	_set_control_pair_visible(%LearnerLabel, %LearnerWeight, has_oral_teaching)
-	_set_control_pair_visible(%RecordLabel, %RecordWeight, has_records)
-	_set_control_pair_visible(%ArtifactLabel, %ArtifactWeight, has_artifacts)
-	%CrisisPosture.clear()
-	for item in [["生命优先", "life_first"], ["均衡", "balanced"], ["知识优先", "knowledge_first"], ["自定义", "custom"]]:
-		%CrisisPosture.add_item(item[0])
-		%CrisisPosture.set_item_metadata(%CrisisPosture.item_count - 1, item[1])
-		if item[1] == policy.crisis_posture:
-			%CrisisPosture.select(%CrisisPosture.item_count - 1)
-	for child in %DomainWeights.get_children():
-		child.queue_free()
-	_domain_sliders.clear()
-	var visible_domains: Array[String] = []
-	for view_value in GameState.knowledge_system.get_visible_nodes():
-		var domain := str((view_value as Dictionary).get("domain", ""))
-		if not domain.is_empty() and domain not in visible_domains:
-			visible_domains.append(domain)
-	visible_domains.sort()
-	for domain in visible_domains:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		var label := Label.new()
-		label.text = DOMAIN_NAMES.get(domain, domain)
-		label.custom_minimum_size.x = 116.0
-		row.add_child(label)
-		var slider := HSlider.new()
-		slider.custom_minimum_size.x = 190.0
-		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		slider.min_value = 0.0
-		slider.max_value = 5.0
-		slider.step = 0.1
-		slider.value = policy.domain_weights[domain]
-		slider.value_changed.connect(_on_domain_weight_changed.bind(domain))
-		row.add_child(slider)
-		%DomainWeights.add_child(row)
-		_domain_sliders[domain] = slider
-	%DomainTitle.visible = not visible_domains.is_empty()
-	%DomainWeights.visible = not visible_domains.is_empty()
 	var preservation_available := not _get_shelter_snapshots().is_empty()
-	%CrisisLabel.visible = preservation_available
-	%CrisisPosture.visible = preservation_available
 	%PreservationSection.visible = preservation_available
 	%PreservationSection.get_node("ArchiveVolumeLabel").visible = has_records
 	%ArchiveVolume.visible = has_records
@@ -113,12 +58,24 @@ func _rebuild_policy_list() -> void:
 		card.add_child(row)
 		var text := Label.new()
 		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		text.text = "%s\n%s" % [definition.get("name", ""), _branch_name(str(definition.get("branch", "")))]
+		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var status := "已运行"
+		if definition.get("pending", false):
+			status = "筹建 %.0f / %.0f 天" % [definition.get("progress_days", 0.0), definition.get("required_days", 0.0)]
+		elif not definition.get("active", false):
+			status = "筹建需 %d 人 × %.0f 天；运行维护 %d 人" % [
+				definition.get("setup_workers", 0), definition.get("setup_days", 0.0),
+				definition.get("operating_workers", 0),
+			]
+		text.text = "%s · %s\n%s\n%s" % [
+			definition.get("name", ""), _branch_name(str(definition.get("branch", ""))),
+			definition.get("description", ""), status,
+		]
 		row.add_child(text)
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(112.0, 52.0)
-		button.text = "已采用" if definition.get("active", false) else "采用"
-		button.disabled = definition.get("active", false)
+		button.text = "已运行" if definition.get("active", false) else ("筹建中" if definition.get("pending", false) else "筹建制度")
+		button.disabled = definition.get("active", false) or definition.get("pending", false)
 		button.pressed.connect(_on_adopt_policy.bind(str(definition.get("id", ""))))
 		row.add_child(button)
 		%PolicyList.add_child(card)
@@ -126,15 +83,13 @@ func _rebuild_policy_list() -> void:
 
 func _rebuild_teaching_nodes() -> void:
 	%TeachingNodeOption.clear()
-	for view_value in GameState.knowledge_system.get_visible_nodes():
+	for view_value in GameState.education_system.get_teachable_node_views():
 		var view: Dictionary = view_value
-		if int(view.get("state", 0)) not in [GameState.knowledge_system.KnowledgeState.MASTERED, GameState.knowledge_system.KnowledgeState.APPLIED]:
-			continue
 		%TeachingNodeOption.add_item(str(view.get("display_name", view.get("id", ""))))
 		%TeachingNodeOption.set_item_metadata(%TeachingNodeOption.item_count - 1, view.get("id", ""))
 	_rebuild_teaching_methods()
 	%TeachingIntensityOption.clear()
-	for intensity in TEACHING_INTENSITIES:
+	for intensity in GameState.education_system.get_intensities():
 		%TeachingIntensityOption.add_item(str(intensity["name"]))
 		%TeachingIntensityOption.set_item_metadata(%TeachingIntensityOption.item_count - 1, intensity["id"])
 	%TeachingIntensityOption.select(1)
@@ -145,24 +100,17 @@ func _rebuild_teaching_nodes() -> void:
 
 func _rebuild_teaching_methods() -> void:
 	%TeachingMethodOption.clear()
-	var methods: Array[Dictionary] = []
-	if GameState.knowledge_system.has_capability("oral_teaching"):
-		methods.append({"id": "oral", "name": "口耳相传", "class_size": 4})
-	if GameState.knowledge_system.has_capability("symbolic_recording"):
-		methods.append({"id": "record_assisted", "name": "记录辅助传习", "class_size": 7})
-	if GameState.knowledge_system.has_capability("organized_education"):
-		methods.append({"id": "organized", "name": "固定课程", "class_size": 10})
-	if GameState.knowledge_system.has_capability("professional_education") and _has_operating_academy():
-		methods.append({"id": "professional", "name": "专业院校教育", "class_size": 16})
-	for method in methods:
+	if %TeachingNodeOption.selected < 0:
+		return
+	var node_id := str(%TeachingNodeOption.get_item_metadata(%TeachingNodeOption.selected))
+	for method in GameState.education_system.get_available_methods(node_id, GameState.entities):
 		%TeachingMethodOption.add_item(str(method["name"]))
-		%TeachingMethodOption.set_item_metadata(%TeachingMethodOption.item_count - 1, method)
+		%TeachingMethodOption.set_item_metadata(%TeachingMethodOption.item_count - 1, method["id"])
 
 
 func _refresh_status() -> void:
 	var retention: Dictionary = GameState.knowledge_policy_system.get_retention_context()
-	%PriorityValue.text = "%.0f / 100" % GameState.knowledge_policy_system.knowledge_priority
-	var lines: Array[String] = ["制度保留条件"]
+	var lines: Array[String] = ["制度运行结果（只来自已完成筹建且持续占岗的制度）"]
 	if GameState.knowledge_system.has_capability("oral_teaching"):
 		lines.append("教学覆盖 %.0f%%" % (float(retention.get("education_coverage", 0.0)) * 100.0))
 	if GameState.knowledge_system.has_capability("symbolic_recording"):
@@ -170,44 +118,37 @@ func _refresh_status() -> void:
 	if GameState.knowledge_system.has_capability("hand_tools"):
 		lines.append("实践维持 %.0f%%" % (float(retention.get("practice_retention", 0.0)) * 100.0))
 	lines.append("")
-	lines.append("当前教学计划 %d 项，占用 %d 人" % [GameState.education_system.plans.size(), GameState.education_system.get_reserved_workers()])
-	%RetentionLabel.text = "\n".join(lines)
+	lines.append("制度岗位 %d 人 · 教学计划 %d 项 / %d 人" % [
+		GameState.knowledge_policy_system.get_reserved_workers(),
+		GameState.education_system.plans.size(), GameState.education_system.get_reserved_workers(),
+	])
+	%InstitutionStatusLabel.text = "\n".join(lines)
 	_refresh_teaching_preview()
-
-
-func _on_priority_changed(p_value: float) -> void:
-	GameState.knowledge_policy_system.set_knowledge_priority(p_value)
-	_refresh_status()
-
-
-func _on_carrier_changed(p_value: float, p_carrier_id: String) -> void:
-	GameState.knowledge_policy_system.set_carrier_weight(p_carrier_id, p_value)
-
-
-func _on_domain_weight_changed(p_value: float, p_domain_id: String) -> void:
-	GameState.knowledge_policy_system.set_domain_weight(p_domain_id, p_value)
-
-
-func _on_crisis_posture_selected(p_index: int) -> void:
-	GameState.knowledge_policy_system.set_crisis_posture(str(%CrisisPosture.get_item_metadata(p_index)))
 
 
 func _on_adopt_policy(p_policy_id: String) -> void:
 	var result: Dictionary = GameState.adopt_knowledge_policy(p_policy_id)
 	_show_message(result.get("message", ""), result.get("success", false))
-	_rebuild_policy_list()
+	_refresh_policy_display(true)
 	_refresh_status()
 
 
 func _on_start_teaching() -> void:
 	var plan := _derive_teaching_plan()
 	if plan.is_empty():
-		_show_message("当前没有足够闲置人口开展教学", false)
+		_show_message("当前人口、能力或设施不足，无法形成该教学计划", false)
 		return
 	var preview: Dictionary = GameState.education_system.preview_plan(plan)
-	var result: Dictionary = GameState.start_teaching_plan(plan)
-	_show_message("%s（每日损失 %.0f 工时）" % [result.get("message", ""), preview.get("production_hours_lost", 0.0)], result.get("success", false))
+	var result: Dictionary = GameState.start_teaching_strategy(
+		str(plan.get("node_id", "")), str(plan.get("method_id", "")), str(plan.get("intensity_id", ""))
+	)
+	_show_message("%s（整日岗位机会成本 %.0f 人时/天）" % [result.get("message", ""), preview.get("production_hours_lost", 0.0)], result.get("success", false))
 	_refresh_status()
+
+
+func _on_teaching_target_changed(_p_index: int) -> void:
+	_rebuild_teaching_methods()
+	_refresh_teaching_preview()
 
 
 func _on_teaching_selection_changed(_p_index: int) -> void:
@@ -217,40 +158,10 @@ func _on_teaching_selection_changed(_p_index: int) -> void:
 func _derive_teaching_plan() -> Dictionary:
 	if %TeachingNodeOption.selected < 0 or %TeachingMethodOption.selected < 0 or %TeachingIntensityOption.selected < 0:
 		return {}
-	var idle: int = GameState.entities.get_idle_population()
-	if idle < 2:
-		return {}
 	var node_id := str(%TeachingNodeOption.get_item_metadata(%TeachingNodeOption.selected))
-	var method: Dictionary = %TeachingMethodOption.get_item_metadata(%TeachingMethodOption.selected)
+	var method_id := str(%TeachingMethodOption.get_item_metadata(%TeachingMethodOption.selected))
 	var intensity_id := str(%TeachingIntensityOption.get_item_metadata(%TeachingIntensityOption.selected))
-	var intensity: Dictionary = TEACHING_INTENSITIES[0]
-	for candidate in TEACHING_INTENSITIES:
-		if candidate["id"] == intensity_id:
-			intensity = candidate
-			break
-	var students := maxi(1, int(floor(GameState.entities.population.total * float(intensity["population_share"]))))
-	var class_size := maxi(1, int(method.get("class_size", 4)))
-	var teachers := maxi(1, int(ceil(float(students) / class_size)))
-	while students > 0 and students + teachers > idle:
-		students -= 1
-		teachers = maxi(1, int(ceil(float(students) / class_size)))
-	if students <= 0 or students + teachers > idle:
-		return {}
-	var sequence: int = GameState.education_system.plans.size() + GameState.education_system.completed_plan_ids.size() + 1
-	return {
-		"plan_id": "plan:%s:%03d" % [node_id, sequence],
-		"node_id": node_id,
-		"curriculum_id": node_id,
-		"method_id": method.get("id", "oral"),
-		"intensity_id": intensity_id,
-		"teacher_count": teachers,
-		"student_count": students,
-		"hours_per_day": float(intensity["hours"]),
-		"material_allocation": {},
-		"facility_ids": _get_operating_academy_ids() if method.get("id", "") == "professional" else [],
-		"practice_building_ids": [],
-		"emergency_course": bool(intensity["emergency"]),
-	}
+	return GameState.education_system.derive_plan(node_id, method_id, intensity_id, GameState.entities)
 
 
 func _refresh_teaching_preview() -> void:
@@ -258,31 +169,16 @@ func _refresh_teaching_preview() -> void:
 		return
 	var plan := _derive_teaching_plan()
 	if plan.is_empty():
-		%TeachingAllocationPreview.text = "闲置人口不足，当前无法形成教学群体。"
+		%TeachingAllocationPreview.text = "当前人口、能力或设施不足，无法形成该课程与组织方式。"
 		%StartTeachingButton.disabled = true
 		return
 	var preview: Dictionary = GameState.education_system.preview_plan(plan)
-	%TeachingAllocationPreview.text = "系统将按宏观目标组织 %d 名教师与 %d 名学习者，每日 %.0f 小时；约占用 %.0f 人时/天。" % [
-		plan["teacher_count"], plan["student_count"], plan["hours_per_day"], preview.get("production_hours_lost", 0.0),
+	%TeachingAllocationPreview.text = "系统按目标组织 %d 名教师与 %d 名学习者，每日授课 %.0f 小时（共 %.0f 人时）；由于当前人口岗位按整日分配，将锁定 %d 人，等效生产机会成本 %.0f 人时/天。" % [
+		plan["teacher_count"], plan["student_count"], plan["hours_per_day"],
+		preview.get("scheduled_instruction_hours", 0.0), preview.get("reserved_workers", 0),
+		preview.get("production_hours_lost", 0.0),
 	]
 	%StartTeachingButton.disabled = false
-
-
-func _has_operating_academy() -> bool:
-	return not _get_operating_academy_ids().is_empty()
-
-
-func _get_operating_academy_ids() -> Array:
-	var result: Array = []
-	for building in GameState.entities.buildings:
-		if building.building_type == "academy" and building.active and not building.destroyed and not building.under_construction:
-			result.append(building.id)
-	return result
-
-
-func _set_control_pair_visible(p_label: Control, p_control: Control, p_visible: bool) -> void:
-	p_label.visible = p_visible
-	p_control.visible = p_visible
 
 
 func _on_preview_preservation() -> void:
@@ -348,3 +244,17 @@ func _show_message(p_text: String, p_success: bool) -> void:
 
 func _on_back_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/tech_tree/tech_tree.tscn")
+
+
+func _refresh_policy_display(p_force: bool = false) -> void:
+	var parts: Array[String] = []
+	for view_value in GameState.knowledge_policy_system.get_visible_policies():
+		var view: Dictionary = view_value
+		parts.append("%s:%s:%s:%d" % [
+			view.get("id", ""), view.get("active", false), view.get("pending", false),
+			int(floor(float(view.get("progress_days", 0.0)))),
+		])
+	var signature := "|".join(parts)
+	if p_force or signature != _policy_signature:
+		_policy_signature = signature
+		_rebuild_policy_list()

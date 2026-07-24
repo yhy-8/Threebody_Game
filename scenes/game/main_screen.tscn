@@ -100,11 +100,6 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "知识图"
 
-[node name="KnowledgePolicyButton" type="Button" parent="Toolbar"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "知识政策"
-
 [node name="DecisionButton" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2

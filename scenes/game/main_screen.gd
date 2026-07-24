@@ -51,7 +51,6 @@ func _setup_buttons() -> void:
 	%PauseButton.pressed.connect(_on_pause_pressed)
 	%SpeedSlider.value_changed.connect(_on_speed_slider_changed)
 	%TechTreeButton.pressed.connect(_on_tech_tree_pressed)
-	%KnowledgePolicyButton.pressed.connect(_on_knowledge_policy_pressed)
 	%GuidanceControlButton.pressed.connect(_open_guidance_controls)
 	%DecisionButton.pressed.connect(_on_decision_pressed)
 	%ZoneViewButton.pressed.connect(_on_zone_view_pressed)
@@ -129,7 +128,7 @@ func _refresh_panels() -> void:
 	%CapitalOverlay.visible = awaiting_capital
 	%PauseButton.disabled = awaiting_capital
 	%SpeedSlider.editable = not awaiting_capital
-	for navigation_button in [%TechTreeButton, %KnowledgePolicyButton, %DecisionButton, %ZoneViewButton, %StarmapButton]:
+	for navigation_button in [%TechTreeButton, %DecisionButton, %ZoneViewButton, %StarmapButton]:
 		navigation_button.disabled = awaiting_capital
 	if awaiting_capital:
 		_refresh_capital_selection()
@@ -418,7 +417,7 @@ func _toggle_guidance_group_deferred() -> void:
 
 
 func _clear_guidance_highlight() -> void:
-	for control in [%PauseButton, %KnowledgePolicyButton, %ZoneViewButton, %RecordObservationButton, %GuidanceControlButton]:
+	for control in [%PauseButton, %TechTreeButton, %ZoneViewButton, %RecordObservationButton, %GuidanceControlButton]:
 		control.self_modulate = Color.WHITE
 
 
@@ -429,7 +428,7 @@ func _apply_guidance_highlight(p_semantic_target: String) -> void:
 	elif p_semantic_target in ["population.assignment", "region.construction", "region.food_security", "exploration.plan"]:
 		target = %ZoneViewButton
 	elif p_semantic_target == "knowledge.teaching_plans":
-		target = %KnowledgePolicyButton
+		target = %TechTreeButton
 	elif p_semantic_target == "observation.record":
 		target = %RecordObservationButton
 	elif p_semantic_target == "guidance.handbook":
@@ -484,10 +483,6 @@ func _nearest_speed_index(p_scale: float) -> int:
 
 func _on_tech_tree_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/tech_tree/tech_tree.tscn")
-
-
-func _on_knowledge_policy_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/knowledge/knowledge_policy.tscn")
 
 
 func _on_decision_pressed() -> void:

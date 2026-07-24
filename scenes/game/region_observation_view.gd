@@ -59,7 +59,7 @@ func set_observed_zone(p_zone_id: int) -> bool:
 		return false
 	observed_zone_id = p_zone_id
 	_update_local_frame()
-	_last_building_signature = ""
+	_last_building_signature = "__zone_changed__"
 	return true
 
 
@@ -187,7 +187,7 @@ func _sync_building_visuals() -> void:
 		signature_parts.append("%d:%s:%s:%s" % [
 			building.id, building.under_construction, building.destroyed, building.active,
 		])
-	var signature := ",".join(signature_parts)
+	var signature := "zone:%d|%s" % [observed_zone_id, ",".join(signature_parts)]
 	if signature == _last_building_signature:
 		return
 	_last_building_signature = signature
@@ -200,9 +200,10 @@ func _sync_building_visuals() -> void:
 		if visual == null:
 			visual = _create_building_visual(building)
 			%BuildingVisualRoot.add_child(visual)
+			_update_building_visual(visual, building)
 		else:
 			existing.erase(building.id)
-		_update_building_visual(visual, building)
+			_update_building_visual(visual, building)
 	for stale_visual in existing.values():
 		stale_visual.queue_free()
 	_layout_building_visuals()
