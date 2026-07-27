@@ -57,6 +57,12 @@ layout_mode = 2
 custom_minimum_size = Vector2(140, 52)
 text = "知识政策"
 
+[node name="ProjectsButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(140, 52)
+text = "项目管理"
+
 [node name="ResearchPanel" type="Panel" parent="."]
 layout_mode = 1
 anchors_preset = 10
@@ -135,6 +141,75 @@ horizontal_alignment = 1
 vertical_alignment = 1
 theme_override_colors/font_color = Color(0.7, 0.76, 0.95, 1)
 theme_override_font_sizes/font_size = 16
+
+[node name="ProjectOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 20
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Shade" type="ColorRect" parent="ProjectOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.72)
+
+[node name="Panel" type="PanelContainer" parent="ProjectOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -540.0
+offset_top = -400.0
+offset_right = 540.0
+offset_bottom = 400.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="ProjectOverlay/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="ProjectOverlay/Panel/VBox"]
+layout_mode = 2
+text = "研究与工程项目管理"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="ProjectSummary" type="Label" parent="ProjectOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "项目槽与劳动力"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Scroll" type="ScrollContainer" parent="ProjectOverlay/Panel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ProjectList" type="VBoxContainer" parent="ProjectOverlay/Panel/VBox/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="ProjectMessageLabel" type="Label" parent="ProjectOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CloseProjectsButton" type="Button" parent="ProjectOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+text = "返回知识图"
 
 [node name="TooltipPanel" type="Panel" parent="."]
 unique_name_in_owner = true

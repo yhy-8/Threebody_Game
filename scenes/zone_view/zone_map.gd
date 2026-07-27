@@ -118,6 +118,8 @@ func _zone_value(zone: Dictionary) -> float:
 	match view_mode:
 		"radiation": return zone.get("rad", 0.0)
 		"light": return zone.get("light", 0.0)
+		"population": return zone.get("population", 0.0)
+		"shelter_gap": return zone.get("shelter_gap", 0.0)
 		_: return zone.get("temp", 0.0)
 
 
@@ -127,6 +129,10 @@ func _heat_color(ratio: float) -> Color:
 			return Color(0.08 + ratio * 0.92, 0.08 + ratio * 0.78, 0.16 + ratio * 0.32)
 		"radiation":
 			return Color(0.12 + ratio * 0.78, 0.12 + ratio * 0.18, 0.35 + ratio * 0.45)
+		"population":
+			return Color(0.08 + ratio * 0.18, 0.16 + ratio * 0.68, 0.18 + ratio * 0.36)
+		"shelter_gap":
+			return Color(0.12 + ratio * 0.85, 0.2 - ratio * 0.12, 0.2 - ratio * 0.1)
 		_:
 			if ratio < 0.5:
 				return Color(0.08 + ratio * 0.4, 0.2 + ratio * 1.5, 0.85 - ratio * 0.8)
@@ -134,13 +140,21 @@ func _heat_color(ratio: float) -> Color:
 
 
 func _mode_name() -> String:
-	return {"temperature": "温度", "radiation": "辐射", "light": "光照"}.get(view_mode, view_mode)
+	return {
+		"temperature": "温度",
+		"radiation": "辐射",
+		"light": "光照",
+		"population": "人口",
+		"shelter_gap": "运行庇护缺口",
+	}.get(view_mode, view_mode)
 
 
 func _value_text(value: float) -> String:
 	match view_mode:
 		"temperature": return "%.1f℃" % value
 		"light": return "%.0f%%" % (value * 100.0)
+		"population": return "%d 人" % int(value)
+		"shelter_gap": return "%d 人" % int(value)
 		_: return "%.2f" % value
 
 

@@ -10,6 +10,9 @@ var time_scale_val: float = 1.0
 var auto_save_interval: int = 5
 var guidance_mode: String = "full"
 var show_notifications: bool = true
+var auto_pause_critical: bool = true
+var auto_pause_project_completion: bool = true
+var auto_pause_arrival: bool = true
 var developer_mode: bool = false
 var fullscreen: bool = false
 var vsync: bool = true
@@ -127,6 +130,22 @@ func _build_game_tab() -> void:
 	guidance_option.item_selected.connect(func(index: int): guidance_mode = str(guidance_option.get_item_metadata(index)))
 	guidance_row.add_child(guidance_option)
 	vbox.add_child(guidance_row)
+	vbox.add_child(_make_checkbox(
+		"在主界面显示最新事件通知", show_notifications,
+		func(v): show_notifications = v
+	))
+	vbox.add_child(_make_checkbox(
+		"严重危机与知识退化时自动暂停", auto_pause_critical,
+		func(v): auto_pause_critical = v
+	))
+	vbox.add_child(_make_checkbox(
+		"建筑、研究和工程完成时自动暂停", auto_pause_project_completion,
+		func(v): auto_pause_project_completion = v
+	))
+	vbox.add_child(_make_checkbox(
+		"区域队伍抵达时自动暂停", auto_pause_arrival,
+		func(v): auto_pause_arrival = v
+	))
 	var developer_toggle := _make_checkbox("开发者模式（显示调试工具并绕过界面门槛）", developer_mode, func(v): developer_mode = v)
 	developer_toggle.tooltip_text = "开关本身不修改当前局；开发者工具执行的数值或科技修改会随存档保存"
 	vbox.add_child(developer_toggle)
@@ -173,6 +192,9 @@ func _load_settings() -> void:
 	auto_save_interval = data.get("auto_save_interval", 5)
 	guidance_mode = str(data.get("guidance_mode", "full"))
 	show_notifications = data.get("show_notifications", true)
+	auto_pause_critical = data.get("auto_pause_critical", true)
+	auto_pause_project_completion = data.get("auto_pause_project_completion", true)
+	auto_pause_arrival = data.get("auto_pause_arrival", true)
 	developer_mode = data.get("developer_mode", false)
 	fullscreen = data.get("fullscreen", false)
 	vsync = data.get("vsync", true)
@@ -196,6 +218,9 @@ func _save_settings() -> bool:
 		"auto_save_interval": auto_save_interval,
 		"guidance_mode": guidance_mode,
 		"show_notifications": show_notifications,
+		"auto_pause_critical": auto_pause_critical,
+		"auto_pause_project_completion": auto_pause_project_completion,
+		"auto_pause_arrival": auto_pause_arrival,
 		"developer_mode": developer_mode,
 		"fullscreen": fullscreen,
 		"vsync": vsync,

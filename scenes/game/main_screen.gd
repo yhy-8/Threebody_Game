@@ -51,6 +51,7 @@ func _setup_buttons() -> void:
 	%PauseButton.pressed.connect(_on_pause_pressed)
 	%SpeedSlider.value_changed.connect(_on_speed_slider_changed)
 	%TechTreeButton.pressed.connect(_on_tech_tree_pressed)
+	%EventsButton.pressed.connect(_open_event_log)
 	%GuidanceControlButton.pressed.connect(_open_guidance_controls)
 	%DecisionButton.pressed.connect(_on_decision_pressed)
 	%ZoneViewButton.pressed.connect(_on_zone_view_pressed)
@@ -67,6 +68,9 @@ func _setup_buttons() -> void:
 	%RecordObservationButton.pressed.connect(_on_record_observation)
 	%SkipGuidanceButton.pressed.connect(_on_skip_guidance)
 	%CloseGuidanceControlButton.pressed.connect(_close_guidance_controls)
+	%CloseEventsButton.pressed.connect(_close_event_log)
+	%GameOverEventsButton.pressed.connect(_open_event_log)
+	%GameOverMenuButton.pressed.connect(_return_to_main_menu)
 	%DeferGuidanceGroupButton.pressed.connect(_toggle_guidance_group_deferred)
 	%GuidanceModeOption.item_selected.connect(_on_guidance_mode_selected)
 	%GuidanceModeOption.add_item("完整引导", 0)
@@ -103,6 +107,9 @@ func _input(event: InputEvent) -> void:
 		elif %GuidanceControlOverlay.visible:
 			get_viewport().set_input_as_handled()
 			_close_guidance_controls()
+		elif %EventLogOverlay.visible:
+			get_viewport().set_input_as_handled()
+			_close_event_log()
 	elif event.keycode in [KEY_PLUS, KEY_EQUAL, KEY_KP_ADD]:
 		_change_speed(1)
 		get_viewport().set_input_as_handled()
@@ -123,6 +130,9 @@ func _refresh_panels() -> void:
 	var entities_data: Dictionary = state["entities"]
 	var resources_data: Dictionary = entities_data["resources"]
 	var pop_data: Dictionary = entities_data["population"]
+	var management: Dictionary = GameState.get_management_snapshot()
+	var resource_flow: Dictionary = management.get("resource_flow", {})
+	var power: Dictionary = management.get("power", {})
 	var telescope_unlocked: bool = GameState.tech_tree.is_unlocked("telescope")
 	var awaiting_capital: bool = GameState.settlement_system != null and GameState.settlement_system.capital_zone_id < 0
 	%CapitalOverlay.visible = awaiting_capital
@@ -152,19 +162,36 @@ func _refresh_panels() -> void:
 	for group_name in ["矿物", "能源", "食物"]:
 		resource_lines.append("— %s —" % group_name)
 		for key in EntityManagerScript.RESOURCE_GROUPS.get(group_name, []):
-			resource_lines.append("%s  %.1f" % [
+			if key == "electricity":
+				resource_lines.append("电力  %.1f / %.1f kW（余量 %+.1f）" % [
+					power.get("generation", 0.0),
+					power.get("consumption", 0.0),
+					float(power.get("generation", 0.0)) - float(power.get("consumption", 0.0)),
+				])
+				continue
+			var flow: Dictionary = resource_flow.get(key, {})
+			resource_lines.append("%s  %.1f（%+.1f/天）" % [
 				EntityManagerScript.RESOURCE_DISPLAY_NAMES.get(key, key),
 				float(resources_data.get(key, 0.0)),
+				float(flow.get("net", 0.0)),
 			])
+	var food_net := float((resource_flow.get("food", {}) as Dictionary).get("net", 0.0))
+	if food_net < -0.001:
+		resource_lines.append("口粮可维持约 %.1f 天" % (
+			float(resources_data.get("food", 0.0)) / -food_net
+		))
 	%ResourceSummary.text = "\n".join(resource_lines)
-	%ResourceSummary.tooltip_text = "全局库存由各区域建筑产出与消耗共同改变；区域资源禀赋和工人效率会影响产量。"
+	%ResourceSummary.tooltip_text = "括号内为最近模拟步的实际净流量；电力显示实时发电/负荷，不再伪装成库存。"
 
 	var rates: Dictionary = GameState.research_output_rate
 	var research_lines: Array[String] = []
 	for rtype in ["basic", "applied", "theoretical"]:
 		research_lines.append("%s %.2f/天" % [TechTreeScript.RESEARCH_NAMES.get(rtype, rtype), rates.get(rtype, 0.0)])
-	%CivilizationSummary.text = "人口  %d\n空闲  %d\n库存人口  %d / %d\n生育岗位  %d\n安定度  %.0f%%\n\n%s" % [
+	var building_workers: int = GameState.entities.get_total_building_workers()
+	var external_workers := int(management.get("external_reserved_workers", 0))
+	%CivilizationSummary.text = "人口  %d\n空闲  %d\n生产/施工  %d\n研究/教学/在途  %d\n库存人口  %d / %d\n生育岗位  %d\n安定度  %.0f%%\n\n%s" % [
 		pop_data.get("total", 0), GameState.entities.get_idle_population(),
+		building_workers, external_workers,
 		pop_data.get("stored_population", 0), pop_data.get("storage_capacity", 0),
 		pop_data.get("breeders", 0), GameState.entities.social_stability * 100.0,
 		"\n".join(research_lines),
@@ -223,8 +250,10 @@ func _refresh_panels() -> void:
 	var forecast: Dictionary = state.get("hazard_forecast", {})
 	var forecast_names := ["无文明预警", "定性天象预警", "区域风险预测", "伤亡区间预测", "高精度概率预测"]
 	var forecast_level := clampi(int(forecast.get("level", 0)), 0, forecast_names.size() - 1)
-	%GlobalResourceLabel.text = "食物 %.0f  ·  电力 %.0f  ·  铁 %.0f" % [
-		resources_data.get("food", 0.0), resources_data.get("electricity", 0.0), resources_data.get("iron", 0.0),
+	%GlobalResourceLabel.text = "食物 %.0f（%+.1f/天） · 电力 %.0f/%.0f kW · 铁 %.0f" % [
+		resources_data.get("food", 0.0), food_net,
+		power.get("generation", 0.0), power.get("consumption", 0.0),
+		resources_data.get("iron", 0.0),
 	]
 	%GlobalCivilizationLabel.text = "人口 %d  ·  空闲 %d  ·  %s" % [
 		pop_data.get("total", 0), GameState.entities.get_idle_population(), forecast_names[forecast_level],
@@ -232,6 +261,18 @@ func _refresh_panels() -> void:
 	%GlobalTimeLabel.text = "第 %.1f 天  ·  %dx  ·  %s  ·  %s" % [
 		state.get("game_time", 0.0), int(GameState.time_scale), "已暂停" if GameState.paused else "运行中", rule_text,
 	]
+	var latest_event: Dictionary = management.get("latest_event", {})
+	if GameState.notifications_enabled() and not latest_event.is_empty():
+		%LatestEventLabel.text = "第 %.1f 天 · %s：%s" % [
+			latest_event.get("game_day", 0.0),
+			latest_event.get("title", "事件"),
+			latest_event.get("detail", ""),
+		]
+	else:
+		%LatestEventLabel.text = "通知显示已关闭；完整事件仍可在「事件」中查看"
+	%LatestEventLabel.tooltip_text = str(latest_event.get("detail", ""))
+	%GameOverOverlay.visible = GameState.game_over and not %EventLogOverlay.visible
+	%GameOverReason.text = GameState.game_over_reason
 	_update_alert(public_data)
 	_refresh_guidance()
 
@@ -441,6 +482,36 @@ func _on_menu_pressed() -> void:
 	if not GameState.paused:
 		GameState.toggle_pause()
 	get_tree().change_scene_to_file("res://scenes/game/game_menu.tscn")
+
+
+func _open_event_log() -> void:
+	var lines: Array[String] = []
+	var severity_colors := {
+		"critical": "#ff6868",
+		"important": "#ffd078",
+		"info": "#a8c8ff",
+	}
+	for event_value in GameState.get_recent_events(100):
+		var event: Dictionary = event_value
+		var color: String = severity_colors.get(str(event.get("severity", "info")), "#d0d8ef")
+		lines.append("[color=%s][b]第 %.1f 天 · %s[/b][/color]\n%s" % [
+			color,
+			event.get("game_day", 0.0),
+			event.get("title", "事件"),
+			event.get("detail", ""),
+		])
+	%EventLogText.text = "\n\n".join(lines) if not lines.is_empty() else "尚无文明事件。"
+	%EventLogOverlay.visible = true
+	%GameOverOverlay.visible = false
+
+
+func _close_event_log() -> void:
+	%EventLogOverlay.visible = false
+	%GameOverOverlay.visible = GameState.game_over
+
+
+func _return_to_main_menu() -> void:
+	get_tree().change_scene_to_file("res://scenes/main_menu/initial_menu.tscn")
 
 
 func _on_pause_pressed() -> void:

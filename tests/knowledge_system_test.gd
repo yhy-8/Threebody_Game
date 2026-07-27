@@ -46,6 +46,19 @@ func _test_discovery_research_and_engineering() -> void:
 	var start: Dictionary = GameState.start_knowledge_research("symbolic_record")
 	_expect(start.get("success", false), "知识研究项目无法开始")
 	_expect(GameState.entities.external_reserved_workers == 2, "研究人员没有占用真实劳动力")
+	var paused: Dictionary = GameState.toggle_knowledge_research("symbolic_record")
+	_expect(
+		paused.get("success", false)
+		and GameState.entities.external_reserved_workers == 0
+		and "symbolic_record" in GameState.research_project_system.get_unfinished_project_ids(),
+		"暂停研究没有释放人员，或错误释放了仍应占用的项目槽",
+	)
+	var resumed: Dictionary = GameState.toggle_knowledge_research("symbolic_record")
+	_expect(
+		resumed.get("success", false)
+		and GameState.entities.external_reserved_workers == 2,
+		"继续研究没有重新校验并占用真实劳动力",
+	)
 	GameState.research_project_system.update_day(1.0, {"basic": 100.0}, GameState.entities)
 	GameState._refresh_external_workforce_reservation()
 	_expect(GameState.knowledge_system.get_node_state("symbolic_record") == KnowledgeSystemScript.KnowledgeState.MASTERED, "完成研究后没有停在理论掌握状态")
@@ -93,6 +106,26 @@ func _test_policy_education_and_preservation() -> void:
 	_expect(
 		GameState.entities.get_idle_population() == idle_before - int(plan["teacher_count"]) - int(plan["student_count"]),
 		"教师与学习者没有和生产岗位竞争劳动力",
+	)
+	GameState.education_system.plans[str(plan["plan_id"])]["pause_reason"] = "测试设施停运"
+	_expect(
+		GameState.education_system.get_reserved_workers() > 0
+		and GameState.education_system.get_running_workers() == 0,
+		"设施受阻的等待人员仍被算作实际教学覆盖",
+	)
+	GameState.education_system.plans[str(plan["plan_id"])]["pause_reason"] = ""
+	var pause_teaching: Dictionary = GameState.toggle_teaching_plan(str(plan["plan_id"]))
+	_expect(
+		pause_teaching.get("success", false)
+		and GameState.entities.get_idle_population() == idle_before,
+		"暂停教学没有让教师与学习者回到闲置人口",
+	)
+	var resume_teaching: Dictionary = GameState.toggle_teaching_plan(str(plan["plan_id"]))
+	_expect(
+		resume_teaching.get("success", false)
+		and GameState.entities.get_idle_population()
+		== idle_before - int(plan["teacher_count"]) - int(plan["student_count"]),
+		"继续教学没有重新占用真实教师与学习者",
 	)
 	_expect("opening:first_teaching_plan" not in GameState.opening_guidance.completed_task_ids, "教学计划仅创建就被误判为已运行")
 	GameState._update_knowledge_evolution(GameState.game_time, 0.1)

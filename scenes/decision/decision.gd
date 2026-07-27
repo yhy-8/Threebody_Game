@@ -134,12 +134,9 @@ func _effect_display_name(p_name: String) -> String:
 
 
 func _on_policy_pressed(p_decision_id: String) -> void:
-	var result: Dictionary = GameState.decision_manager.execute_decision(
-		p_decision_id, GameState.entities, GameState.tech_tree, GameState.planet_zones
-	)
+	var result: Dictionary = GameState.execute_policy_decision(p_decision_id)
 	%MessageLabel.text = result.get("message", "")
 	%MessageLabel.modulate = Color(0.55, 1.0, 0.65) if result.get("success", false) else Color(1.0, 0.5, 0.4)
-	GameState.entities.set_policy_effects(GameState.decision_manager.active_policies)
 	_refresh_display()
 
 

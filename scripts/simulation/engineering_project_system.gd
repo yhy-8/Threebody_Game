@@ -5,7 +5,7 @@ extends RefCounted
 signal project_started(node_id: String, project_id: String)
 signal project_completed(node_id: String, project_id: String)
 
-const STATE_VERSION := 1
+const STATE_VERSION := 2
 const MAX_ACTIVE_SLOTS := 2
 
 var knowledge_system
@@ -22,9 +22,11 @@ func start_project(p_node_id: String, p_project_id: String, p_entities) -> Dicti
 		var existing: Dictionary = projects[key]
 		if bool(existing.get("completed", false)):
 			return {"success": false, "message": "工程项目已经完成"}
+		if bool(existing.get("manual_paused", false)) and p_entities.get_idle_population() < int(existing.get("workers", 0)):
+			return {"success": false, "message": "闲置人口不足，无法恢复该工程项目"}
 		existing["manual_paused"] = false
 		return {"success": true, "message": "工程项目已继续"}
-	if get_active_project_ids().size() >= MAX_ACTIVE_SLOTS:
+	if get_unfinished_project_ids().size() >= MAX_ACTIVE_SLOTS:
 		return {"success": false, "message": "工程槽已满"}
 	if knowledge_system.get_node_state(p_node_id) != knowledge_system.KnowledgeState.MASTERED:
 		return {"success": false, "message": "尚未掌握该项目所需理论"}
@@ -46,6 +48,8 @@ func start_project(p_node_id: String, p_project_id: String, p_entities) -> Dicti
 		"node_id": p_node_id,
 		"project_id": p_project_id,
 		"workers": workers,
+		"minimum_workers": workers,
+		"maximum_workers": maxi(workers, workers * 3),
 		"work_required": maxf(0.001, float(project_definition.get("work_required", 1.0))),
 		"work_completed": 0.0,
 		"prototype_count": 0,
@@ -61,12 +65,30 @@ func start_project(p_node_id: String, p_project_id: String, p_entities) -> Dicti
 	return {"success": true, "message": "工程项目「%s」已开始" % project_definition.get("name", p_project_id)}
 
 
-func toggle_pause(p_node_id: String, p_project_id: String) -> Dictionary:
+func toggle_pause(p_node_id: String, p_project_id: String, p_entities) -> Dictionary:
 	var key := "%s:%s" % [p_node_id, p_project_id]
 	if not projects.has(key) or bool(projects[key].get("completed", false)):
 		return {"success": false, "message": "没有可暂停的工程项目"}
+	if bool(projects[key].get("manual_paused", false)) and p_entities.get_idle_population() < int(projects[key].get("workers", 0)):
+		return {"success": false, "message": "闲置人口不足，无法继续该工程项目"}
 	projects[key]["manual_paused"] = not bool(projects[key].get("manual_paused", false))
 	return {"success": true, "message": "工程已暂停" if projects[key]["manual_paused"] else "工程已继续"}
+
+
+func set_workers(p_node_id: String, p_project_id: String, p_workers: int, p_entities) -> Dictionary:
+	var key := "%s:%s" % [p_node_id, p_project_id]
+	if not projects.has(key) or bool(projects[key].get("completed", false)):
+		return {"success": false, "message": "没有可调整的工程项目"}
+	var project: Dictionary = projects[key]
+	var minimum_workers := maxi(1, int(project.get("minimum_workers", 1)))
+	var maximum_workers := maxi(minimum_workers, int(project.get("maximum_workers", minimum_workers * 3)))
+	var target := clampi(p_workers, minimum_workers, maximum_workers)
+	var current := int(project.get("workers", minimum_workers))
+	var additional := maxi(0, target - current)
+	if additional > p_entities.get_idle_population():
+		return {"success": false, "message": "闲置人口不足；最多还能增加 %d 人" % p_entities.get_idle_population()}
+	project["workers"] = target
+	return {"success": true, "message": "工程人员已调整为 %d 人" % target}
 
 
 func update_day(p_delta_days: float, p_throughput: Dictionary, _p_entities) -> void:
@@ -97,6 +119,41 @@ func get_active_project_ids() -> Array:
 	return result
 
 
+func get_unfinished_project_ids() -> Array:
+	var result: Array = []
+	for key in projects:
+		if not bool(projects[key].get("completed", false)):
+			result.append(key)
+	return result
+
+
+func get_project_views(p_throughput: Dictionary) -> Array:
+	var result: Array = []
+	for key in projects:
+		var project: Dictionary = projects[key]
+		if bool(project.get("completed", false)):
+			continue
+		var view := project.duplicate(true)
+		var node_view: Dictionary = knowledge_system.get_node_view(str(project.get("node_id", "")))
+		var project_name := str(project.get("project_id", ""))
+		for definition_value in node_view.get("engineering_projects", []):
+			var definition: Dictionary = definition_value
+			if str(definition.get("id", "")) == project_name:
+				project_name = str(definition.get("name", project_name))
+				break
+		var rate := maxf(0.0, float(p_throughput.get("applied", 0.0))) + int(project.get("workers", 0)) * 0.045
+		var remaining := maxf(0.0, float(project.get("work_required", 0.0)) - float(project.get("work_completed", 0.0)))
+		view["display_name"] = "%s · %s" % [node_view.get("display_name", project.get("node_id", "")), project_name]
+		view["progress"] = clampf(float(project.get("work_completed", 0.0)) / maxf(0.001, float(project.get("work_required", 1.0))), 0.0, 1.0)
+		view["daily_rate"] = rate
+		view["eta_days"] = remaining / rate if rate > 0.0 and not bool(project.get("manual_paused", false)) else -1.0
+		result.append(view)
+	result.sort_custom(func(a: Dictionary, b: Dictionary):
+		return "%s:%s" % [a.get("node_id", ""), a.get("project_id", "")] < "%s:%s" % [b.get("node_id", ""), b.get("project_id", "")]
+	)
+	return result
+
+
 func get_reserved_workers() -> int:
 	var total := 0
 	for project_value in projects.values():
@@ -115,7 +172,7 @@ func get_state() -> Dictionary:
 
 
 func load_state(p_data: Dictionary) -> bool:
-	if not p_data.get("projects", {}) is Dictionary:
+	if int(p_data.get("state_version", -1)) != STATE_VERSION or not p_data.get("projects", {}) is Dictionary:
 		return false
 	projects = (p_data.get("projects", {}) as Dictionary).duplicate(true)
 	return true

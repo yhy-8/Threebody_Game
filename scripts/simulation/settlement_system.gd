@@ -91,7 +91,7 @@ func is_zone_visible(p_zone_id: int) -> bool:
 	return p_zone_id in visible_zone_ids
 
 
-func get_public_zone_summaries(p_zone_manager, p_entities) -> Array:
+func get_public_zone_summaries(p_zone_manager, p_entities, p_regional_logistics = null) -> Array:
 	var result: Array = []
 	for zone_id in range(p_zone_manager.zones.size()):
 		var zone = p_zone_manager.get_zone(zone_id)
@@ -99,6 +99,19 @@ func get_public_zone_summaries(p_zone_manager, p_entities) -> Array:
 		var level := int(record.get("level", ZoneKnowledgeLevel.UNKNOWN))
 		var public_data: Dictionary = record.get("public_data", {})
 		var known_environment := bool(record.get("live_visible", false))
+		var population := get_population(zone_id) if known_environment else 0
+		var shelter: Dictionary = (
+			p_entities.get_zone_shelter_status(zone_id)
+			if known_environment
+			else {}
+		)
+		var shelter_capacity := int(shelter.get("capacity", 0))
+		var local_food: float = (
+			p_regional_logistics.get_local_amount(zone_id, "food")
+			if known_environment and p_regional_logistics != null
+			else 0.0
+		)
+		var daily_food_need: float = float(population) * p_entities.population.food_per_person_per_day
 		result.append({
 			"id": zone_id,
 			"lat_i": zone.lat_index,
@@ -113,6 +126,11 @@ func get_public_zone_summaries(p_zone_manager, p_entities) -> Array:
 			"terrain": public_data.get("terrain", "未知"),
 			"terrain_known": public_data.has("terrain"),
 			"buildings": p_entities.get_buildings_in_zone(zone_id).size() if known_environment else 0,
+			"population": population,
+			"operating_shelter_capacity": shelter_capacity,
+			"shelter_gap": maxi(0, population - shelter_capacity),
+			"local_food": local_food,
+			"food_reserve_days": local_food / daily_food_need if daily_food_need > 0.0 else 0.0,
 			"stale": record.get("stale", false),
 		})
 	return result
@@ -204,6 +222,16 @@ func mark_knowledge_stale(p_zone_id: int, p_reason: String) -> bool:
 
 func get_population(p_zone_id: int) -> int:
 	return maxi(0, int(region_population.get(p_zone_id, 0)))
+
+
+func apply_population_loss(p_zone_id: int, p_count: int) -> int:
+	if p_count <= 0:
+		return 0
+	var actual_loss := mini(get_population(p_zone_id), p_count)
+	region_population[p_zone_id] = get_population(p_zone_id) - actual_loss
+	if settlements.has(p_zone_id):
+		settlements[p_zone_id]["population"] = region_population[p_zone_id]
+	return actual_loss
 
 
 func move_population(p_origin: int, p_destination: int, p_count: int) -> bool:
@@ -500,12 +528,13 @@ func _calculate_support_metrics(p_zone_id: int, p_logistics, p_entities) -> Dict
 	var storage_capacity := 0
 	var food_output_per_day := 0.0
 	if p_entities != null:
+		shelter_capacity = int(p_entities.get_zone_shelter_status(p_zone_id).get("capacity", 0))
 		for building in p_entities.get_buildings_in_zone(p_zone_id):
 			if not building.active or building.destroyed or building.under_construction:
 				continue
-			storage_capacity += maxi(0, int(building.storage_capacity))
-			if building.building_type in ["shelter", "deep_shelter"]:
-				shelter_capacity += maxi(0, int(building.storage_capacity))
+			storage_capacity += maxi(0, int(floor(
+				float(building.storage_capacity) * building.last_run_ratio
+			)))
 			food_output_per_day += maxf(0.0, float(building.last_output_rate.get("food", 0.0)))
 	return {
 		"shelter_capacity": shelter_capacity,

@@ -33,6 +33,7 @@ func _ready() -> void:
 		_refresh_info()
 	_update_pause_button()
 	%GameOverOverlay.visible = GameState.game_over
+	%GameOverReason.text = GameState.game_over_reason
 
 
 func _setup_space_environment() -> void:
@@ -56,6 +57,7 @@ func _setup_space_environment() -> void:
 func _process(p_delta: float) -> void:
 	%GameOverOverlay.visible = GameState.game_over
 	if GameState.game_over:
+		%GameOverReason.text = GameState.game_over_reason
 		return
 	_handle_continuous_input(p_delta)
 	_update_camera(p_delta)

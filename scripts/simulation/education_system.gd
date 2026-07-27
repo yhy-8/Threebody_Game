@@ -239,6 +239,27 @@ func pause_plan(p_plan_id: String) -> bool:
 	return true
 
 
+func toggle_pause_plan(p_plan_id: String, p_entities) -> Dictionary:
+	if not plans.has(p_plan_id):
+		return {"success": false, "message": "教学计划不存在"}
+	if bool(plans[p_plan_id].get("paused", false)):
+		var workers := (
+			int(plans[p_plan_id].get("teacher_count", 0))
+			+ int(plans[p_plan_id].get("student_count", 0))
+		)
+		if p_entities.get_idle_population() < workers:
+			return {"success": false, "message": "闲置人口不足，无法继续该教学计划"}
+		if not _bound_facilities_operating(plans[p_plan_id], p_entities):
+			return {"success": false, "message": "计划绑定的教学设施当前没有运行"}
+	plans[p_plan_id]["paused"] = not bool(plans[p_plan_id].get("paused", false))
+	return {
+		"success": true,
+		"message": "教学计划已暂停；教师与学习者返回闲置人口"
+		if plans[p_plan_id]["paused"]
+		else "教学计划已继续；教师与学习者重新占用劳动力",
+	}
+
+
 func cancel_plan(p_plan_id: String) -> bool:
 	if not plans.has(p_plan_id):
 		return false
@@ -265,12 +286,17 @@ func preview_plan(p_plan: Dictionary) -> Dictionary:
 	}
 
 
-func update_day(p_delta_days: float, _p_context: Dictionary) -> Array:
+func update_day(p_delta_days: float, p_context: Dictionary) -> Array:
 	var results: Array = []
+	var entities = p_context.get("entities", null)
 	for plan_id in plans:
 		var plan: Dictionary = plans[plan_id]
 		if bool(plan.get("paused", false)):
 			continue
+		if entities != null and not _bound_facilities_operating(plan, entities):
+			plan["pause_reason"] = "绑定的教学设施未运行"
+			continue
+		plan["pause_reason"] = ""
 		var preview := preview_plan(plan)
 		var node_id := str(plan.get("node_id", ""))
 		var runtime: Dictionary = knowledge_system.runtime_nodes.get(node_id, {})
@@ -291,6 +317,21 @@ func get_reserved_workers() -> int:
 		var plan: Dictionary = plan_value
 		if not bool(plan.get("paused", false)):
 			total += maxi(0, int(plan.get("teacher_count", 0))) + maxi(0, int(plan.get("student_count", 0)))
+	return total
+
+
+func get_running_workers() -> int:
+	var total := 0
+	for plan_value in plans.values():
+		var plan: Dictionary = plan_value
+		if (
+			not bool(plan.get("paused", false))
+			and str(plan.get("pause_reason", "")).is_empty()
+		):
+			total += (
+				maxi(0, int(plan.get("teacher_count", 0)))
+				+ maxi(0, int(plan.get("student_count", 0)))
+			)
 	return total
 
 
@@ -346,9 +387,24 @@ func _get_operating_building_ids(p_building_type: String, p_entities) -> Array[i
 			and building.active
 			and not building.destroyed
 			and not building.under_construction
+			and building.last_run_ratio > 0.0
 		):
 			result.append(building.id)
 	return result
+
+
+func _bound_facilities_operating(p_plan: Dictionary, p_entities) -> bool:
+	for facility_id in p_plan.get("facility_ids", []):
+		var building = p_entities.get_building(int(facility_id))
+		if (
+			building == null
+			or not building.active
+			or building.destroyed
+			or building.under_construction
+			or building.last_run_ratio <= 0.0
+		):
+			return false
+	return true
 
 
 func _get_intensity(p_intensity_id: String) -> Dictionary:

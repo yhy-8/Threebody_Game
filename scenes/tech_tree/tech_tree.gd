@@ -11,6 +11,8 @@ func _ready() -> void:
 	EventBus.screen_changed.emit("knowledge_tree")
 	%BackButton.pressed.connect(_on_back_pressed)
 	%KnowledgePolicyButton.pressed.connect(_on_knowledge_policy_pressed)
+	%ProjectsButton.pressed.connect(_open_project_manager)
+	%CloseProjectsButton.pressed.connect(_close_project_manager)
 	%TechTreeContainer.node_clicked.connect(_on_node_clicked)
 	%TechTreeContainer.node_hovered.connect(_on_node_hovered)
 	%DomainFilter.item_selected.connect(_on_domain_selected)
@@ -28,6 +30,12 @@ func _process(p_delta: float) -> void:
 		_refresh_display()
 		if not _hovered_node_id.is_empty():
 			_update_tooltip(_hovered_node_id)
+
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and %ProjectOverlay.visible:
+		get_viewport().set_input_as_handled()
+		_close_project_manager()
 
 
 func _on_global_pause_changed(p_paused: bool) -> void:
@@ -54,14 +62,17 @@ func _refresh_display() -> void:
 	%PointsLabel.text = "研究吞吐：基础 %.2f/天 · 应用 %.2f/天 · 理论 %.2f/天" % [
 		rates.get("basic", 0.0), rates.get("applied", 0.0), rates.get("theoretical", 0.0),
 	]
-	var research_ids: Array = GameState.research_project_system.get_active_project_ids()
-	var engineering_ids: Array = GameState.engineering_project_system.get_active_project_ids()
+	var research_ids: Array = GameState.research_project_system.get_unfinished_project_ids()
+	var engineering_ids: Array = GameState.engineering_project_system.get_unfinished_project_ids()
 	%ResearchLabel.text = "研究 %d/%d · 工程 %d/%d · 知识岗位 %d 人%s" % [
 		research_ids.size(), GameState.research_project_system.MAX_ACTIVE_SLOTS,
 		engineering_ids.size(), GameState.engineering_project_system.MAX_ACTIVE_SLOTS,
 		GameState.entities.external_reserved_workers,
 		" · 已暂停" if GameState.paused else "",
 	]
+	%ProjectsButton.text = "项目管理（%d）" % (research_ids.size() + engineering_ids.size())
+	if %ProjectOverlay.visible:
+		_rebuild_project_manager()
 	%TechTreeContainer.queue_redraw()
 
 
@@ -103,8 +114,147 @@ func _start_or_toggle_engineering(p_node_id: String, p_view: Dictionary) -> Dict
 		var project_id := str(project.get("id", ""))
 		var existing: Dictionary = GameState.engineering_project_system.get_project(p_node_id, project_id)
 		if not existing.is_empty() and not existing.get("completed", false):
-			return GameState.engineering_project_system.toggle_pause(p_node_id, project_id)
+			return GameState.toggle_knowledge_engineering(p_node_id, project_id)
 	return GameState.start_knowledge_engineering(p_node_id, str(project_definitions[0].get("id", "")))
+
+
+func _open_project_manager() -> void:
+	%ProjectOverlay.visible = true
+	_rebuild_project_manager()
+
+
+func _close_project_manager() -> void:
+	%ProjectOverlay.visible = false
+
+
+func _rebuild_project_manager() -> void:
+	for child in %ProjectList.get_children():
+		child.queue_free()
+	var research_views: Array = GameState.research_project_system.get_project_views(
+		GameState.research_output_rate
+	)
+	var engineering_views: Array = GameState.engineering_project_system.get_project_views(
+		GameState.research_output_rate
+	)
+	%ProjectSummary.text = "研究槽 %d/%d · 工程槽 %d/%d · 当前占用知识/教育/在途岗位 %d 人\n暂停会释放项目人员，但仍占用项目槽；进度和已耗材料保留。" % [
+		research_views.size(), GameState.research_project_system.MAX_ACTIVE_SLOTS,
+		engineering_views.size(), GameState.engineering_project_system.MAX_ACTIVE_SLOTS,
+		GameState.entities.external_reserved_workers,
+	]
+	if research_views.is_empty() and engineering_views.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "当前没有未完成项目。点击知识节点可建立研究或工程项目。"
+		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		%ProjectList.add_child(empty_label)
+		return
+	for view_value in research_views:
+		_add_project_card(view_value, "research")
+	for view_value in engineering_views:
+		_add_project_card(view_value, "engineering")
+
+
+func _add_project_card(p_view: Dictionary, p_kind: String) -> void:
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(0.0, 112.0)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	card.add_child(row)
+	var status_label := Label.new()
+	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var status := "进行中"
+	if bool(p_view.get("manual_paused", false)):
+		status = "玩家暂停"
+	elif not str(p_view.get("pause_reason", "")).is_empty():
+		status = "受阻：%s" % p_view.get("pause_reason", "")
+	var eta_text := (
+		"预计 %.1f 天" % p_view.get("eta_days", 0.0)
+		if float(p_view.get("eta_days", -1.0)) >= 0.0
+		else "暂无可计算完成时间"
+	)
+	status_label.text = "%s · %s\n进度 %.1f%% · %d 人 · %.2f 工作量/天 · %s" % [
+		"理论研究" if p_kind == "research" else "工程化",
+		p_view.get("display_name", ""),
+		float(p_view.get("progress", 0.0)) * 100.0,
+		p_view.get("workers", 0),
+		p_view.get("daily_rate", 0.0),
+		"%s · %s" % [status, eta_text],
+	]
+	row.add_child(status_label)
+	var minus_button := Button.new()
+	minus_button.text = "−1"
+	minus_button.tooltip_text = "减少一名项目人员并释放劳动力"
+	minus_button.disabled = int(p_view.get("workers", 0)) <= int(p_view.get("minimum_workers", 1))
+	if p_kind == "research":
+		minus_button.pressed.connect(_change_research_workers.bind(
+			str(p_view.get("node_id", "")), -1
+		))
+	else:
+		minus_button.pressed.connect(_change_engineering_workers.bind(
+			str(p_view.get("node_id", "")), str(p_view.get("project_id", "")), -1
+		))
+	row.add_child(minus_button)
+	var plus_button := Button.new()
+	plus_button.text = "+1"
+	plus_button.tooltip_text = "增加一名项目人员；仍受闲置人口与项目上限约束"
+	plus_button.disabled = (
+		int(p_view.get("workers", 0)) >= int(p_view.get("maximum_workers", 1))
+		or GameState.entities.get_idle_population() <= 0
+	)
+	if p_kind == "research":
+		plus_button.pressed.connect(_change_research_workers.bind(
+			str(p_view.get("node_id", "")), 1
+		))
+	else:
+		plus_button.pressed.connect(_change_engineering_workers.bind(
+			str(p_view.get("node_id", "")), str(p_view.get("project_id", "")), 1
+		))
+	row.add_child(plus_button)
+	var pause_button := Button.new()
+	pause_button.custom_minimum_size = Vector2(100.0, 48.0)
+	pause_button.text = "继续" if bool(p_view.get("manual_paused", false)) else "暂停"
+	if p_kind == "research":
+		pause_button.pressed.connect(_toggle_research_project.bind(str(p_view.get("node_id", ""))))
+	else:
+		pause_button.pressed.connect(_toggle_engineering_project.bind(
+			str(p_view.get("node_id", "")), str(p_view.get("project_id", ""))
+		))
+	row.add_child(pause_button)
+	%ProjectList.add_child(card)
+
+
+func _change_research_workers(p_node_id: String, p_delta: int) -> void:
+	var project: Dictionary = GameState.research_project_system.get_project(p_node_id)
+	var result: Dictionary = GameState.set_knowledge_research_workers(
+		p_node_id, int(project.get("workers", 0)) + p_delta
+	)
+	_show_project_message(result)
+
+
+func _change_engineering_workers(p_node_id: String, p_project_id: String, p_delta: int) -> void:
+	var project: Dictionary = GameState.engineering_project_system.get_project(p_node_id, p_project_id)
+	var result: Dictionary = GameState.set_knowledge_engineering_workers(
+		p_node_id, p_project_id, int(project.get("workers", 0)) + p_delta
+	)
+	_show_project_message(result)
+
+
+func _toggle_research_project(p_node_id: String) -> void:
+	_show_project_message(GameState.toggle_knowledge_research(p_node_id))
+
+
+func _toggle_engineering_project(p_node_id: String, p_project_id: String) -> void:
+	_show_project_message(GameState.toggle_knowledge_engineering(p_node_id, p_project_id))
+
+
+func _show_project_message(p_result: Dictionary) -> void:
+	%ProjectMessageLabel.text = str(p_result.get("message", ""))
+	%ProjectMessageLabel.modulate = (
+		Color(0.55, 1.0, 0.65)
+		if bool(p_result.get("success", false))
+		else Color(1.0, 0.5, 0.4)
+	)
+	_rebuild_project_manager()
 
 
 func _on_node_hovered(p_node_id: String, p_local_position: Vector2) -> void:

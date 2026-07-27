@@ -142,7 +142,7 @@ class PopulationManager:
 		if food_satisfaction < _starvation_threshold:
 			var starvation: float = (_starvation_threshold - food_satisfaction) * total * _starvation_rate * p_dt_days
 			_starvation_loss_accumulator += starvation
-			population_loss = mini(maxi(0, total - 1), int(_starvation_loss_accumulator))
+			population_loss = mini(total, int(_starvation_loss_accumulator))
 			if population_loss > 0:
 				total -= population_loss
 				_starvation_loss_accumulator -= population_loss
@@ -317,7 +317,7 @@ class GameBuilding:
 			var workers: int = min(assigned_workers, worker_capacity)
 			speed = float(workers) / float(worker_capacity)
 		else:
-			speed = 1.0
+			speed = 0.0
 		build_progress += speed * p_dt
 		if build_progress >= build_time:
 			under_construction = false
@@ -335,6 +335,9 @@ var policy_efficiency_multiplier: float = 1.0
 var social_stability: float = 1.0
 var population_health: float = 1.0
 var external_reserved_workers: int = 0
+var hazard_workforce_multiplier: float = 1.0
+var last_population_update: Dictionary = {}
+var last_update_days: float = 0.0
 var _active_policy_ids: Array = []
 var _config: Dictionary = {}
 var _next_building_id: int = 1
@@ -477,6 +480,10 @@ func get_idle_population() -> int:
 	return population.get_idle(get_total_building_workers() + external_reserved_workers)
 
 
+func get_total_civilization_population() -> int:
+	return maxi(0, population.total) + maxi(0, population.stored_population)
+
+
 func set_external_reserved_workers(p_count: int) -> void:
 	external_reserved_workers = clampi(p_count, 0, population.total)
 
@@ -510,6 +517,20 @@ func prepare_population_reduction(p_target_total: int) -> void:
 		var remove_count: int = mini(building.assigned_workers, excess)
 		building.assigned_workers -= remove_count
 		excess -= remove_count
+
+
+func prepare_for_dehydration(p_essential_building_types: Array) -> int:
+	population.breeders = 0
+	var essential_workers := 0
+	for building in buildings:
+		if building.destroyed:
+			building.assigned_workers = 0
+			continue
+		if building.building_type in p_essential_building_types:
+			essential_workers += building.assigned_workers
+		else:
+			building.assigned_workers = 0
+	return essential_workers
 
 
 func enforce_population_invariants() -> void:
@@ -619,16 +640,16 @@ func update(p_env_params: Dictionary, p_zone_manager = null, p_dt: float = 0.016
 		social_stability = min(1.0, social_stability + 0.003 * p_dt)
 		population_health = min(1.0, population_health + 0.002 * p_dt)
 
+	_process_buildings(p_dt, p_zone_manager, p_dehydrated)
+
 	population.storage_capacity = 0
 	for b in buildings:
 		var building: GameBuilding = b as GameBuilding
 		if building.active and not building.destroyed and not building.under_construction:
-			population.storage_capacity += building.storage_capacity
+			population.storage_capacity += int(floor(float(building.storage_capacity) * building.last_run_ratio))
 	if population.stored_population > population.storage_capacity:
 		var overflow: int = population.stored_population - population.storage_capacity
 		population.retrieve_population(overflow)
-
-	_process_buildings(p_dt, p_zone_manager, p_dehydrated)
 
 	if p_zone_manager != null:
 		var damage_config: Dictionary = _config.get("damage_rates", {})
@@ -656,6 +677,8 @@ func update(p_env_params: Dictionary, p_zone_manager = null, p_dt: float = 0.016
 
 	var food_available: float = get_resource("food")
 	var pop_result: Dictionary = population.update(p_dt, food_available, p_dehydrated)
+	last_population_update = pop_result.duplicate()
+	last_update_days = p_dt
 	var food_consumed: float = pop_result.get("food_consumed", 0.0)
 	if food_consumed > 0.0:
 		consume_resource("food", food_consumed)
@@ -766,6 +789,9 @@ func _get_base_run_ratio(p_building: GameBuilding, p_zone_manager, p_dehydrated:
 	var exempt_types: Array = dehydrate_config.get("exempt_types", ["storage_vault", "large_storage_vault", "shelter", "deep_shelter"])
 	if p_dehydrated and p_building.building_type not in exempt_types:
 		ratio *= float(dehydrate_config.get("output_multiplier", 0.1))
+	var hazard_exempt_types := ["storage_vault", "large_storage_vault", "shelter", "deep_shelter", "radiation_shield"]
+	if p_building.building_type not in hazard_exempt_types:
+		ratio *= hazard_workforce_multiplier
 	return clampf(ratio, 0.0, 1.0)
 
 
@@ -799,18 +825,48 @@ func _get_zone_yield(p_building: GameBuilding, p_zone_manager) -> float:
 
 
 func get_zone_protection(p_zone_id: int) -> Dictionary:
-	var environment_protection: float = 0.0
-	var radiation_protection: float = 0.0
+	var shelter := get_zone_shelter_status(p_zone_id)
+	return {
+		"environment": float(shelter.get("environment_protection", 0.0)),
+		"radiation": maxf(
+			float(shelter.get("shelter_radiation_protection", 0.0)),
+			float(shelter.get("area_radiation_protection", 0.0))
+		),
+	}
+
+
+func get_zone_shelter_status(p_zone_id: int) -> Dictionary:
+	var capacity := 0
+	var weighted_environment := 0.0
+	var weighted_shelter_radiation := 0.0
+	var area_radiation_protection := 0.0
+	var operating_building_ids: Array[int] = []
 	for building in get_buildings_in_zone(p_zone_id):
-		if building.last_run_ratio <= 0.0:
+		if building.last_run_ratio <= 0.0 or building.destroyed or building.under_construction:
 			continue
-		if building.building_type == "shelter":
-			environment_protection = maxf(environment_protection, 0.2 * building.last_run_ratio)
-		elif building.building_type == "deep_shelter":
-			environment_protection = maxf(environment_protection, 0.5 * building.last_run_ratio)
+		if building.building_type in ["shelter", "deep_shelter"]:
+			var effective_capacity := int(floor(float(building.storage_capacity) * building.last_run_ratio))
+			if effective_capacity <= 0:
+				continue
+			var environment_protection := 0.7 if building.building_type == "shelter" else 0.92
+			var radiation_protection := 0.25 if building.building_type == "shelter" else 0.68
+			capacity += effective_capacity
+			weighted_environment += float(effective_capacity) * environment_protection
+			weighted_shelter_radiation += float(effective_capacity) * radiation_protection
+			operating_building_ids.append(building.id)
 		elif building.building_type == "radiation_shield":
-			radiation_protection = maxf(radiation_protection, 0.5 * building.last_run_ratio)
-	return {"environment": environment_protection, "radiation": radiation_protection}
+			area_radiation_protection = maxf(
+				area_radiation_protection,
+				0.72 * building.last_run_ratio
+			)
+			operating_building_ids.append(building.id)
+	return {
+		"capacity": capacity,
+		"environment_protection": weighted_environment / float(capacity) if capacity > 0 else 0.0,
+		"shelter_radiation_protection": weighted_shelter_radiation / float(capacity) if capacity > 0 else 0.0,
+		"area_radiation_protection": area_radiation_protection,
+		"operating_building_ids": operating_building_ids,
+	}
 
 
 func get_average_protection(p_zone_manager) -> Dictionary:
@@ -842,6 +898,36 @@ func apply_technology_effects(p_tech_tree) -> void:
 		building.heat_resistance = 78.0 if has_high_alloy else 60.0
 		building.cold_resistance = -104.0 if has_high_alloy else -80.0
 		building.radiation_resistance = 5.0 * (1.5 if has_radiation_armor else 1.0) * (1.3 if has_high_alloy else 1.0)
+
+
+func get_resource_flow_snapshot() -> Dictionary:
+	var result: Dictionary = {}
+	for resource_id in resources:
+		result[resource_id] = {"production": 0.0, "consumption": 0.0, "net": 0.0}
+	for building in buildings:
+		if building.destroyed or building.under_construction:
+			continue
+		for resource_id in building.last_output_rate:
+			if not result.has(resource_id):
+				continue
+			result[resource_id]["production"] = float(result[resource_id]["production"]) + maxf(
+				0.0, float(building.last_output_rate[resource_id])
+			)
+		for resource_id in building.consumption:
+			if not result.has(resource_id):
+				continue
+			result[resource_id]["consumption"] = float(result[resource_id]["consumption"]) + (
+				maxf(0.0, float(building.consumption[resource_id])) * building.last_run_ratio
+			)
+	if result.has("food") and last_update_days > 0.0:
+		result["food"]["consumption"] = float(result["food"]["consumption"]) + (
+			maxf(0.0, float(last_population_update.get("food_consumed", 0.0))) / last_update_days
+		)
+	for resource_id in result:
+		result[resource_id]["net"] = (
+			float(result[resource_id]["production"]) - float(result[resource_id]["consumption"])
+		)
+	return result
 
 
 func get_state() -> Dictionary:
@@ -885,6 +971,7 @@ func get_state() -> Dictionary:
 		"avg_efficiency": global_efficiency,
 		"social_stability": social_stability,
 		"population_health": population_health,
+		"hazard_workforce_multiplier": hazard_workforce_multiplier,
 		"active_policy_ids": _active_policy_ids.duplicate(),
 		"buildings": buildings_data,
 	}
@@ -896,6 +983,7 @@ func load_state(data: Dictionary) -> void:
 	global_efficiency = data.get("avg_efficiency", 1.0)
 	social_stability = data.get("social_stability", 1.0)
 	population_health = data.get("population_health", 1.0)
+	hazard_workforce_multiplier = clampf(float(data.get("hazard_workforce_multiplier", 1.0)), 0.0, 1.0)
 	set_policy_effects(data.get("active_policy_ids", []))
 
 	var resources_data: Dictionary = data.get("resources", {})

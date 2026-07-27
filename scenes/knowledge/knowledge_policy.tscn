@@ -150,6 +150,17 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 48)
 text = "开始教学计划"
 
+[node name="TeachingPlansTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
+layout_mode = 2
+text = "正在占用人口的教学计划"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 18
+
+[node name="TeachingPlansList" type="VBoxContainer" parent="Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
 [node name="PreservationSection" type="VBoxContainer" parent="Content/ActionPanel/ActionScroll/ActionVBox"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -157,41 +168,29 @@ theme_override_constants/separation = 8
 
 [node name="PreservationTitle" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 layout_mode = 2
-text = "避难保存容量预览"
+text = "环境危机响应预案"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 21
-[node name="ShelterPeopleLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
+
+[node name="ResponsePriorityLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 layout_mode = 2
-text = "纳入人口"
-[node name="ShelterPeople" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
+text = "保存优先级（改变人口床位与知识载体空间的取舍）"
+
+[node name="ResponsePriorityOption" type="OptionButton" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
-max_value = 1000000.0
-[node name="ArchiveVolumeLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
-layout_mode = 2
-text = "档案干燥体积（m³）"
-[node name="ArchiveVolume" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
-unique_name_in_owner = true
-layout_mode = 2
-max_value = 100000.0
-step = 0.5
-[node name="ArtifactMassLabel" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
-layout_mode = 2
-text = "样机与工具质量（kg）"
-[node name="ArtifactMass" type="SpinBox" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
-unique_name_in_owner = true
-layout_mode = 2
-max_value = 10000000.0
-[node name="PreviewPreservationButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
+
+[node name="CommitResponseButton" type="Button" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(0, 48)
-text = "预览确定装载事实"
+text = "确认并承诺该预案"
+
 [node name="PreservationPreview" type="Label" parent="Content/ActionPanel/ActionScroll/ActionVBox/PreservationSection"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 2
-text = "尚未预览"
+text = "尚无容量信息"
 
 [node name="MessageLabel" type="Label" parent="."]
 unique_name_in_owner = true

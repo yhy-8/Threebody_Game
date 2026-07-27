@@ -105,9 +105,9 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 		"consumption": {"fossil_fuel": 5.0}, "build_time": 5.0, "storage_capacity": 0,
 	},
 	"shelter": {
-		"name": "建造庇护所", "description": "保护居民免受极端环境伤害的地下工事。",
+		"name": "建造庇护所", "description": "可容纳20人的地下工事；需要4名施工/维生人员和持续供电才能提供保护。",
 		"resource_cost": {"iron": 100}, "tech_requirement": "survival_shelter", "requires_zone": true,
-		"worker_capacity": 0, "per_worker_output": {},
+		"worker_capacity": 4, "per_worker_output": {},
 		"consumption": {"electricity": 1.0}, "build_time": 5.0, "storage_capacity": 20,
 	},
 	"laboratory": {
@@ -123,27 +123,27 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 		"consumption": {"electricity": 25.0, "food": 5.0}, "build_time": 10.0, "storage_capacity": 0,
 	},
 	"deep_shelter": {
-		"name": "建造深地庇护所", "description": "深入地下的巨型避难系统。",
+		"name": "建造深地庇护所", "description": "可容纳100人的深地避难系统；需要8名施工/维生人员和持续供电。",
 		"resource_cost": {"iron": 400, "copper": 100}, "tech_requirement": "deep_shelter", "requires_zone": true,
-		"worker_capacity": 0, "per_worker_output": {},
+		"worker_capacity": 8, "per_worker_output": {},
 		"consumption": {"electricity": 3.0}, "build_time": 8.0, "storage_capacity": 100,
 	},
 	"radiation_shield": {
-		"name": "建造辐射屏蔽站", "description": "为所在区域提供辐射防护。",
+		"name": "建造辐射屏蔽站", "description": "为所在区域提供辐射防护；需要4名施工/运行人员和持续供电。",
 		"resource_cost": {"iron": 300, "rare_mineral": 20}, "tech_requirement": "radiation_armor", "requires_zone": true,
-		"worker_capacity": 0, "per_worker_output": {},
+		"worker_capacity": 4, "per_worker_output": {},
 		"consumption": {"electricity": 5.0}, "build_time": 7.0, "storage_capacity": 0,
 	},
 	"storage_vault": {
-		"name": "建造脱水仓", "description": "专用脱水人口存储设施。",
+		"name": "建造脱水仓", "description": "可保存100名脱水人口；需要2名施工/运行人员和持续供电。",
 		"resource_cost": {"iron": 80, "copper": 20}, "tech_requirement": "survival_shelter", "requires_zone": true,
-		"worker_capacity": 0, "per_worker_output": {},
+		"worker_capacity": 2, "per_worker_output": {},
 		"consumption": {"electricity": 0.5}, "build_time": 3.0, "storage_capacity": 100,
 	},
 	"large_storage_vault": {
-		"name": "建造大型脱水仓", "description": "大规模脱水人口存储设施。",
+		"name": "建造大型脱水仓", "description": "可保存500名脱水人口；需要5名施工/运行人员和持续供电。",
 		"resource_cost": {"iron": 200, "copper": 60}, "tech_requirement": "deep_shelter", "requires_zone": true,
-		"worker_capacity": 0, "per_worker_output": {},
+		"worker_capacity": 5, "per_worker_output": {},
 		"consumption": {"electricity": 2.0}, "build_time": 6.0, "storage_capacity": 500,
 	},
 	"research_institute": {
@@ -294,6 +294,13 @@ func _check_policy_conditions(p_policy_id: String, p_entities = null) -> Diction
 			return {"success": false, "message": "当前已经是脱水状态"}
 		if p_entities != null and p_entities.population.total <= 0:
 			return {"success": false, "message": "没有活跃人口可以脱水"}
+		if p_entities != null and p_entities.external_reserved_workers > 0:
+			return {
+				"success": false,
+				"message": "仍有 %d 人承担研究、教学或在途任务；必须先暂停或结束这些真实任务" % p_entities.external_reserved_workers,
+			}
+		if p_entities != null and p_entities.population.get_storable_amount() <= 0:
+			return {"success": false, "message": "没有可用脱水容量；脱水仓或庇护设施必须已完工、配员并获得供能"}
 	elif p_policy_id == "rehydrate":
 		if current_state != CivilizationState.DEHYDRATED:
 			return {"success": false, "message": "目前不在脱水状态，无需浸泡"}
@@ -432,7 +439,9 @@ func _execute_policy(p_policy_id: String, p_entities) -> Dictionary:
 	if p_policy_id == "dehydrate":
 		current_state = CivilizationState.DEHYDRATED
 		var pop = p_entities.population
-		var keep: int = max(1, int(pop.total * _dehydrate_keep_fraction))
+		var essential_types := ["storage_vault", "large_storage_vault", "shelter", "deep_shelter", "radiation_shield"]
+		var essential_workers: int = p_entities.prepare_for_dehydration(essential_types)
+		var keep: int = max(1, int(pop.total * _dehydrate_keep_fraction), essential_workers)
 		var to_store: int = pop.total - keep
 		if to_store <= 0:
 			return {"success": true, "message": "人口过少，无需脱水", "building_id": -1}

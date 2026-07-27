@@ -70,7 +70,11 @@ func _test_capital_and_local_inventory() -> void:
 	var capital_id := int(GameState.settlement_system.candidate_views[0].get("zone_id", -1))
 	var result: Dictionary = GameState.confirm_capital(capital_id)
 	_expect(result.get("success", false), "合法候选无法确认为首都")
-	_expect(not GameState.paused and GameState.settlement_system.get_population(capital_id) == GameState.entities.population.total, "首都确认后人口没有落在发源地")
+	_expect(
+		GameState.paused
+		and GameState.settlement_system.get_population(capital_id) == GameState.entities.population.total,
+		"首都确认后没有保持暂停，或人口没有落在发源地",
+	)
 	_expect(GameState.planet_zones.zones.size() == 144, "区域网格不是 12×12 的 144 区")
 	var expected_visible: Array[int] = [capital_id]
 	expected_visible.append_array(GameState.planet_zones.get_zone_neighborhood(capital_id))
@@ -136,7 +140,9 @@ func _test_physical_expedition() -> void:
 	_expect(GameState.settlement_system.get_population(target_id) == 5, "迁徙者抵达后没有进入目标地区人口")
 	_expect(GameState.regional_logistics.get_local_amount(target_id, "food") >= 9.99, "迁徙载荷没有进入目标地地方库存")
 	_expect(GameState.settlement_system.get_settlement(target_id).get("type", "") == "outpost", "首批迁入者没有建立前哨记录")
-	var shelter = EntityManagerScript.GameBuilding.new(9101, "测试前哨庇护所", "shelter", target_id, 0, {}, {}, 0.0, 0.0, false, true, 100.0, 100.0, 20)
+	var shelter = EntityManagerScript.GameBuilding.new(9101, "测试前哨庇护所", "shelter", target_id, 4, {}, {"electricity": 1.0}, 0.0, 0.0, false, true, 100.0, 100.0, 20)
+	shelter.assigned_workers = 4
+	shelter.last_run_ratio = 1.0
 	var food_site = EntityManagerScript.GameBuilding.new(9102, "测试前哨食物点", "algae_foraging", target_id, 5, {"food": 2.5})
 	food_site.assigned_workers = 1
 	food_site.last_output_rate = {"food": 2.5}

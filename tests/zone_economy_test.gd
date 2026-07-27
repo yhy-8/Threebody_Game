@@ -61,14 +61,20 @@ func _test_protection_and_technology() -> void:
 	var entities = EntityScript.new({"population": {"food_per_person_per_day": 0.0, "natural_growth_rate": 0.0}})
 	var generator = EntityScript.GameBuilding.new(1, "藻电", "algae_power_plant", 0, 3, {"electricity": 5.0}, {"algae_fuel": 3.0})
 	generator.assigned_workers = 3
-	var shelter = EntityScript.GameBuilding.new(2, "深地庇护所", "deep_shelter", 0, 0, {}, {"electricity": 3.0})
-	var shield = EntityScript.GameBuilding.new(3, "屏蔽站", "radiation_shield", 0, 0, {}, {"electricity": 5.0})
+	var shelter = EntityScript.GameBuilding.new(2, "深地庇护所", "deep_shelter", 0, 8, {}, {"electricity": 3.0}, 0.0, 0.0, false, true, 100.0, 100.0, 100)
+	shelter.assigned_workers = 8
+	var shield = EntityScript.GameBuilding.new(3, "屏蔽站", "radiation_shield", 0, 4, {}, {"electricity": 5.0})
+	shield.assigned_workers = 4
 	entities.add_building(generator)
 	entities.add_building(shelter)
 	entities.add_building(shield)
 	entities.update({"heat_level": 0.5}, zones, 0.1, false)
 	var protection: Dictionary = entities.get_zone_protection(0)
-	_expect(is_equal_approx(protection["environment"], 0.5) and is_equal_approx(protection["radiation"], 0.5), "有电庇护所或屏蔽站没有提供区域保护")
+	_expect(
+		is_equal_approx(protection["environment"], 0.92)
+		and is_equal_approx(protection["radiation"], 0.72),
+		"已配员且有电的庇护所或屏蔽站没有提供区域保护",
+	)
 
 	var tech = TechScript.new()
 	tech.get_node("radiation_armor").unlocked = true

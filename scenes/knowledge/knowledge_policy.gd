@@ -12,7 +12,8 @@ func _ready() -> void:
 	%TeachingMethodOption.item_selected.connect(_on_teaching_selection_changed)
 	%TeachingIntensityOption.item_selected.connect(_on_teaching_selection_changed)
 	%StartTeachingButton.pressed.connect(_on_start_teaching)
-	%PreviewPreservationButton.pressed.connect(_on_preview_preservation)
+	%ResponsePriorityOption.item_selected.connect(_on_response_priority_changed)
+	%CommitResponseButton.pressed.connect(_on_commit_response)
 	EventBus.game_paused.connect(_on_global_pause_changed)
 	_setup_preservation_controls()
 	_refresh_policy_display(true)
@@ -34,14 +35,31 @@ func _on_global_pause_changed(p_paused: bool) -> void:
 
 
 func _setup_preservation_controls() -> void:
-	var has_records: bool = GameState.knowledge_system.has_capability("symbolic_recording")
-	var has_artifacts: bool = GameState.knowledge_system.has_capability("hand_tools")
-	var preservation_available := not _get_shelter_snapshots().is_empty()
+	var preservation_available := false
+	for building in GameState.entities.buildings:
+		if (
+			not building.destroyed
+			and not building.under_construction
+			and building.building_type in ["shelter", "deep_shelter"]
+		):
+			preservation_available = true
+			break
 	%PreservationSection.visible = preservation_available
-	%PreservationSection.get_node("ArchiveVolumeLabel").visible = has_records
-	%ArchiveVolume.visible = has_records
-	%PreservationSection.get_node("ArtifactMassLabel").visible = has_artifacts
-	%ArtifactMass.visible = has_artifacts
+	%ResponsePriorityOption.clear()
+	if not preservation_available or GameState.environmental_hazard_system == null:
+		return
+	var committed_priority := str(
+		GameState.environmental_hazard_system.response_plan.get("priority", "balanced")
+	)
+	for profile_value in GameState.environmental_hazard_system.get_response_profiles():
+		var profile: Dictionary = profile_value
+		%ResponsePriorityOption.add_item(str(profile.get("name", profile.get("id", ""))))
+		%ResponsePriorityOption.set_item_metadata(
+			%ResponsePriorityOption.item_count - 1, str(profile.get("id", ""))
+		)
+		if str(profile.get("id", "")) == committed_priority:
+			%ResponsePriorityOption.select(%ResponsePriorityOption.item_count - 1)
+	_refresh_preservation_preview()
 
 
 func _rebuild_policy_list() -> void:
@@ -124,6 +142,8 @@ func _refresh_status() -> void:
 	])
 	%InstitutionStatusLabel.text = "\n".join(lines)
 	_refresh_teaching_preview()
+	_rebuild_teaching_plan_list()
+	_refresh_preservation_preview()
 
 
 func _on_adopt_policy(p_policy_id: String) -> void:
@@ -143,6 +163,66 @@ func _on_start_teaching() -> void:
 		str(plan.get("node_id", "")), str(plan.get("method_id", "")), str(plan.get("intensity_id", ""))
 	)
 	_show_message("%s（整日岗位机会成本 %.0f 人时/天）" % [result.get("message", ""), preview.get("production_hours_lost", 0.0)], result.get("success", false))
+	_refresh_status()
+
+
+func _rebuild_teaching_plan_list() -> void:
+	for child in %TeachingPlansList.get_children():
+		child.queue_free()
+	if GameState.education_system.plans.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "当前没有教学计划。"
+		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		%TeachingPlansList.add_child(empty_label)
+		return
+	for plan_id in GameState.education_system.plans:
+		var plan: Dictionary = GameState.education_system.plans[plan_id]
+		var card := PanelContainer.new()
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		card.add_child(row)
+		var label := Label.new()
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var node_view: Dictionary = GameState.knowledge_system.get_node_view(str(plan.get("node_id", "")))
+		var method: Dictionary = GameState.education_system.METHOD_DEFINITIONS.get(
+			str(plan.get("method_id", "")), {}
+		)
+		var plan_status := "运行中"
+		if bool(plan.get("paused", false)):
+			plan_status = "已暂停"
+		elif not str(plan.get("pause_reason", "")).is_empty():
+			plan_status = "受阻：%s" % plan.get("pause_reason", "")
+		label.text = "%s · %s · %s\n教师 %d · 学习者 %d · 已运行 %.1f 天" % [
+			node_view.get("display_name", plan.get("node_id", "")),
+			method.get("name", plan.get("method_id", "")),
+			plan_status,
+			plan.get("teacher_count", 0),
+			plan.get("student_count", 0),
+			plan.get("progress_days", 0.0),
+		]
+		row.add_child(label)
+		var pause_button := Button.new()
+		pause_button.text = "继续" if bool(plan.get("paused", false)) else "暂停"
+		pause_button.pressed.connect(_toggle_teaching_plan.bind(str(plan_id)))
+		row.add_child(pause_button)
+		var cancel_button := Button.new()
+		cancel_button.text = "取消"
+		cancel_button.tooltip_text = "取消不会回滚已经形成的传承进度"
+		cancel_button.pressed.connect(_cancel_teaching_plan.bind(str(plan_id)))
+		row.add_child(cancel_button)
+		%TeachingPlansList.add_child(card)
+
+
+func _toggle_teaching_plan(p_plan_id: String) -> void:
+	var result: Dictionary = GameState.toggle_teaching_plan(p_plan_id)
+	_show_message(str(result.get("message", "")), bool(result.get("success", false)))
+	_refresh_status()
+
+
+func _cancel_teaching_plan(p_plan_id: String) -> void:
+	var result: Dictionary = GameState.cancel_teaching_plan(p_plan_id)
+	_show_message(str(result.get("message", "")), bool(result.get("success", false)))
 	_refresh_status()
 
 
@@ -181,56 +261,74 @@ func _refresh_teaching_preview() -> void:
 	%StartTeachingButton.disabled = false
 
 
-func _on_preview_preservation() -> void:
-	var plan := {
-		"plan_id": "preview:current",
-		"people": [{"id": "group:population", "count": int(%ShelterPeople.value), "role": "ordinary", "supply_days": 30.0}],
-		"records": [{"id": "archive:knowledge", "dry_volume_m3": %ArchiveVolume.value, "power_kw": 0.0}],
-		"artifacts": [{"id": "artifact:tools", "volume_m3": %ArtifactMass.value / 500.0, "mass_kg": %ArtifactMass.value, "power_kw": 0.0}],
-		"unplaced_objects": [],
-	}
-	var shelters := _get_shelter_snapshots()
-	var preview: Dictionary = GameState.preservation_allocator.preview_plan(plan, shelters, GameState.hazard_forecast_service.get_public_snapshot())
-	var capacity: Dictionary = preview.get("capacity", {})
-	var occupancy: Dictionary = preview.get("occupancy", {})
-	var forecast_text := ""
-	if preview.has("casualty_range"):
-		forecast_text = str(preview["casualty_range"])
-	elif preview.has("risk_trend"):
-		forecast_text = "定性风险：%s" % preview["risk_trend"]
+func _on_response_priority_changed(_p_index: int) -> void:
+	_refresh_preservation_preview()
+
+
+func _selected_response_priority() -> String:
+	if %ResponsePriorityOption.selected < 0:
+		return ""
+	return str(%ResponsePriorityOption.get_item_metadata(%ResponsePriorityOption.selected))
+
+
+func _refresh_preservation_preview() -> void:
+	if (
+		not is_node_ready()
+		or not %PreservationSection.visible
+		or GameState.environmental_hazard_system == null
+	):
+		return
+	var system = GameState.environmental_hazard_system
+	var priority := _selected_response_priority()
+	var response_preview: Dictionary = system.preview_response_priority(
+		priority, GameState.entities, GameState.settlement_system
+	)
+	var profile: Dictionary = response_preview.get("profile", {})
+	var plan_view: Dictionary = system.get_response_plan_view(
+		GameState.entities, GameState.settlement_system
+	)
+	var preview_allocations: Dictionary = response_preview.get("allocations", {})
 	var lines: Array[String] = [
-		"确定装载事实",
-		"床位 %.0f / %.0f" % [occupancy.get("berths", 0.0), capacity.get("berths", 0.0)],
-		"生命保障 %.0f / %.0f" % [occupancy.get("life_support_people", 0.0), capacity.get("life_support_people", 0.0)],
+		str(profile.get("description", "选择危机期间人口与知识载体的保存优先级。")),
+		"",
+		"当前可验证容量（只计已完工、供能、配员设施）",
 	]
-	if %ArchiveVolume.visible:
-		lines.append("干燥档案 %.1f / %.1f m³" % [occupancy.get("dry_archive_volume_m3", 0.0), capacity.get("dry_archive_volume_m3", 0.0)])
-	if %ArtifactMass.visible:
-		lines.append("重物 %.0f / %.0f kg" % [occupancy.get("heavy_storage_mass_kg", 0.0), capacity.get("heavy_storage_mass_kg", 0.0)])
-	lines.append("容量瓶颈：%s" % ("无" if preview.get("capacity_bottlenecks", []).is_empty() else ", ".join(preview["capacity_bottlenecks"])))
-	if not forecast_text.is_empty():
-		lines.append("预计影响：%s" % forecast_text)
+	var total_population := 0
+	var total_capacity := 0
+	var total_protected := 0
+	for allocation_value in preview_allocations.values():
+		var allocation: Dictionary = allocation_value
+		total_population += int(allocation.get("population", 0))
+		total_capacity += int(allocation.get("operating_shelter_capacity", 0))
+		total_protected += int(allocation.get("planned_protected_people", 0))
+		lines.append("区域 #%d：人口 %d · 运行容量 %d · 计划保护 %d" % [
+			allocation.get("zone_id", -1),
+			allocation.get("population", 0),
+			allocation.get("operating_shelter_capacity", 0),
+			allocation.get("planned_protected_people", 0),
+		])
+	lines.append("合计：人口 %d · 运行容量 %d · 按此优先级保护 %d" % [
+		total_population, total_capacity, total_protected,
+	])
+	if bool(plan_view.get("committed", false)):
+		lines.append("已确认预案：%s（提交于第 %.1f 天）" % [
+			plan_view.get("priority_name", ""),
+			plan_view.get("committed_game_day", 0.0),
+		])
+	else:
+		lines.append("尚未确认预案；临时避险只能利用少量可用容量。")
+	var active_hazard: Dictionary = system.active_hazard
+	if not active_hazard.is_empty():
+		lines.append("环境危机进行中：预案已经锁定，结束前不能改写。")
 	%PreservationPreview.text = "\n".join(lines)
+	%CommitResponseButton.disabled = total_capacity <= 0 or not active_hazard.is_empty()
+	%CommitResponseButton.text = "危机中已锁定" if not active_hazard.is_empty() else "确认并承诺该预案"
 
 
-func _get_shelter_snapshots() -> Array:
-	var result: Array = []
-	for building in GameState.entities.buildings:
-		if building.destroyed or building.under_construction or building.building_type not in ["shelter", "deep_shelter"]:
-			continue
-		var deep: bool = building.building_type == "deep_shelter"
-		result.append({
-			"shelter_id": "building:%d" % building.id,
-			"usable_volume_m3": 1200.0 if deep else 280.0,
-			"berths": 200 if deep else 50,
-			"life_support_people": 180 if deep else 40,
-			"food_water_person_days": 5400.0 if deep else 1200.0,
-			"dry_archive_volume_m3": 80.0 if deep else 12.0,
-			"heavy_storage_mass_kg": 20000.0 if deep else 2500.0,
-			"continuous_power_kw": 20.0 if deep else 3.0,
-			"environment_control_level": 0.8 if deep else 0.35,
-		})
-	return result
+func _on_commit_response() -> void:
+	var result: Dictionary = GameState.commit_hazard_response(_selected_response_priority())
+	_show_message(str(result.get("message", "")), bool(result.get("success", false)))
+	_refresh_preservation_preview()
 
 
 func _branch_name(p_branch: String) -> String:

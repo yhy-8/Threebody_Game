@@ -19,6 +19,8 @@ func _ready() -> void:
 	%ModeTemp.pressed.connect(_set_mode.bind("temperature"))
 	%ModeRadiation.pressed.connect(_set_mode.bind("radiation"))
 	%ModeLight.pressed.connect(_set_mode.bind("light"))
+	%ModePopulation.pressed.connect(_set_mode.bind("population"))
+	%ModeShelterGap.pressed.connect(_set_mode.bind("shelter_gap"))
 	%ZoneMap.zone_selected.connect(_on_zone_selected)
 	%CloseBuildButton.pressed.connect(_close_build_menu)
 	EventBus.game_paused.connect(_on_global_pause_changed)
@@ -40,7 +42,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		_close_build_menu()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
-		var modes := ["temperature", "radiation", "light"]
+		var modes := ["temperature", "radiation", "light", "population", "shelter_gap"]
 		_set_mode(modes[(modes.find(view_mode) + 1) % modes.size()])
 		get_viewport().set_input_as_handled()
 
@@ -55,6 +57,8 @@ func _set_mode(p_mode: String) -> void:
 	%ModeTemp.button_pressed = p_mode == "temperature"
 	%ModeRadiation.button_pressed = p_mode == "radiation"
 	%ModeLight.button_pressed = p_mode == "light"
+	%ModePopulation.button_pressed = p_mode == "population"
+	%ModeShelterGap.button_pressed = p_mode == "shelter_gap"
 
 
 func _refresh_data(p_force_detail_rebuild: bool = false) -> void:
@@ -452,11 +456,7 @@ func _make_building_card(building, zone) -> PanelContainer:
 	var card := PanelContainer.new()
 	var box := VBoxContainer.new()
 	card.add_child(box)
-	var status := "运行中"
-	if building.destroyed:
-		status = "已损毁"
-	elif building.under_construction:
-		status = "建造中 %.0f%%" % (building.build_progress / max(building.build_time, 0.001) * 100.0)
+	var status := _building_status(building)
 	box.add_child(_label("%s  [%s]" % [building.building_name, status]))
 	box.add_child(_label("耐久：%.0f / %.0f" % [building.durability, building.max_durability]))
 
@@ -631,11 +631,7 @@ func _update_detail_values() -> void:
 		if not _building_controls.has(building.id):
 			continue
 		var controls: Dictionary = _building_controls[building.id]
-		var status := "运行中"
-		if building.destroyed:
-			status = "已损毁"
-		elif building.under_construction:
-			status = "建造中 %.0f%%" % (building.build_progress / max(building.build_time, 0.001) * 100.0)
+		var status := _building_status(building)
 		controls["status"].text = "%s  [%s]" % [building.building_name, status]
 		controls["durability"].text = "耐久：%.0f / %.0f" % [building.durability, building.max_durability]
 		if controls.has("workers"):
@@ -643,8 +639,31 @@ func _update_detail_values() -> void:
 			_set_buttons_disabled(controls["remove_buttons"], building.assigned_workers <= 0)
 			_set_buttons_disabled(controls["add_buttons"], idle <= 0 or building.assigned_workers >= building.worker_capacity)
 		if controls.has("output"):
-			var output: Dictionary = building.get_output(GameState.entities.population.automation_multiplier, zone.get_work_efficiency())
-			controls["output"].text = "产出：%s" % (_format_resource_rates(output, true) if not output.is_empty() else "待分配工人或建筑尚未运行")
+			var output: Dictionary = building.last_output_rate
+			controls["output"].text = "最近实际产出：%s" % (
+				_format_resource_rates(output, true)
+				if not output.is_empty()
+				else "0（尚未运行或当前模拟步停工）"
+			)
+
+
+func _building_status(p_building) -> String:
+	if p_building.destroyed:
+		return "已损毁"
+	if p_building.under_construction:
+		var status := "建造中 %.0f%%" % (
+			p_building.build_progress / max(p_building.build_time, 0.001) * 100.0
+		)
+		if p_building.assigned_workers <= 0:
+			status += "（无施工人员）"
+		return status
+	if p_building.assigned_workers <= 0:
+		return "停工：无运行人员"
+	if p_building.last_run_ratio <= 0.0:
+		return "停工：供能或投入品不足"
+	if p_building.last_run_ratio < 0.999:
+		return "部分运行 %.0f%%" % (p_building.last_run_ratio * 100.0)
+	return "运行中"
 
 
 func _get_known_environment_average() -> Dictionary:

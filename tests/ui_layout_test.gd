@@ -46,6 +46,8 @@ func _check_main_screen() -> void:
 	var hint: Control = scene.get_node("HintPanel")
 	var developer_panel: Control = scene.get_node("DeveloperOverlay/DeveloperPanel")
 	var capital_overlay: Control = scene.get_node("CapitalOverlay")
+	var event_panel: Control = scene.get_node("EventLogOverlay/Panel")
+	var game_over_panel: Control = scene.get_node("GameOverOverlay/Panel")
 	_expect(scene.get_node_or_null("Toolbar/KnowledgePolicyButton") == null, "主界面仍保留知识制度的跨层级入口")
 	_expect(_ends_before(toolbar, content, true), "主界面工具栏与内容面板重叠")
 	_expect(_ends_before(content, bottom_status, true), "主界面观测内容与全局状态栏重叠")
@@ -54,6 +56,13 @@ func _check_main_screen() -> void:
 	_expect(_ends_before(region_info, observation_button, true), "区域信息文本与天空观察按钮重叠")
 	_expect(_inside_viewport(developer_panel), "开发者工具面板超出视口")
 	_expect(_inside_viewport(capital_overlay), "首都候选层超出视口")
+	scene.get_node("EventLogOverlay").visible = true
+	scene.get_node("GameOverOverlay").visible = true
+	await get_tree().process_frame
+	_expect(_inside_viewport(event_panel), "持久事件记录面板超出视口")
+	_expect(_inside_viewport(game_over_panel), "文明终结面板超出视口")
+	scene.get_node("EventLogOverlay").visible = false
+	scene.get_node("GameOverOverlay").visible = false
 	_expect(capital_overlay.visible and scene.get_node("CapitalOverlay/CapitalVBox/CapitalSplit/CandidateScroll/CapitalCandidateList").get_child_count() > 0, "新局主界面没有显示可操作的首都候选")
 	scene.get_node("CapitalOverlay/CapitalVBox/ConfirmCapitalButton").pressed.emit()
 	await get_tree().process_frame
@@ -135,6 +144,10 @@ func _check_game_subscreens() -> void:
 		_expect(_inside_viewport(toolbar), "%s 工具栏超出视口" % scene_path)
 		if scene_path.ends_with("tech_tree.tscn"):
 			_expect(scene.get_node_or_null("Toolbar/KnowledgePolicyButton") != null, "知识图缺少知识制度入口")
+			scene.get_node("ProjectOverlay").visible = true
+			await get_tree().process_frame
+			_expect(_inside_viewport(scene.get_node("ProjectOverlay/Panel")), "科技项目管理面板超出视口")
+			scene.get_node("ProjectOverlay").visible = false
 		if scene_path.ends_with("knowledge_policy.tscn"):
 			_expect(scene.get_node_or_null("Content/ActionPanel/ActionScroll/ActionVBox/TeachingSection/TeacherCount") == null, "知识政策仍暴露教师人数微操")
 			_expect(scene.get_node_or_null("Content/PriorityPanel") == null, "知识政策仍显示没有实际分配器消费的装饰性权重")

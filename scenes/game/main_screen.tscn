@@ -95,6 +95,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "引导"
 
+[node name="EventsButton" type="Button" parent="Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "事件"
+
 [node name="TechTreeButton" type="Button" parent="Toolbar"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -398,10 +403,23 @@ offset_top = -58.0
 offset_right = -24.0
 offset_bottom = -16.0
 
-[node name="HintLabel" type="Label" parent="HintPanel"]
+[node name="HintRow" type="HBoxContainer" parent="HintPanel"]
 layout_mode = 2
+
+[node name="LatestEventLabel" type="Label" parent="HintPanel/HintRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "尚无文明事件"
+vertical_alignment = 1
+clip_text = true
+label_settings = SubResource("1_hint_settings")
+
+[node name="HintLabel" type="Label" parent="HintPanel/HintRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(650, 0)
 text = "Esc 菜单  |  空格 暂停  |  +/- 或 1/2/3/5 调速  |  顶部入口切换游戏界面"
-horizontal_alignment = 1
+horizontal_alignment = 2
 vertical_alignment = 1
 label_settings = SubResource("1_hint_settings")
 
@@ -544,6 +562,129 @@ unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(0, 54)
 text = "返回游戏"
+
+[node name="EventLogOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 35
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Shade" type="ColorRect" parent="EventLogOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.72)
+
+[node name="Panel" type="PanelContainer" parent="EventLogOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -500.0
+offset_top = -380.0
+offset_right = 500.0
+offset_bottom = 380.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="EventLogOverlay/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="EventLogOverlay/Panel/VBox"]
+layout_mode = 2
+text = "文明事件与实际结算"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 28
+
+[node name="Explanation" type="Label" parent="EventLogOverlay/Panel/VBox"]
+layout_mode = 2
+text = "预测只显示文明已有观测能支持的信息；危机结束后才记录实际伤亡、设施损毁与知识退化。"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="EventLogText" type="RichTextLabel" parent="EventLogOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = false
+scroll_active = true
+
+[node name="CloseEventsButton" type="Button" parent="EventLogOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+text = "返回游戏"
+
+[node name="GameOverOverlay" type="Control" parent="."]
+unique_name_in_owner = true
+visible = false
+z_index = 40
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Shade" type="ColorRect" parent="GameOverOverlay"]
+layout_mode = 1
+anchors_preset = 15
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.05, 0, 0.01, 0.86)
+
+[node name="Panel" type="PanelContainer" parent="GameOverOverlay"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -390.0
+offset_top = -230.0
+offset_right = 390.0
+offset_bottom = 230.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="GameOverOverlay/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="GameOverOverlay/Panel/VBox"]
+layout_mode = 2
+text = "文明终结"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.3, 0.3, 1)
+theme_override_font_sizes/font_size = 38
+
+[node name="GameOverReason" type="Label" parent="GameOverOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "文明已无法延续"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+theme_override_font_sizes/font_size = 21
+
+[node name="GameOverEventsButton" type="Button" parent="GameOverOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+text = "查看最终事件与损失"
+
+[node name="GameOverMenuButton" type="Button" parent="GameOverOverlay/Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+text = "返回主菜单"
 
 [node name="DeveloperOverlay" type="Control" parent="."]
 unique_name_in_owner = true
