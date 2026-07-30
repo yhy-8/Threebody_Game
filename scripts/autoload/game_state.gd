@@ -8,6 +8,7 @@ signal scenario_phase_changed(new_phase: String, transition_day: float)
 
 const SETTINGS_PATH := "res://settings.json"
 const SAVE_SCHEMA_VERSION := 10
+const REAL_SECONDS_PER_GAME_DAY := 10.0
 const FIXED_SIMULATION_STEP_DAYS := 0.02
 const MAX_SIMULATION_SUBSTEPS := 512
 const DIFFICULTY_CONFIG_PATH := "res://resources/configs/scenario_difficulties.tres"
@@ -75,7 +76,6 @@ var last_autosave_day: int = -1
 var developer_mode: bool = false
 var settings_return_scene: String = "res://scenes/main_menu/initial_menu.tscn"
 var _simulation_accumulator: float = 0.0
-var _autosave_elapsed_seconds: float = 0.0
 var _runtime_settings: Dictionary = {}
 var event_log: Array = []
 var _next_event_id: int = 1
@@ -179,7 +179,6 @@ func reset() -> void:
 	observed_zone_id = 0
 	last_autosave_day = -1
 	_simulation_accumulator = 0.0
-	_autosave_elapsed_seconds = 0.0
 	environment = null
 	entities = null
 	tech_tree = null
@@ -1098,7 +1097,7 @@ func update(p_dt: float) -> void:
 		_end_game("天体发生碰撞，文明毁灭")
 		return
 
-	_simulation_accumulator += p_dt * time_scale
+	_simulation_accumulator += p_dt * time_scale / REAL_SECONDS_PER_GAME_DAY
 	var substeps: int = 0
 	while _simulation_accumulator + 1e-9 >= FIXED_SIMULATION_STEP_DAYS and substeps < MAX_SIMULATION_SUBSTEPS:
 		_advance_simulation(FIXED_SIMULATION_STEP_DAYS)
@@ -1108,7 +1107,7 @@ func update(p_dt: float) -> void:
 			# 自动暂停必须精确停在触发事件的固定步；恢复后不能补跑同一渲染帧的剩余时间。
 			_simulation_accumulator = 0.0
 			break
-	_process_autosave(p_dt)
+	_process_autosave()
 	if substeps > 0:
 		state_updated.emit()
 
@@ -1319,16 +1318,18 @@ func _ensure_observed_zone_is_visible() -> void:
 	)
 
 
-func _process_autosave(p_real_dt: float) -> void:
-	var interval_minutes: int = int(_runtime_settings.get("auto_save_interval", 0))
-	if interval_minutes <= 0:
+func _process_autosave() -> void:
+	var interval_days: int = int(_runtime_settings.get("auto_save_interval_days", 100))
+	if interval_days <= 0:
 		return
-	_autosave_elapsed_seconds += p_real_dt
-	if _autosave_elapsed_seconds < float(interval_minutes) * 60.0:
+	var previous_autosave_day := last_autosave_day
+	var autosave_anchor_day := maxi(0, previous_autosave_day)
+	var due_day := autosave_anchor_day + interval_days
+	if game_time + 1e-9 < float(due_day):
 		return
-	_autosave_elapsed_seconds = 0.0
-	if SaveManager.save_game(self, "自动存档_Day%d" % maxi(1, int(game_time)), universe_name):
-		last_autosave_day = int(game_time)
+	last_autosave_day = maxi(due_day, int(floor(game_time + 1e-6)))
+	if not SaveManager.save_game(self, "自动存档_Day%d" % last_autosave_day, universe_name):
+		last_autosave_day = previous_autosave_day
 
 
 func _process_research_output(p_game_days_dt: float) -> void:

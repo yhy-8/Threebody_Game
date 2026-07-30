@@ -7,7 +7,7 @@ var current_tab: Tab = Tab.GAME
 
 # Settings data
 var time_scale_val: float = 1.0
-var auto_save_interval: int = 5
+var auto_save_interval_days: int = 100
 var guidance_mode: String = "full"
 var show_notifications: bool = true
 var auto_pause_critical: bool = true
@@ -114,7 +114,24 @@ func _build_game_tab() -> void:
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 10)
 	vbox.add_child(_make_slider("时间流逝速度", 0.1, 10.0, time_scale_val, 1, "x", func(v): time_scale_val = v))
-	vbox.add_child(_make_slider("自动保存间隔", 1.0, 30.0, float(auto_save_interval), 0, "分钟", func(v): auto_save_interval = int(v)))
+	var autosave_row := HBoxContainer.new()
+	autosave_row.custom_minimum_size = Vector2(0, 56)
+	var autosave_label := Label.new()
+	autosave_label.text = "自动存档间隔"
+	autosave_label.custom_minimum_size = Vector2(200, 0)
+	autosave_row.add_child(autosave_label)
+	var autosave_input := SpinBox.new()
+	autosave_input.name = "AutoSaveIntervalDays"
+	autosave_input.min_value = 1.0
+	autosave_input.max_value = 10000.0
+	autosave_input.step = 1.0
+	autosave_input.value = float(auto_save_interval_days)
+	autosave_input.suffix = "天"
+	autosave_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	autosave_input.tooltip_text = "按游戏日计算；例如填写 300 表示每 300 个游戏日自动存档"
+	autosave_input.value_changed.connect(func(v: float): auto_save_interval_days = int(v))
+	autosave_row.add_child(autosave_input)
+	vbox.add_child(autosave_row)
 	var guidance_row := HBoxContainer.new()
 	var guidance_label := Label.new()
 	guidance_label.text = "默认开局引导"
@@ -189,7 +206,7 @@ func _load_settings() -> void:
 	if not data is Dictionary:
 		return
 	time_scale_val = data.get("time_scale", 1.0)
-	auto_save_interval = data.get("auto_save_interval", 5)
+	auto_save_interval_days = int(data.get("auto_save_interval_days", 100))
 	guidance_mode = str(data.get("guidance_mode", "full"))
 	show_notifications = data.get("show_notifications", true)
 	auto_pause_critical = data.get("auto_pause_critical", true)
@@ -215,7 +232,7 @@ func _load_settings() -> void:
 func _save_settings() -> bool:
 	var data := {
 		"time_scale": time_scale_val,
-		"auto_save_interval": auto_save_interval,
+		"auto_save_interval_days": auto_save_interval_days,
 		"guidance_mode": guidance_mode,
 		"show_notifications": show_notifications,
 		"auto_pause_critical": auto_pause_critical,

@@ -59,6 +59,28 @@ func _test_discovery_research_and_engineering() -> void:
 		and GameState.entities.external_reserved_workers == 2,
 		"继续研究没有重新校验并占用真实劳动力",
 	)
+	var research_project: Dictionary = GameState.research_project_system.get_project("symbolic_record")
+	var expected_daily_rate: float = (
+		int(research_project.get("workers", 0)) * 0.04
+		* float(GameState.research_project_system.PROGRESS_MULTIPLIER)
+	)
+	var research_view: Dictionary = GameState.research_project_system.get_project_views({"basic": 0.0})[0]
+	_expect(
+		is_equal_approx(float(research_view.get("daily_rate", -1.0)), expected_daily_rate)
+		and is_equal_approx(
+			float(research_view.get("eta_days", -1.0)),
+			float(research_project.get("work_required", 0.0)) / expected_daily_rate
+		),
+		"研究项目 UI 没有按 50% 实际工作率显示速率与 ETA",
+	)
+	GameState.research_project_system.update_day(1.0, {"basic": 0.0}, GameState.entities)
+	_expect(
+		is_equal_approx(
+			float(GameState.research_project_system.get_project("symbolic_record").get("work_completed", -1.0)),
+			expected_daily_rate
+		),
+		"研究项目没有按降低后的日工作率推进",
+	)
 	GameState.research_project_system.update_day(1.0, {"basic": 100.0}, GameState.entities)
 	GameState._refresh_external_workforce_reservation()
 	_expect(GameState.knowledge_system.get_node_state("symbolic_record") == KnowledgeSystemScript.KnowledgeState.MASTERED, "完成研究后没有停在理论掌握状态")

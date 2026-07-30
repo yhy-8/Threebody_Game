@@ -8,6 +8,7 @@ signal project_paused(node_id: String, reason: String)
 
 const STATE_VERSION := 2
 const MAX_ACTIVE_SLOTS := 2
+const PROGRESS_MULTIPLIER := 0.5
 
 var knowledge_system
 var projects: Dictionary = {}
@@ -116,10 +117,8 @@ func update_day(p_delta_days: float, p_throughput: Dictionary, p_entities) -> vo
 			project["pause_reason"] = "设施已恢复，但闲置人口不足以重新组织研究"
 			continue
 		project["pause_reason"] = ""
-		var throughput_type := str(project.get("throughput_type", "basic"))
-		var institutional_rate := maxf(0.0, float(p_throughput.get(throughput_type, 0.0)))
-		var worker_rate := int(project.get("workers", 0)) * 0.04
-		project["work_completed"] = float(project.get("work_completed", 0.0)) + (institutional_rate + worker_rate) * p_delta_days
+		var daily_rate := _get_daily_rate(project, p_throughput)
+		project["work_completed"] = float(project.get("work_completed", 0.0)) + daily_rate * p_delta_days
 		var progress := clampf(float(project["work_completed"]) / float(project["work_required"]), 0.0, 1.0)
 		knowledge_system.set_research_progress(node_id, progress)
 		if progress >= 1.0:
@@ -154,8 +153,7 @@ func get_project_views(p_throughput: Dictionary) -> Array:
 			continue
 		var view := project.duplicate(true)
 		var node_view: Dictionary = knowledge_system.get_node_view(str(node_id))
-		var throughput_type := str(project.get("throughput_type", "basic"))
-		var rate := maxf(0.0, float(p_throughput.get(throughput_type, 0.0))) + int(project.get("workers", 0)) * 0.04
+		var rate := _get_daily_rate(project, p_throughput)
 		var remaining := maxf(0.0, float(project.get("work_required", 0.0)) - float(project.get("work_completed", 0.0)))
 		view["display_name"] = node_view.get("display_name", node_id)
 		view["progress"] = clampf(float(project.get("work_completed", 0.0)) / maxf(0.001, float(project.get("work_required", 1.0))), 0.0, 1.0)
@@ -164,6 +162,13 @@ func get_project_views(p_throughput: Dictionary) -> Array:
 		result.append(view)
 	result.sort_custom(func(a: Dictionary, b: Dictionary): return str(a.get("node_id", "")) < str(b.get("node_id", "")))
 	return result
+
+
+func _get_daily_rate(p_project: Dictionary, p_throughput: Dictionary) -> float:
+	var throughput_type := str(p_project.get("throughput_type", "basic"))
+	var institutional_rate := maxf(0.0, float(p_throughput.get(throughput_type, 0.0)))
+	var worker_rate := int(p_project.get("workers", 0)) * 0.04
+	return (institutional_rate + worker_rate) * PROGRESS_MULTIPLIER
 
 
 func get_reserved_workers() -> int:

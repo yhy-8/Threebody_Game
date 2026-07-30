@@ -53,12 +53,43 @@ func _test_persistence_roundtrip() -> void:
 	_expect(is_equal_approx(GameState.entities.population.stored_loss_accumulator, 0.375), "人口损耗余量没有恢复")
 	_expect(GameState.environment.rng.state == rng_state, "模拟随机数状态没有恢复")
 	GameState.paused = false
-	GameState._runtime_settings["auto_save_interval"] = 1
-	GameState._autosave_elapsed_seconds = 59.95
-	GameState.update(0.1)
+	GameState.time_scale = 1.0
+	GameState.game_time = 99.96
+	GameState._simulation_accumulator = 0.0
+	GameState.last_autosave_day = -1
+	GameState._runtime_settings["auto_save_interval_days"] = 100
+	GameState._runtime_settings["auto_pause_critical"] = false
+	GameState._runtime_settings["auto_pause_project_completion"] = false
+	GameState._runtime_settings["auto_pause_arrival"] = false
+	var path_before_autosave: String = SaveManager.get_current_save_path()
+	GameState.update(0.2)
+	_expect(SaveManager.get_current_save_path() == path_before_autosave, "自动存档在未达设置游戏日时提前触发")
+	GameState.update(0.2)
 	var autosave_path: String = SaveManager.get_current_save_path()
 	_created_paths.append(autosave_path)
-	_expect(FileAccess.file_exists(autosave_path) and GameState.last_autosave_day >= 0, "自动存档间隔没有实际调用方")
+	_expect(
+		autosave_path != path_before_autosave
+		and FileAccess.file_exists(autosave_path)
+		and GameState.last_autosave_day == 100,
+		"自动存档没有在设置的第 100 个游戏日触发",
+	)
+	var autosave_file := FileAccess.open(autosave_path, FileAccess.READ)
+	var autosave_payload = JSON.parse_string(autosave_file.get_as_text()) if autosave_file != null else null
+	if autosave_file != null:
+		autosave_file.close()
+	_expect(
+		autosave_payload is Dictionary
+		and int(autosave_payload.get("state", {}).get("last_autosave_day", -1)) == 100,
+		"自动档内没有记录本次自动存档日",
+	)
+	var scanned_saves: Dictionary = SaveManager.scan_saves()
+	_expect(
+		scanned_saves.has(universe)
+		and (scanned_saves[universe] as Array).any(func(save): return save.filepath == autosave_path),
+		"自动档无法被存档扫描器发现",
+	)
+	_expect(SaveManager.load_game(autosave_path), "自动档无法读取")
+	_expect(GameState.last_autosave_day == 100, "自动存档日读档后没有恢复")
 	var time_before_invalid: float = GameState.game_time
 	_expect(not GameState.from_dict({}) and is_equal_approx(GameState.game_time, time_before_invalid), "无效状态部分覆盖了当前游戏")
 	_expect(not SaveManager.delete_save("/tmp/threebody_outside.sav"), "存档目录外路径未被拒绝")
@@ -78,10 +109,12 @@ func _test_persistence_roundtrip() -> void:
 func _test_fixed_step_and_prediction() -> void:
 	GameState.new_game("__固定步长回归")
 	GameState.confirm_capital(int(GameState.settlement_system.candidate_views[0].get("zone_id", -1)))
+	GameState.paused = false
 	var initial: Dictionary = GameState.to_dict()
 	GameState.update(1.0)
 	var once_positions: Array = _positions()
 	var once_time: float = GameState.game_time
+	_expect(is_equal_approx(once_time, 0.1), "1x 时间没有按 10 现实秒/游戏日推进")
 	_expect(GameState.from_dict(initial), "无法恢复物理测试初态")
 	for _index in 10:
 		GameState.update(0.1)

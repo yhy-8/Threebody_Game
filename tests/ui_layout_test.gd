@@ -127,6 +127,14 @@ func _check_start_and_settings() -> void:
 	var buttons: Control = settings_scene.get_node("BottomBar")
 	_expect(_ends_before(tabs, content, true), "设置标签栏与内容面板重叠")
 	_expect(_ends_before(content, buttons, true), "设置内容面板与底部按钮重叠")
+	var autosave_input := settings_scene.find_child("AutoSaveIntervalDays", true, false) as SpinBox
+	_expect(
+		autosave_input != null
+		and is_equal_approx(autosave_input.value, 100.0)
+		and autosave_input.max_value >= 300.0
+		and autosave_input.suffix == "天",
+		"设置界面没有提供默认 100 天且可输入 300 天的自动存档间隔",
+	)
 	await _discard(settings_scene)
 
 
