@@ -971,13 +971,42 @@ func _rebuild_event_content() -> void:
 		var button := Button.new()
 		button.custom_minimum_size = Vector2(0.0, 70.0)
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.text = "%s\n%s" % [
+		var unavailable_reason := _event_choice_unavailable_reason(choice)
+		button.text = "%s\n%s%s" % [
 			str(choice.get("label", "")),
 			GameState.civilization_events.describe_effects(choice),
+			"（%s）" % unavailable_reason if not unavailable_reason.is_empty() else "",
 		]
-		button.tooltip_text = str(choice.get("result", ""))
+		button.tooltip_text = (
+			unavailable_reason
+			if not unavailable_reason.is_empty()
+			else str(choice.get("result", ""))
+		)
+		button.disabled = not unavailable_reason.is_empty()
 		button.pressed.connect(_resolve_civilization_event.bind(str(choice.get("id", ""))))
 		body.add_child(button)
+
+
+func _event_choice_unavailable_reason(p_choice: Dictionary) -> String:
+	var effects: Dictionary = p_choice.get("effects", {})
+	var resources: Dictionary = effects.get("resource", {})
+	for resource_id in resources:
+		var amount := float(resources[resource_id])
+		if amount < 0.0 and GameState.entities.get_resource(str(resource_id)) + 1e-6 < -amount:
+			return "资源不足：%s 需要 %.1f，当前 %.1f" % [
+				str(resource_id), -amount, GameState.entities.get_resource(str(resource_id)),
+			]
+	var breeders := int(effects.get("breeders", 0))
+	if breeders > 0 and GameState.entities.get_idle_population() < breeders:
+		return "闲置人口不足，需要 %d 人" % breeders
+	var policy_id := str(effects.get("policy", ""))
+	if (
+		not policy_id.is_empty()
+		and GameState.decision_manager != null
+		and policy_id in GameState.decision_manager.active_policies
+	):
+		return "该政策已在运行"
+	return ""
 
 
 func _resolve_civilization_event(p_choice_id: String) -> void:
