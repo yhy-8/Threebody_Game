@@ -46,6 +46,8 @@ func _setup_filters() -> void:
 	%DomainFilter.clear()
 	%DomainFilter.add_item("全部领域")
 	%DomainFilter.set_item_metadata(0, "all")
+	if GameState.knowledge_system == null:
+		return
 	var names := {
 		"memory": "社会记忆", "measurement": "数学测量", "materials": "工具材料", "energy": "工程能源",
 		"astronomy": "天文航天", "life": "生命环境", "survival": "生存庇护", "natural_law": "自然规律", "engineering": "复杂工程",
@@ -77,6 +79,8 @@ func _refresh_display() -> void:
 
 
 func _on_node_clicked(p_node_id: String) -> void:
+	if GameState.knowledge_system == null:
+		return
 	var view: Dictionary = GameState.knowledge_system.get_node_view(p_node_id)
 	if view.is_empty():
 		return
@@ -128,6 +132,9 @@ func _close_project_manager() -> void:
 
 
 func _rebuild_project_manager() -> void:
+	if GameState.research_project_system == null or GameState.engineering_project_system == null:
+		%ProjectSummary.text = "当前没有进行中的游戏。"
+		return
 	for child in %ProjectList.get_children():
 		child.queue_free()
 	var research_views: Array = GameState.research_project_system.get_project_views(
@@ -270,6 +277,9 @@ func _on_node_hovered(p_node_id: String, p_local_position: Vector2) -> void:
 
 
 func _update_tooltip(p_node_id: String) -> void:
+	if GameState.knowledge_system == null:
+		%TooltipPanel.visible = false
+		return
 	var view: Dictionary = GameState.knowledge_system.get_node_view(p_node_id)
 	if view.is_empty():
 		%TooltipPanel.visible = false
