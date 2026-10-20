@@ -91,6 +91,23 @@ func _test_event_trigger_and_resolution() -> void:
 	_expect(civic_result.get("success", false), "公共工程事件无法解决")
 	_expect(not GameState.civilization_events.evaluate(civic_context, 40.0), "可重复事件在冷却期内再次触发")
 	_expect(GameState.civilization_events.evaluate(civic_context, 80.0), "可重复事件冷却结束后没有再次触发")
+	GameState.civilization_events.pending.clear()
+
+	var food_context := context.duplicate(true)
+	food_context["game_day"] = 90.0
+	food_context["food_days"] = 3.0
+	food_context["population"] = 60
+	food_context["teaching_plan_count"] = 1
+	_expect(GameState.civilization_events.evaluate(food_context, 90.0), "口粮告急事件没有触发")
+	var food_pending: Dictionary = GameState.get_pending_civilization_event()
+	_expect(str(food_pending.get("event_id", "")) == "food_pressure", "口粮事件触发顺序不正确")
+	var ration_result: Dictionary = GameState.resolve_civilization_event("ration_now")
+	_expect(ration_result.get("success", false), "口粮配给选项没有执行")
+	_expect("rationing" in GameState.decision_manager.active_policies, "口粮事件没有启动真实配给政策")
+	_expect(
+		is_equal_approx(GameState.entities.population.policy_food_multiplier, 0.75),
+		"配给政策没有降低真实食物消耗",
+	)
 
 
 func _test_zone_operations() -> void:
@@ -133,6 +150,14 @@ func _test_save_roundtrip() -> void:
 	)
 	_expect(GameState.civilization_events != null, "事件系统没有随存档恢复")
 	_expect("night_sky" in GameState.civilization_events.triggered_ids, "事件触发记录未能随存档恢复")
+	GameState.set_time_scale(5.0)
+	GameState.paused = false
+	for _index in range(35):
+		GameState.update(0.2)
+		if GameState.paused:
+			GameState.paused = false
+	_expect(GameState.game_started, "读档后继续模拟时游戏状态丢失")
+	_expect(GameState.validate_serialized_state(GameState.to_dict()), "读档并继续模拟后无法再次通过存档校验")
 
 
 func _expect(p_condition: bool, p_message: String) -> void:
