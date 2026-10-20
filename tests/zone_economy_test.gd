@@ -12,6 +12,7 @@ func _ready() -> void:
 	_test_zone_yields()
 	_test_directional_radiation()
 	_test_protection_and_technology()
+	_test_renewables_and_power_priority()
 	if _failures == 0:
 		print("ZONE_ECONOMY_TEST_OK")
 	get_tree().quit(_failures)
@@ -82,6 +83,54 @@ func _test_protection_and_technology() -> void:
 	entities.apply_technology_effects(tech)
 	_expect(is_equal_approx(generator.max_durability, 200.0), "高强度合金没有提高耐久上限")
 	_expect(generator.heat_resistance > 60.0 and generator.radiation_resistance > 7.5, "建筑抗性科技没有接入模拟层")
+
+
+func _test_renewables_and_power_priority() -> void:
+	var zones = ZoneScript.new()
+	var zone = zones.get_zone(0)
+	zone.temperature = 20.0
+	zone.light_intensity = 0.8
+	zone.nitrogen_gas_fraction = 1.0
+	zone.oxygen_gas_fraction = 1.0
+	var entities = EntityScript.new({"population": {"food_per_person_per_day": 0.0, "natural_growth_rate": 0.0}})
+	var solar = EntityScript.GameBuilding.new(1, "太阳能阵列", "solar_array", 0, 2, {"electricity": 6.0}, {})
+	solar.assigned_workers = 2
+	var wind = EntityScript.GameBuilding.new(2, "风力发电场", "wind_turbine", 0, 2, {"electricity": 5.0}, {})
+	wind.assigned_workers = 2
+	entities.add_building(solar)
+	entities.add_building(wind)
+	entities.update({"heat_level": 0.5}, zones, 0.1, false)
+	_expect(solar.last_output_rate.get("electricity", 0.0) > 9.0, "太阳能阵列没有随区域光照出力")
+	_expect(wind.last_output_rate.get("electricity", 0.0) > 9.0, "稳定大气下风力发电没有出力")
+	zone.light_intensity = 0.0
+	zone.nitrogen_gas_fraction = 0.0
+	zone.oxygen_gas_fraction = 0.0
+	entities.update({"heat_level": 0.5}, zones, 0.1, false)
+	_expect(solar.last_output_rate.get("electricity", 0.0) < 0.1, "夜间太阳能阵列仍凭空发电")
+	_expect(wind.last_output_rate.get("electricity", 0.0) < 0.1, "大气塌缩后风力发电仍凭空出力")
+
+	var grid = EntityScript.new({"population": {"food_per_person_per_day": 0.0, "natural_growth_rate": 0.0}})
+	var generator = EntityScript.GameBuilding.new(10, "发电机", "algae_power_plant", 0, 1, {"electricity": 8.0}, {})
+	generator.assigned_workers = 1
+	var lab = EntityScript.GameBuilding.new(11, "实验室", "laboratory", 0, 1, {}, {"electricity": 8.0})
+	lab.assigned_workers = 1
+	var farm = EntityScript.GameBuilding.new(12, "耗电农场", "farm", 0, 1, {}, {"electricity": 8.0})
+	farm.assigned_workers = 1
+	grid.add_building(generator)
+	grid.add_building(lab)
+	grid.add_building(farm)
+	grid.update({"heat_level": 0.5}, zones, 0.1, false)
+	_expect(
+		is_equal_approx(lab.last_run_ratio, 0.5) and is_equal_approx(farm.last_run_ratio, 0.5),
+		"默认电力分配没有按缺口均摊",
+	)
+	grid.set_power_priority("lifeline", 30.0)
+	grid.update({"heat_level": 0.5}, zones, 0.1, false)
+	_expect(lab.last_run_ratio > 0.99 and farm.last_run_ratio < 0.01, "维生优先没有把电力留给关键设施")
+	_expect(grid.is_power_priority_active(), "电力优先级临时状态没有保持")
+	grid.set_power_priority("balanced", 0.0)
+	grid.update({"heat_level": 0.5}, zones, 0.1, false)
+	_expect(is_equal_approx(lab.last_run_ratio, 0.5) and is_equal_approx(farm.last_run_ratio, 0.5), "电力优先级无法恢复均摊")
 
 
 func _expect(condition: bool, message: String) -> void:

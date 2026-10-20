@@ -16,12 +16,21 @@ var _selectable_zone_ids: Array[int] = []
 var _active_guidance_task_id: String = ""
 var _last_guidance_phase: int = -1
 var _compact_hint_deadline_msec: int = 0
+var _objectives_button: Button
+var _event_button: Button
+var _hazard_button: Button
+var _objectives_modal: Dictionary = {}
+var _event_modal: Dictionary = {}
+var _hazard_modal: Dictionary = {}
+var _selected_hazard_priority: String = "balanced"
+var _hazard_ui_elapsed: float = 0.0
 
 
 func _ready() -> void:
 	EventBus.screen_changed.emit("main_screen")
 	_setup_buttons()
 	_setup_developer_tools()
+	_setup_progression_ui()
 
 	# Start a new game if not already started
 	if not GameState.game_started:
@@ -37,13 +46,18 @@ func _on_state_updated() -> void:
 	_refresh_panels()
 
 
-func _process(_p_delta: float) -> void:
+func _process(p_delta: float) -> void:
 	if _alert_active:
 		var pulse := 0.08 + 0.07 * (0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.008))
 		%AlertOverlay.color = Color(0.55, 0.0, 0.02, pulse)
 	if GameState.opening_guidance != null and GameState.opening_guidance.mode == GameState.opening_guidance.GuidanceMode.COMPACT:
 		if Time.get_ticks_msec() >= _compact_hint_deadline_msec:
 			%GuidancePanel.visible = false
+	if _hazard_modal.get("backdrop", null) != null and _hazard_modal["backdrop"].visible:
+		_hazard_ui_elapsed += p_delta
+		if _hazard_ui_elapsed >= 1.0:
+			_hazard_ui_elapsed = 0.0
+			_rebuild_hazard_content()
 
 
 func _setup_buttons() -> void:
@@ -101,7 +115,16 @@ func _input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	if event.is_action_pressed("ui_cancel"):
-		if %DeveloperOverlay.visible:
+		if _hazard_modal.get("backdrop", null) != null and _hazard_modal["backdrop"].visible:
+			get_viewport().set_input_as_handled()
+			_hazard_modal["backdrop"].visible = false
+		elif _event_modal.get("backdrop", null) != null and _event_modal["backdrop"].visible:
+			get_viewport().set_input_as_handled()
+			_event_modal["backdrop"].visible = false
+		elif _objectives_modal.get("backdrop", null) != null and _objectives_modal["backdrop"].visible:
+			get_viewport().set_input_as_handled()
+			_objectives_modal["backdrop"].visible = false
+		elif %DeveloperOverlay.visible:
 			get_viewport().set_input_as_handled()
 			_close_developer_tools()
 		elif %GuidanceControlOverlay.visible:
@@ -163,10 +186,14 @@ func _refresh_panels() -> void:
 		resource_lines.append("— %s —" % group_name)
 		for key in EntityManagerScript.RESOURCE_GROUPS.get(group_name, []):
 			if key == "electricity":
-				resource_lines.append("电力  %.1f / %.1f kW（余量 %+.1f）" % [
+				var priority_note := ""
+				if GameState.entities.is_power_priority_active():
+					priority_note = " · 维生优先 %.0f 天" % GameState.entities.power_priority_days_remaining
+				resource_lines.append("电力  %.1f / %.1f kW（余量 %+.1f）%s" % [
 					power.get("generation", 0.0),
 					power.get("consumption", 0.0),
 					float(power.get("generation", 0.0)) - float(power.get("consumption", 0.0)),
+					priority_note,
 				])
 				continue
 			var flow: Dictionary = resource_flow.get(key, {})
@@ -180,6 +207,19 @@ func _refresh_panels() -> void:
 		resource_lines.append("口粮可维持约 %.1f 天" % (
 			float(resources_data.get("food", 0.0)) / -food_net
 		))
+	var objectives_view: Dictionary = GameState.get_objectives_view()
+	if not objectives_view.is_empty():
+		var current_objective: Dictionary = objectives_view.get("current", {})
+		resource_lines.append("— 文明进程 —")
+		resource_lines.append("%s · %s" % [
+			objectives_view.get("era", {}).get("name", "求生纪元"),
+			current_objective.get("title", "阶段目标"),
+		])
+		resource_lines.append("进度 %.0f%% · %d/%d" % [
+			float(current_objective.get("progress", 0.0)) * 100.0,
+			int(objectives_view.get("completed_count", 0)),
+			int(objectives_view.get("total_count", 0)),
+		])
 	%ResourceSummary.text = "\n".join(resource_lines)
 	%ResourceSummary.tooltip_text = "括号内为最近模拟步的实际净流量；电力显示实时发电/负荷，不再伪装成库存。"
 
@@ -196,7 +236,7 @@ func _refresh_panels() -> void:
 		pop_data.get("breeders", 0), GameState.entities.social_stability * 100.0,
 		"\n".join(research_lines),
 	]
-	%CivilizationSummary.tooltip_text = "人口会被生育、生产、教学与研究岗位占用；食物不足、危险环境和政策会影响健康与安定。"
+	%CivilizationSummary.tooltip_text = "人口会被生育、生产、教学与研究岗位占用；食物不足、危险环境和政策会影响健康与安定。安定度与健康低于 100% 时会降低实际生产效率。"
 
 	var zone = GameState.planet_zones.get_zone(GameState.observed_zone_id)
 	if zone == null:
@@ -274,6 +314,7 @@ func _refresh_panels() -> void:
 	%GameOverOverlay.visible = GameState.game_over and not %EventLogOverlay.visible
 	%GameOverReason.text = GameState.game_over_reason
 	_update_alert(public_data)
+	_refresh_progression_buttons(management, objectives_view)
 	_refresh_guidance()
 
 
@@ -657,3 +698,463 @@ func _fill_developer_resources() -> void:
 
 func _unlock_all_technologies() -> void:
 	GameState.developer_unlock_all_technologies()
+
+
+# ── 文明进程、事件抉择与危机响应 ─────────────────────────
+
+func _setup_progression_ui() -> void:
+	var toolbar: HBoxContainer = $Toolbar
+	_objectives_button = Button.new()
+	_objectives_button.name = "ObjectivesButton"
+	_objectives_button.text = "目标"
+	_objectives_button.custom_minimum_size = Vector2(76.0, 48.0)
+	_objectives_button.tooltip_text = "查看文明阶段、当前目标与全部里程碑"
+	_objectives_button.pressed.connect(_open_objectives)
+	toolbar.add_child(_objectives_button)
+
+	_event_button = Button.new()
+	_event_button.name = "CivilizationEventButton"
+	_event_button.text = "抉择"
+	_event_button.custom_minimum_size = Vector2(76.0, 48.0)
+	_event_button.tooltip_text = "处理由真实文明状态触发的社会抉择"
+	_event_button.pressed.connect(_open_event)
+	toolbar.add_child(_event_button)
+
+	_hazard_button = Button.new()
+	_hazard_button.name = "HazardResponseButton"
+	_hazard_button.text = "危机"
+	_hazard_button.custom_minimum_size = Vector2(84.0, 48.0)
+	_hazard_button.tooltip_text = "查看区域环境压力、庇护容量并确认响应预案"
+	_hazard_button.pressed.connect(_open_hazard)
+	toolbar.add_child(_hazard_button)
+
+	_objectives_modal = _create_modal("ObjectivesOverlay", Vector2(980.0, 720.0))
+	_event_modal = _create_modal("CivilizationEventOverlay", Vector2(900.0, 640.0))
+	_hazard_modal = _create_modal("HazardResponseOverlay", Vector2(1000.0, 740.0))
+
+
+func _create_modal(p_name: String, p_size: Vector2) -> Dictionary:
+	var backdrop := ColorRect.new()
+	backdrop.name = p_name
+	backdrop.color = Color(0.0, 0.0, 0.0, 0.62)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	backdrop.visible = false
+	add_child(backdrop)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var panel := PanelContainer.new()
+	panel.name = "Panel"
+	panel.custom_minimum_size = p_size
+	center.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	panel.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 12)
+	margin.add_child(root)
+
+	var header := HBoxContainer.new()
+	root.add_child(header)
+	var title := Label.new()
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", 26)
+	header.add_child(title)
+	var close_button := Button.new()
+	close_button.text = "关闭"
+	close_button.custom_minimum_size = Vector2(104.0, 46.0)
+	close_button.pressed.connect(func(): backdrop.visible = false)
+	header.add_child(close_button)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(0.0, p_size.y - 136.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 10)
+	scroll.add_child(body)
+
+	var message := Label.new()
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message.custom_minimum_size = Vector2(0.0, 40.0)
+	message.add_theme_font_size_override("font_size", 17)
+	root.add_child(message)
+
+	return {
+		"backdrop": backdrop,
+		"title": title,
+		"body": body,
+		"message": message,
+	}
+
+
+func _refresh_progression_buttons(p_management: Dictionary, p_objectives_view: Dictionary) -> void:
+	if _objectives_button == null:
+		return
+	_objectives_button.text = "目标 %d/%d" % [
+		int(p_objectives_view.get("completed_count", 0)),
+		int(p_objectives_view.get("total_count", 0)),
+	]
+	var pending: Dictionary = GameState.get_pending_civilization_event()
+	var has_pending := not pending.is_empty()
+	_event_button.text = "抉择!" if has_pending else "抉择"
+	_event_button.modulate = Color(1.0, 0.86, 0.5) if has_pending else Color.WHITE
+	_event_button.tooltip_text = (
+		"待决事件：%s" % str(pending.get("title", ""))
+		if has_pending
+		else "当前没有待决事件；真实社会压力出现时这里会亮起"
+	)
+	var hazard: Dictionary = p_management.get("hazard", {})
+	var active: Dictionary = hazard.get("active_hazard", {})
+	var assessment: Dictionary = hazard.get("latest_assessment", {})
+	var stressed := (
+		not active.is_empty()
+		or float(assessment.get("trigger_score", 0.0)) > 0.0
+	)
+	_hazard_button.text = "危机中" if not active.is_empty() else ("预警!" if stressed else "危机")
+	_hazard_button.modulate = (
+		Color(1.0, 0.52, 0.45) if not active.is_empty()
+		else (Color(1.0, 0.84, 0.45) if stressed else Color.WHITE)
+	)
+
+
+func _open_objectives() -> void:
+	if _objectives_modal.is_empty():
+		return
+	var view: Dictionary = GameState.get_objectives_view()
+	var body: VBoxContainer = _objectives_modal["body"]
+	_clear_children(body)
+	_objectives_modal["title"].text = "文明进程 · %s" % str(view.get("era", {}).get("name", "求生纪元"))
+	_objectives_modal["message"].text = str(view.get("era", {}).get("note", ""))
+	if view.is_empty():
+		body.add_child(_body_label("文明尚未建立，暂无阶段目标。", Color(0.8, 0.84, 0.95)))
+		_objectives_modal["backdrop"].visible = true
+		return
+	var current: Dictionary = view.get("current", {})
+	body.add_child(_section_label("当前目标"))
+	body.add_child(_objective_card(current, true))
+	var completed_ids: Array = []
+	for value in view.get("all", []):
+		var objective: Dictionary = value
+		if bool(objective.get("complete", false)):
+			completed_ids.append(str(objective.get("id", "")))
+	body.add_child(_section_label("全部里程碑（已完成 %d / %d）" % [
+		completed_ids.size(), int(view.get("total_count", 0)),
+	]))
+	for value in view.get("all", []):
+		var objective: Dictionary = value
+		if bool(objective.get("complete", false)) and str(objective.get("id", "")) == str(current.get("id", "")):
+			continue
+		body.add_child(_objective_card(objective, false))
+	_objectives_modal["backdrop"].visible = true
+
+
+func _objective_card(p_objective: Dictionary, p_is_current: bool) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(0.0, 112.0 if p_is_current else 96.0)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	card.add_child(box)
+
+	var complete := bool(p_objective.get("complete", false))
+	var header := Label.new()
+	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	header.text = "%s %s%s" % [
+		"✓" if complete else ("◆" if p_is_current else "·"),
+		str(p_objective.get("title", "")),
+		"（当前）" if p_is_current and not complete else "",
+	]
+	header.add_theme_font_size_override("font_size", 20)
+	header.add_theme_color_override(
+		"font_color",
+		Color(0.55, 0.95, 0.65) if complete else (Color(1.0, 0.86, 0.45) if p_is_current else Color(0.78, 0.84, 0.96))
+	)
+	box.add_child(header)
+
+	var description := Label.new()
+	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	description.text = str(p_objective.get("description", ""))
+	description.add_theme_font_size_override("font_size", 16)
+	description.add_theme_color_override("font_color", Color(0.72, 0.78, 0.92))
+	box.add_child(description)
+
+	var progress := ProgressBar.new()
+	progress.min_value = 0.0
+	progress.max_value = 1.0
+	progress.value = float(p_objective.get("progress", 0.0))
+	progress.show_percentage = true
+	progress.custom_minimum_size = Vector2(0.0, 22.0)
+	box.add_child(progress)
+
+	var footer := Label.new()
+	footer.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var completed_day := float(p_objective.get("completed_day", -1.0))
+	if complete and completed_day >= 0.0:
+		footer.text = "已于第 %.1f 天完成 · %s" % [
+			completed_day, str(p_objective.get("target_text", "")),
+		]
+	else:
+		footer.text = "%s · %s\n提示：%s" % [
+			str(p_objective.get("target_text", "")),
+			str(p_objective.get("detail", "")),
+			str(p_objective.get("hint", "")),
+		]
+	footer.add_theme_font_size_override("font_size", 15)
+	footer.add_theme_color_override("font_color", Color(0.65, 0.72, 0.88))
+	box.add_child(footer)
+	return card
+
+
+func _open_event() -> void:
+	if _event_modal.is_empty():
+		return
+	_event_modal["message"].text = ""
+	_rebuild_event_content()
+	_event_modal["backdrop"].visible = true
+
+
+func _rebuild_event_content() -> void:
+	var body: VBoxContainer = _event_modal["body"]
+	_clear_children(body)
+	var pending: Dictionary = GameState.get_pending_civilization_event()
+	if pending.is_empty():
+		_event_modal["title"].text = "社会抉择"
+		body.add_child(_body_label(
+			"当前没有待决事件。\n\n当食物、寒冷、设备磨损、知识传承或电力等真实状态出现压力时，文明会提出需要玩家决定的事项。",
+			Color(0.74, 0.80, 0.94)
+		))
+		return
+	_event_modal["title"].text = "社会抉择 · %s" % str(pending.get("title", ""))
+	body.add_child(_body_label(str(pending.get("description", "")), Color(0.82, 0.87, 0.98)))
+	body.add_child(_section_label("可选方案"))
+	for value in pending.get("choices", []):
+		var choice: Dictionary = value
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(0.0, 70.0)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.text = "%s\n%s" % [
+			str(choice.get("label", "")),
+			GameState.civilization_events.describe_effects(choice),
+		]
+		button.tooltip_text = str(choice.get("result", ""))
+		button.pressed.connect(_resolve_civilization_event.bind(str(choice.get("id", ""))))
+		body.add_child(button)
+
+
+func _resolve_civilization_event(p_choice_id: String) -> void:
+	var result: Dictionary = GameState.resolve_civilization_event(p_choice_id)
+	if _event_modal.is_empty():
+		return
+	_event_modal["message"].text = str(result.get("message", ""))
+	_event_modal["message"].add_theme_color_override(
+		"font_color",
+		Color(0.55, 0.95, 0.65) if bool(result.get("success", false)) else Color(1.0, 0.55, 0.45)
+	)
+	_rebuild_event_content()
+	_refresh_panels()
+
+
+func _open_hazard() -> void:
+	if _hazard_modal.is_empty():
+		return
+	var plan: Dictionary = {}
+	if GameState.environmental_hazard_system != null:
+		plan = GameState.environmental_hazard_system.get_response_plan_view(
+			GameState.entities, GameState.settlement_system
+		)
+	_selected_hazard_priority = str(plan.get("priority", "balanced"))
+	if _selected_hazard_priority.is_empty():
+		_selected_hazard_priority = "balanced"
+	_hazard_ui_elapsed = 0.0
+	_hazard_modal["message"].text = ""
+	_rebuild_hazard_content()
+	_hazard_modal["backdrop"].visible = true
+
+
+func _rebuild_hazard_content() -> void:
+	if _hazard_modal.is_empty() or GameState.environmental_hazard_system == null:
+		return
+	var body: VBoxContainer = _hazard_modal["body"]
+	_clear_children(body)
+	_hazard_modal["title"].text = "环境危机与响应"
+	var management: Dictionary = GameState.get_management_snapshot()
+	var hazard: Dictionary = management.get("hazard", {})
+	var active: Dictionary = hazard.get("active_hazard", {})
+	var assessment: Dictionary = hazard.get("latest_assessment", {})
+	var exposure: Dictionary = hazard.get("latest_exposure", {})
+
+	body.add_child(_section_label("当前态势"))
+	if not active.is_empty():
+		body.add_child(_body_label(
+			"危机进行中：%s\n开始于第 %.1f 天 · 已持续 %.1f 天 · 累计死亡 %d 人 · 损毁设施 %d 座" % [
+				str(active.get("hazard_id", "")),
+				float(active.get("started_game_day", 0.0)),
+				float(active.get("elapsed_days", 0.0)),
+				int(active.get("casualties", 0)),
+				int(active.get("destroyed_buildings", 0)),
+			],
+			Color(1.0, 0.62, 0.52)
+		))
+	elif float(assessment.get("trigger_score", 0.0)) > 0.0:
+		body.add_child(_body_label(
+			"区域环境压力正在升高：%s。受影响区域 %s，暴露人口 %d 人。\n危机何时开始、持续多久仍取决于真实恒星与区域环境；文明只能根据当前观测做准备。" % [
+				str(assessment.get("dominant_cause", "极端环境")),
+				", ".join((assessment.get("affected_zone_ids", []) as Array).map(func(zone_id): return "#%d" % int(zone_id))),
+				int(assessment.get("exposed_population", 0)),
+			],
+			Color(1.0, 0.84, 0.45)
+		))
+	else:
+		body.add_child(_body_label(
+			"当前没有被人口覆盖的区域越过危机阈值。\n温度低于 -45℃、高于 75℃，或辐射高于 3.0 时，环境压力会开始累积；真实三体混沌可能同时改变多个区域。",
+			Color(0.74, 0.80, 0.94)
+		))
+	if not exposure.is_empty():
+		body.add_child(_body_label(
+			"最近一次暴露结算：风险人口 %d，死亡 %d。" % [
+				int(exposure.get("population_at_risk", 0)), int(exposure.get("total_loss", 0)),
+			],
+			Color(0.76, 0.82, 0.94)
+		))
+
+	body.add_child(_section_label("文明预警能力"))
+	var forecast: Dictionary = GameState.hazard_forecast_service.get_public_snapshot()
+	var level_names := ["无文明预警", "定性天象预警", "区域风险预测", "伤亡区间预测", "高精度概率预测"]
+	var forecast_level := clampi(int(forecast.get("level", 0)), 0, level_names.size() - 1)
+	var forecast_lines: Array[String] = [
+		"%s · 置信度 %.0f%%" % [level_names[forecast_level], float(forecast.get("confidence", 0.0)) * 100.0],
+	]
+	if forecast.is_empty():
+		forecast_lines.append("文明尚未积累足够的连续观测；规则层倒计时不会转化为灾害真值。")
+	elif bool(forecast.get("stale", false)):
+		forecast_lines.append("该预测已过期，需要新的观测与校准。")
+	elif forecast.has("risk_trend"):
+		forecast_lines.append("风险趋势：%s" % ("上升" if str(forecast.get("risk_trend", "")) == "rising" else "不确定"))
+	body.add_child(_body_label("\n".join(forecast_lines), Color(0.76, 0.86, 1.0)))
+
+	body.add_child(_section_label("响应预案"))
+	body.add_child(_body_label(
+		"庇护容量只统计已完工、未损毁、已配员且获得供能的当地设施。预案会在危机开始时锁定；没有足够设施的承诺不会凭空保护人口。",
+		Color(0.72, 0.78, 0.92)
+	))
+	var profiles: Array = GameState.environmental_hazard_system.get_response_profiles()
+	for value in profiles:
+		var profile: Dictionary = value
+		var profile_id := str(profile.get("id", ""))
+		var selected := profile_id == _selected_hazard_priority
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(0.0, 72.0)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.text = "%s%s\n%s" % [
+			"◆ " if selected else "· ",
+			str(profile.get("name", profile_id)),
+			str(profile.get("description", "")),
+		]
+		button.modulate = Color(1.0, 0.9, 0.55) if selected else Color.WHITE
+		button.pressed.connect(_select_hazard_priority.bind(profile_id))
+		body.add_child(button)
+
+	var preview: Dictionary = GameState.environmental_hazard_system.preview_response_priority(
+		_selected_hazard_priority, GameState.entities, GameState.settlement_system
+	)
+	var allocations: Dictionary = preview.get("allocations", {})
+	var total_capacity := 0
+	var total_protected := 0
+	var allocation_lines: Array[String] = []
+	for zone_key in allocations:
+		var allocation: Dictionary = allocations[zone_key]
+		total_capacity += int(allocation.get("operating_shelter_capacity", 0))
+		total_protected += int(allocation.get("planned_protected_people", 0))
+		allocation_lines.append("区域 #%d：人口 %d · 运行庇护 %d · 计划保护 %d" % [
+			int(allocation.get("zone_id", -1)),
+			int(allocation.get("population", 0)),
+			int(allocation.get("operating_shelter_capacity", 0)),
+			int(allocation.get("planned_protected_people", 0)),
+		])
+	body.add_child(_body_label(
+		"可用运行庇护容量 %d · 当前方案计划保护 %d 人%s" % [
+			total_capacity,
+			total_protected,
+			"\n" + "\n".join(allocation_lines) if not allocation_lines.is_empty() else "\n当前没有有人区域。",
+		],
+		Color(0.8, 0.86, 0.98)
+	))
+
+	var commit_button := Button.new()
+	commit_button.custom_minimum_size = Vector2(0.0, 54.0)
+	commit_button.text = "危机进行中，预案已锁定" if not active.is_empty() else "确认并承诺该响应预案"
+	commit_button.disabled = not active.is_empty() or total_capacity <= 0
+	commit_button.tooltip_text = (
+		"没有已完工、配员且供能的庇护设施" if total_capacity <= 0 else "确认后，危机开始前都可以重新选择"
+	)
+	commit_button.pressed.connect(_commit_hazard_priority)
+	body.add_child(commit_button)
+
+	var report: Dictionary = hazard.get("latest_completed_report", {})
+	body.add_child(_section_label("最近一次危机报告"))
+	if report.is_empty():
+		body.add_child(_body_label("尚未经历环境危机。", Color(0.72, 0.78, 0.92)))
+	else:
+		var loss_vector: Dictionary = report.get("knowledge_loss_vector", {})
+		body.add_child(_body_label(
+			"第 %.1f 天结束 · 死亡 %d 人 · 损毁设施 %d 座 · 知识冲击：活态 %.0f%% / 记录 %.0f%% / 实践 %.0f%%\n预案：%s" % [
+				float(report.get("resolved_game_day", 0.0)),
+				int(report.get("casualties", 0)),
+				int(report.get("destroyed_buildings", 0)),
+				float(loss_vector.get("living_loss", 0.0)) * 100.0,
+				float(loss_vector.get("record_loss", 0.0)) * 100.0,
+				float(loss_vector.get("practice_loss", 0.0)) * 100.0,
+				str(report.get("response_priority_name", "未确认预案")),
+			],
+			Color(0.86, 0.8, 0.72)
+		))
+
+
+func _select_hazard_priority(p_priority: String) -> void:
+	_selected_hazard_priority = p_priority
+	_rebuild_hazard_content()
+
+
+func _commit_hazard_priority() -> void:
+	var result: Dictionary = GameState.commit_hazard_response(_selected_hazard_priority)
+	_hazard_modal["message"].text = str(result.get("message", ""))
+	_hazard_modal["message"].add_theme_color_override(
+		"font_color",
+		Color(0.55, 0.95, 0.65) if bool(result.get("success", false)) else Color(1.0, 0.55, 0.45)
+	)
+	_rebuild_hazard_content()
+	_refresh_panels()
+
+
+func _section_label(p_text: String) -> Label:
+	var label := Label.new()
+	label.text = "── %s ──" % p_text
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color(0.55, 0.76, 1.0))
+	return label
+
+
+func _body_label(p_text: String, p_color: Color = Color(0.8, 0.85, 0.96)) -> Label:
+	var label := Label.new()
+	label.text = p_text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", 17)
+	label.add_theme_color_override("font_color", p_color)
+	return label
+
+
+func _clear_children(p_node: Node) -> void:
+	for child in p_node.get_children():
+		p_node.remove_child(child)
+		child.queue_free()

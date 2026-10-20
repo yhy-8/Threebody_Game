@@ -98,6 +98,24 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 		"worker_capacity": 3, "per_worker_output": {"electricity": 5.0},
 		"consumption": {"algae_fuel": 3.0}, "build_time": 3.0, "storage_capacity": 0,
 	},
+	"wind_turbine": {
+		"name": "建造风力发电场", "description": "依赖当地大气密度；大气液化或塌缩时出力会大幅下降。",
+		"resource_cost": {"iron": 100, "copper": 30}, "tech_requirement": "basic_electrification", "requires_zone": true,
+		"worker_capacity": 2, "per_worker_output": {"electricity": 5.0},
+		"consumption": {}, "build_time": 4.0, "storage_capacity": 0,
+	},
+	"solar_array": {
+		"name": "建造太阳能阵列", "description": "按当地实时光照发电；夜间与背光面出力会降到接近零，适合日照稳定的区域。",
+		"resource_cost": {"iron": 120, "copper": 40}, "tech_requirement": "basic_electrification", "requires_zone": true,
+		"worker_capacity": 2, "per_worker_output": {"electricity": 6.0},
+		"consumption": {}, "build_time": 4.0, "storage_capacity": 0,
+	},
+	"fusion_reactor": {
+		"name": "建造聚变反应堆", "description": "受控聚变的工程化设施；持续消耗稀有矿物，为文明提供大规模电力。",
+		"resource_cost": {"iron": 3000, "copper": 1000, "rare_mineral": 500}, "tech_requirement": "nuclear_fusion", "requires_zone": true,
+		"worker_capacity": 20, "per_worker_output": {"electricity": 200.0},
+		"consumption": {"rare_mineral": 0.5}, "build_time": 15.0, "storage_capacity": 0,
+	},
 	"fossil_power_plant": {
 		"name": "建造化石燃料发电站", "description": "大规模化石燃料发电设施，中级电力来源。",
 		"resource_cost": {"iron": 200, "copper": 100}, "tech_requirement": "power_plant", "requires_zone": true,

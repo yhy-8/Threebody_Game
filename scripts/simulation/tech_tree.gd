@@ -118,7 +118,7 @@ func _init_default_techs(p_config: Dictionary) -> void:
 	add_node(_make_node("laboratory", "实验室", "系统化的科学研究设施。", "解锁实验室建造，产出应用科研点。",
 		{"basic": 180}, {"iron": 200, "copper": 80}, {"population": 120},
 		["basic_metallurgy"], 1, 3, "applied"))
-	add_node(_make_node("basic_electrification", "基础电气化", "掌握电力的产生和使用。", "解锁藻类发电站，开始使用电力网络。",
+	add_node(_make_node("basic_electrification", "基础电气化", "掌握电力的产生和使用。", "解锁藻类发电站与太阳能阵列，开始使用电力网络。",
 		{"basic": 100}, {"iron": 150, "copper": 50}, {"population": 80},
 		["basic_metallurgy"], 1, 4, "basic"))
 	add_node(_make_node("fossil_fuel_extraction", "化石燃料开采", "从地底提取高能量的化石燃料。", "解锁化石燃料矿井。",
@@ -154,7 +154,7 @@ func _init_default_techs(p_config: Dictionary) -> void:
 		["material_science"], 3, 1, "applied"))
 
 	# ── Tier 4 ────────────────────────────────────────
-	add_node(_make_node("nuclear_fusion", "可控核聚变", "人造恒星级别的能量来源。", "规划效果：聚变反应堆尚未进入当前可建造原型。",
+	add_node(_make_node("nuclear_fusion", "可控核聚变", "人造恒星级别的能量来源。", "解锁可建造的聚变反应堆，为文明提供大规模电力。",
 		{"theoretical": 500, "applied": 300}, {"iron": 3000, "copper": 1000, "rare_mineral": 500}, {"population": 800},
 		["academy"], 4, 0, "theoretical"))
 

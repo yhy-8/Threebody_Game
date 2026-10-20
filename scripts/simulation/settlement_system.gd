@@ -112,6 +112,12 @@ func get_public_zone_summaries(p_zone_manager, p_entities, p_regional_logistics 
 			else 0.0
 		)
 		var daily_food_need: float = float(population) * p_entities.population.food_per_person_per_day
+		var daily_food_output: float = 0.0
+		if known_environment:
+			for building in p_entities.get_buildings_in_zone(zone_id):
+				if building.destroyed or building.under_construction:
+					continue
+				daily_food_output += maxf(0.0, float(building.last_output_rate.get("food", 0.0)))
 		result.append({
 			"id": zone_id,
 			"lat_i": zone.lat_index,
@@ -130,6 +136,9 @@ func get_public_zone_summaries(p_zone_manager, p_entities, p_regional_logistics 
 			"operating_shelter_capacity": shelter_capacity,
 			"shelter_gap": maxi(0, population - shelter_capacity),
 			"local_food": local_food,
+			"food_output": daily_food_output,
+			"food_need": daily_food_need,
+			"food_balance": daily_food_output - daily_food_need,
 			"food_reserve_days": local_food / daily_food_need if daily_food_need > 0.0 else 0.0,
 			"stale": record.get("stale", false),
 		})

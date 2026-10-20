@@ -7,7 +7,7 @@ signal developer_mode_changed(enabled: bool)
 signal scenario_phase_changed(new_phase: String, transition_day: float)
 
 const SETTINGS_PATH := "res://settings.json"
-const SAVE_SCHEMA_VERSION := 10
+const SAVE_SCHEMA_VERSION := 11
 const REAL_SECONDS_PER_GAME_DAY := 10.0
 const FIXED_SIMULATION_STEP_DAYS := 0.02
 const MAX_SIMULATION_SUBSTEPS := 512
@@ -37,6 +37,8 @@ const RegionalLogisticsSystemScript = preload("res://scripts/simulation/regional
 const RegionMovementSystemScript = preload("res://scripts/simulation/region_movement_system.gd")
 const ExplorationSystemScript = preload("res://scripts/simulation/exploration_system.gd")
 const OpeningGuidanceControllerScript = preload("res://scripts/guidance/opening_guidance_controller.gd")
+const CivilizationObjectivesScript = preload("res://scripts/simulation/civilization_objectives.gd")
+const CivilizationEventSystemScript = preload("res://scripts/simulation/civilization_event_system.gd")
 
 # ── 子系统引用 ──
 var environment       ## ThreeBodySimulation
@@ -62,6 +64,8 @@ var regional_logistics  ## RegionalLogisticsSystem
 var region_movement_system  ## RegionMovementSystem
 var exploration_system  ## ExplorationSystem
 var opening_guidance  ## OpeningGuidanceController
+var civilization_objectives  ## CivilizationObjectives
+var civilization_events  ## CivilizationEventSystem
 
 # ── 游戏状态 ────────────────────────────────────────
 var game_time: float = 0.0
@@ -80,6 +84,7 @@ var _runtime_settings: Dictionary = {}
 var event_log: Array = []
 var _next_event_id: int = 1
 var _last_forecast_event_id: String = ""
+var _progression_accumulator: float = 0.0
 
 # ── 配置 ────────────────────────────────────────────
 var config: Dictionary = {}
@@ -202,6 +207,9 @@ func reset() -> void:
 	region_movement_system = null
 	exploration_system = null
 	opening_guidance = null
+	civilization_objectives = null
+	civilization_events = null
+	_progression_accumulator = 0.0
 	research_output_rate = {"basic": 0.0, "applied": 0.0, "theoretical": 0.0}
 	event_log.clear()
 	_next_event_id = 1
@@ -255,7 +263,12 @@ func get_management_snapshot() -> Dictionary:
 		if engineering_project_system != null
 		else []
 	)
-	var teaching_count: int = education_system.plans.size() if education_system != null else 0
+	var teaching_count := 0
+	if education_system != null:
+		for plan_value in education_system.plans.values():
+			var plan: Dictionary = plan_value
+			if not bool(plan.get("paused", false)):
+				teaching_count += 1
 	var hazard: Dictionary = {}
 	if environmental_hazard_system != null and settlement_system != null:
 		hazard = environmental_hazard_system.get_public_state(entities, settlement_system)
@@ -288,6 +301,243 @@ func commit_hazard_response(p_priority: String) -> Dictionary:
 		)
 	state_updated.emit()
 	return result
+
+
+func get_civilization_context() -> Dictionary:
+	if entities == null or settlement_system == null or planet_zones == null:
+		return {}
+	var flow: Dictionary = entities.get_resource_flow_snapshot()
+	var food_flow: Dictionary = flow.get("food", {})
+	var food_net: float = float(food_flow.get("net", 0.0))
+	var food_stock: float = entities.get_resource("food")
+	var food_days: float = 999.0
+	if food_net < -0.001:
+		food_days = food_stock / -food_net
+	var power: Dictionary = entities.get_electricity_balance()
+	var power_generation: float = float(power.get("generation", 0.0))
+	var power_consumption: float = float(power.get("consumption", 0.0))
+	var operating_types: Array[String] = []
+	var damaged_count := 0
+	var has_food_production := false
+	for building in entities.buildings:
+		if building.destroyed:
+			continue
+		if float(building.durability) < float(building.max_durability) - 0.5:
+			damaged_count += 1
+		if building.under_construction:
+			continue
+		if float(building.last_run_ratio) <= 0.0:
+			continue
+		if str(building.building_type) not in operating_types:
+			operating_types.append(str(building.building_type))
+		if float(building.last_output_rate.get("food", 0.0)) > 0.0:
+			has_food_production = true
+	var shelter_capacity := 0
+	var min_temperature := 999.0
+	var max_temperature := -999.0
+	for zone_key in settlement_system.region_population.keys():
+		var zone_id := int(zone_key)
+		if zone_id < 0 or settlement_system.get_population(zone_id) <= 0:
+			continue
+		var zone = planet_zones.get_zone(zone_id)
+		if zone == null:
+			continue
+		min_temperature = minf(min_temperature, float(zone.temperature))
+		max_temperature = maxf(max_temperature, float(zone.temperature))
+		var shelter: Dictionary = entities.get_zone_shelter_status(zone_id)
+		shelter_capacity += maxi(0, int(shelter.get("capacity", 0)))
+	var settlement_count := 0
+	for settlement_key in settlement_system.settlements:
+		if settlement_system.get_population(int(settlement_key)) > 0:
+			settlement_count += 1
+	if settlement_count <= 0 and settlement_system.capital_zone_id >= 0:
+		settlement_count = 1
+	var capabilities: Dictionary = knowledge_system.get_capabilities() if knowledge_system != null else {}
+	var advanced := 0
+	if knowledge_system != null:
+		for node_id in knowledge_system.runtime_nodes:
+			var state: int = knowledge_system.get_node_state(node_id)
+			if state in [KnowledgeSystemScript.KnowledgeState.MASTERED, KnowledgeSystemScript.KnowledgeState.APPLIED]:
+				advanced += 1
+	var rule: Dictionary = scenario_manager.get_rule_state(game_time)
+	var chaos_started: bool = bool(rule.get("chaos_started", false))
+	var chaos_start_day: float = float(rule.get("chaos_start_day", 0.0))
+	var teaching_count := 0
+	if education_system != null:
+		for plan_value in education_system.plans.values():
+			var plan: Dictionary = plan_value
+			if not bool(plan.get("paused", false)):
+				teaching_count += 1
+	var hazard_assessment: Dictionary = {}
+	if environmental_hazard_system != null:
+		hazard_assessment = environmental_hazard_system.latest_assessment
+	return {
+		"game_day": game_time,
+		"capital_confirmed": settlement_system.capital_zone_id >= 0,
+		"population": entities.population.total,
+		"stored_population": entities.population.stored_population,
+		"idle_population": entities.get_idle_population(),
+		"food_stock": food_stock,
+		"food_net": food_net,
+		"food_days": food_days,
+		"has_food_production": has_food_production,
+		"power_generation": power_generation,
+		"power_consumption": power_consumption,
+		"power_shortage": power_consumption > 0.001 and power_generation + 0.001 < power_consumption,
+		"operating_building_types": operating_types,
+		"observatory_running": "observatory_station" in operating_types,
+		"laboratory_running": "laboratory" in operating_types,
+		"fusion_reactor_running": "fusion_reactor" in operating_types,
+		"shelter_capacity": shelter_capacity,
+		"settlement_count": settlement_count,
+		"damaged_building_count": damaged_count,
+		"knowledge_advanced": advanced,
+		"teaching_plan_count": teaching_count,
+		"capabilities": capabilities,
+		"chaos_started": chaos_started,
+		"days_since_chaos": maxf(0.0, game_time - chaos_start_day) if chaos_started else 0.0,
+		"chaos_start_day": chaos_start_day,
+		"min_populated_temperature": min_temperature,
+		"max_populated_temperature": max_temperature,
+		"trigger_score": float(hazard_assessment.get("trigger_score", 0.0)),
+		"dominant_cause": str(hazard_assessment.get("dominant_cause", "")),
+		"affected_zone_ids": (hazard_assessment.get("affected_zone_ids", []) as Array).duplicate(),
+		"exposed_population": int(hazard_assessment.get("exposed_population", 0)),
+		"active_hazard": environmental_hazard_system != null and not environmental_hazard_system.active_hazard.is_empty(),
+		"hazard_report_count": (
+			environmental_hazard_system.completed_reports.size()
+			if environmental_hazard_system != null
+			else 0
+		),
+		"stability": entities.social_stability,
+		"health": entities.population_health,
+	}
+
+
+func get_objectives_view() -> Dictionary:
+	if civilization_objectives == null:
+		return {}
+	var context: Dictionary = get_civilization_context()
+	if context.is_empty():
+		return {}
+	return {
+		"era": civilization_objectives.get_era(context),
+		"current": civilization_objectives.get_current_view(context, game_time),
+		"all": civilization_objectives.get_all_views(context, game_time),
+		"summary": civilization_objectives.get_progress_summary(context, game_time),
+		"completed_count": civilization_objectives.completed_ids.size(),
+		"total_count": civilization_objectives.OBJECTIVES.size(),
+	}
+
+
+func get_pending_civilization_event() -> Dictionary:
+	if civilization_events == null:
+		return {}
+	return civilization_events.get_pending_view()
+
+
+func resolve_civilization_event(p_choice_id: String) -> Dictionary:
+	if civilization_events == null or civilization_events.pending.is_empty():
+		return {"success": false, "message": "当前没有待决事件"}
+	var resolved: Dictionary = civilization_events.resolve_choice(p_choice_id)
+	if not resolved.get("success", false):
+		return resolved
+	var choice: Dictionary = resolved.get("choice", {})
+	var validation: Dictionary = _validate_event_effects(choice.get("effects", {}))
+	if not validation.get("success", false):
+		return validation
+	var resources_before: Dictionary = {}
+	for resource_id in entities.resources:
+		resources_before[resource_id] = entities.get_resource(str(resource_id))
+	_apply_event_effects(choice.get("effects", {}), str(resolved.get("event_id", "")))
+	if regional_logistics != null and settlement_system != null and settlement_system.capital_zone_id >= 0:
+		regional_logistics.reconcile_after_simulation(resources_before, entities, entities.buildings)
+		settlement_system.reconcile_population_total(
+			entities.population.total, region_movement_system.get_reserved_population()
+		)
+	var event_id := str(resolved.get("event_id", ""))
+	civilization_events.commit_resolution(event_id, choice, game_time)
+	_add_event(
+		"decision",
+		"社会抉择已执行",
+		str(choice.get("result", choice.get("label", ""))),
+		"important",
+		"",
+		"civilization-event:%s:%s" % [event_id, p_choice_id]
+	)
+	state_updated.emit()
+	return {"success": true, "message": str(choice.get("result", "抉择已执行"))}
+
+
+func _validate_event_effects(p_effects: Dictionary) -> Dictionary:
+	var resources: Dictionary = p_effects.get("resource", {})
+	for resource_id in resources:
+		var amount := float(resources[resource_id])
+		if amount < 0.0 and entities.get_resource(str(resource_id)) + 1e-6 < -amount:
+			return {
+				"success": false,
+				"message": "资源不足：%s 需要 %.1f，当前 %.1f" % [
+					str(resource_id), -amount, entities.get_resource(str(resource_id)),
+				],
+			}
+	var breeders := int(p_effects.get("breeders", 0))
+	if breeders > 0 and entities.get_idle_population() < breeders:
+		return {"success": false, "message": "闲置人口不足以新增 %d 个生育岗位" % breeders}
+	var policy_id := str(p_effects.get("policy", ""))
+	if not policy_id.is_empty() and decision_manager != null and policy_id in decision_manager.active_policies:
+		return {"success": false, "message": "该政策已经在运行，请选择其他方案"}
+	return {"success": true, "message": ""}
+
+
+func _apply_event_effects(p_effects: Dictionary, p_event_id: String) -> void:
+	var resources: Dictionary = p_effects.get("resource", {})
+	for resource_id in resources:
+		var amount := float(resources[resource_id])
+		if amount < 0.0:
+			entities.consume_resource(str(resource_id), -amount)
+		elif amount > 0.0:
+			entities.produce_resource(str(resource_id), amount)
+	if p_effects.has("stability"):
+		entities.social_stability = clampf(
+			entities.social_stability + float(p_effects["stability"]), 0.0, 1.0
+		)
+	if p_effects.has("health"):
+		entities.population_health = clampf(
+			entities.population_health + float(p_effects["health"]), 0.0, 1.0
+		)
+	var breeders := int(p_effects.get("breeders", 0))
+	if breeders > 0:
+		entities.assign_breeders(breeders)
+	var population_change := int(p_effects.get("population", 0))
+	if population_change > 0:
+		entities.population.total += population_change
+	var repair_amount := float(p_effects.get("repair_buildings", 0.0))
+	if repair_amount > 0.0:
+		for building in entities.buildings:
+			if not building.destroyed:
+				building.repair(repair_amount)
+	var policy_id := str(p_effects.get("policy", ""))
+	if not policy_id.is_empty() and decision_manager != null:
+		if policy_id not in decision_manager.active_policies:
+			decision_manager.active_policies.append(policy_id)
+			entities.set_policy_effects(decision_manager.active_policies)
+	if p_effects.has("power_priority_days"):
+		entities.set_power_priority(
+			str(p_effects.get("power_priority_mode", "lifeline")),
+			float(p_effects.get("power_priority_days", 0.0))
+		)
+	var discovery: Dictionary = p_effects.get("discovery", {})
+	if not discovery.is_empty() and discovery_system != null:
+		var node_id := str(discovery.get("node_id", ""))
+		if not node_id.is_empty():
+			discovery_system.submit_contribution({
+				"source_id": "event:%s:%s:day%.1f" % [p_event_id, node_id, game_time],
+				"source_type": "event",
+				"target_node_id": node_id,
+				"clue_strength": float(discovery.get("clue", 0.1)),
+				"evidence": (discovery.get("evidence", {}) as Dictionary).duplicate(true),
+				"tags": ["civilization_event"],
+			})
 
 
 func execute_policy_decision(p_decision_id: String) -> Dictionary:
@@ -662,6 +912,8 @@ func _initialize_regional_systems_new(p_opening_options: Dictionary) -> bool:
 	opening_guidance = OpeningGuidanceControllerScript.new()
 	if not opening_guidance.initialize(_resolve_guidance_mode(p_opening_options)):
 		return false
+	civilization_objectives = CivilizationObjectivesScript.new()
+	civilization_events = CivilizationEventSystemScript.new()
 	paused = true
 	var first_candidate: Dictionary = settlement_system.candidate_views[0]
 	observed_zone_id = int(first_candidate.get("zone_id", 0))
@@ -913,6 +1165,97 @@ func unassign_regional_building_workers(p_building_id: int, p_count: int) -> Dic
 		opening_guidance.handle_domain_event("population_assignment_changed", {"source_id": "workers:%d:%d" % [p_building_id, entities.get_building(p_building_id).assigned_workers]})
 	state_updated.emit()
 	return result
+
+
+func auto_assign_zone_workers(p_zone_id: int) -> Dictionary:
+	if entities == null or settlement_system == null or regional_logistics == null:
+		return {"success": false, "message": "区域系统尚未初始化"}
+	if not settlement_system.is_zone_visible(p_zone_id) or settlement_system.get_population(p_zone_id) <= 0:
+		return {"success": false, "message": "该区域没有可分配的人口"}
+	var buildings: Array = entities.get_buildings_in_zone(p_zone_id)
+	buildings.sort_custom(func(a, b):
+		return _worker_priority(str(a.building_type)) < _worker_priority(str(b.building_type))
+	)
+	var local_assigned := 0
+	for building in buildings:
+		local_assigned += int(building.assigned_workers)
+	var available: int = maxi(0, settlement_system.get_population(p_zone_id) - local_assigned)
+	var assigned_total := 0
+	for building in buildings:
+		if available <= 0:
+			break
+		if building.destroyed or building.worker_capacity <= 0:
+			continue
+		var vacancies: int = maxi(0, int(building.worker_capacity) - int(building.assigned_workers))
+		var count: int = mini(vacancies, available)
+		if count <= 0:
+			continue
+		var result: Dictionary = entities.assign_worker_to_building(int(building.id), count)
+		if result.get("success", false):
+			assigned_total += count
+			available -= count
+	if assigned_total > 0 and opening_guidance != null:
+		opening_guidance.handle_domain_event(
+			"population_assignment_changed",
+			{"source_id": "zone-auto-workers:%d:%d" % [p_zone_id, game_time]}
+		)
+	_refresh_external_workforce_reservation()
+	state_updated.emit()
+	return {
+		"success": assigned_total > 0,
+		"message": (
+			"已向区域 #%d 的设施补入 %d 名工人；当地仍有 %d 名闲置人口。" % [p_zone_id, assigned_total, available]
+			if assigned_total > 0
+			else "区域 #%d 没有空缺岗位或可用闲置人口。" % p_zone_id
+		),
+		"assigned": assigned_total,
+	}
+
+
+func _worker_priority(p_building_type: String) -> int:
+	var order := {
+		"algae_foraging": 0, "farm": 1, "algae_collector": 2,
+		"algae_power_plant": 3, "solar_array": 4, "wind_turbine": 4, "fossil_power_plant": 5, "fusion_reactor": 6,
+		"iron_mine": 7, "copper_mine": 8, "rare_mine": 9, "fossil_mine": 10,
+		"research_institute": 11, "laboratory": 12, "observatory_station": 13, "academy": 14,
+		"shelter": 15, "deep_shelter": 16, "storage_vault": 17, "large_storage_vault": 18,
+		"radiation_shield": 19,
+	}
+	return int(order.get(p_building_type, 50))
+
+
+func repair_regional_building(p_building_id: int) -> Dictionary:
+	if entities == null or regional_logistics == null:
+		return {"success": false, "message": "建筑系统尚未初始化"}
+	var building = entities.get_building(p_building_id)
+	if building == null:
+		return {"success": false, "message": "建筑不存在"}
+	if building.destroyed:
+		return {"success": false, "message": "设施已完全损毁，无法在现场修复"}
+	var missing: float = maxf(0.0, float(building.max_durability) - float(building.durability))
+	if missing <= 0.5:
+		return {"success": false, "message": "该设施不需要修复"}
+	var cost := {
+		"iron": maxf(1.0, ceil(missing * 0.5)),
+		"copper": maxf(1.0, ceil(missing * 0.08)),
+	}
+	var local_check: Dictionary = regional_logistics.can_pay_local_cost(int(building.zone_id), cost)
+	if not local_check.get("success", false):
+		return local_check
+	for resource_id in cost:
+		if entities.get_resource(str(resource_id)) + 1e-6 < float(cost[resource_id]):
+			return {"success": false, "message": "文明总库存不足，无法修复"}
+	for resource_id in cost:
+		entities.consume_resource(str(resource_id), float(cost[resource_id]))
+	regional_logistics.commit_local_cost(int(building.zone_id), cost)
+	building.repair(missing)
+	state_updated.emit()
+	return {
+		"success": true,
+		"message": "%s已修复至满耐久（消耗铁 %.0f、铜 %.0f）" % [
+			building.building_name, cost["iron"], cost["copper"],
+		],
+	}
 
 
 func assign_regional_breeders(p_count: int) -> Dictionary:
@@ -1221,6 +1564,7 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 
 	_process_research_output(p_game_days_dt)
 	_update_knowledge_evolution(game_time + p_game_days_dt, p_game_days_dt)
+	_update_civilization_progression(p_game_days_dt)
 
 	var exposure_report: Dictionary = {}
 	if environmental_hazard_system != null:
@@ -1240,6 +1584,46 @@ func _advance_simulation(p_game_days_dt: float) -> void:
 			_handle_hazard_report(hazard_report)
 	_check_civilization_failure()
 	_update_observation_systems(game_time, p_game_days_dt, env_params)
+
+
+func _update_civilization_progression(p_game_days_dt: float) -> void:
+	if civilization_objectives == null or civilization_events == null:
+		return
+	if settlement_system == null or settlement_system.capital_zone_id < 0:
+		return
+	_progression_accumulator += p_game_days_dt
+	if _progression_accumulator < 0.5:
+		return
+	_progression_accumulator = 0.0
+	var context: Dictionary = get_civilization_context()
+	if context.is_empty():
+		return
+	civilization_objectives.advance(context, 0.5)
+	var newly_completed: Array = civilization_objectives.update(context, game_time)
+	for objective_id in newly_completed:
+		var definition: Dictionary = civilization_objectives.get_definition(str(objective_id))
+		entities.social_stability = clampf(entities.social_stability + 0.02, 0.0, 1.0)
+		_add_event(
+			"milestone",
+			"阶段目标达成",
+			"%s：%s。社会信心得到小幅提升。" % [
+				definition.get("title", objective_id), definition.get("description", ""),
+			],
+			"important",
+			"",
+			"objective:%s" % str(objective_id)
+		)
+	var event_started: bool = civilization_events.evaluate(context, game_time)
+	if event_started:
+		var pending: Dictionary = civilization_events.get_pending_view()
+		_add_event(
+			"decision",
+			"待决事件：%s" % str(pending.get("title", "社会抉择")),
+			"%s 打开主界面「抉择」可查看选项与真实代价。" % str(pending.get("description", "")),
+			"important",
+			"",
+			"civilization-event-pending:%s" % str(pending.get("event_id", ""))
+		)
 
 
 func _handle_hazard_report(p_report: Dictionary) -> void:
@@ -1607,6 +1991,8 @@ func get_state() -> Dictionary:
 		"scenario": scenario_manager.get_rule_state(game_time),
 		"hazard_forecast": hazard_forecast_service.get_public_snapshot(),
 		"environmental_hazards": environmental_hazard_system.get_public_state(entities, settlement_system),
+		"civilization_objectives": get_objectives_view(),
+		"civilization_event": get_pending_civilization_event(),
 		"recent_events": get_recent_events(20),
 	}
 	return result
@@ -1664,6 +2050,8 @@ func to_dict() -> Dictionary:
 		"satellite_network": satellite_network.get_state(),
 		"hazard_forecasts": hazard_forecast_service.get_state(),
 		"environmental_hazards": environmental_hazard_system.get_state(),
+		"civilization_objectives": civilization_objectives.get_state(),
+		"civilization_events": civilization_events.get_state(),
 		"event_log": {
 			"state_version": 1,
 			"next_event_id": _next_event_id,
@@ -1683,7 +2071,7 @@ func validate_serialized_state(data) -> bool:
 		"settlement", "regional_logistics", "region_operations", "exploration", "opening_guidance",
 		"decision", "planet_zones", "config", "research_output_rate", "scenario",
 		"observation_network", "satellite_network", "hazard_forecasts",
-		"environmental_hazards", "event_log",
+		"environmental_hazards", "civilization_objectives", "civilization_events", "event_log",
 	]:
 		if not data.get(required_section, null) is Dictionary:
 			return false
@@ -1727,6 +2115,11 @@ func validate_serialized_state(data) -> bool:
 	if not entities_data.get("population", null) is Dictionary:
 		return false
 	if not entities_data.get("buildings", null) is Array:
+		return false
+	if (
+		not entities_data.has("power_priority_mode")
+		or not entities_data.has("power_priority_days_remaining")
+	):
 		return false
 	for building_data in entities_data.get("buildings", []):
 		if not building_data is Dictionary:
@@ -1792,6 +2185,22 @@ func validate_serialized_state(data) -> bool:
 	):
 		return false
 	if int(data["environmental_hazards"].get("state_version", -1)) != EnvironmentalHazardSystemScript.STATE_VERSION:
+		return false
+	if int(data["civilization_objectives"].get("state_version", -1)) != CivilizationObjectivesScript.STATE_VERSION:
+		return false
+	if int(data["civilization_events"].get("state_version", -1)) != CivilizationEventSystemScript.STATE_VERSION:
+		return false
+	if (
+		not data["civilization_objectives"].get("completed_ids", null) is Array
+		or not data["civilization_objectives"].get("completion_days", null) is Dictionary
+		or not data["civilization_objectives"].has("current_objective_id")
+		or not data["civilization_objectives"].has("food_security_streak")
+		or not data["civilization_events"].get("pending", null) is Dictionary
+		or not data["civilization_events"].get("triggered_ids", null) is Array
+		or not data["civilization_events"].get("triggered_days", null) is Dictionary
+		or not data["civilization_events"].get("history", null) is Array
+		or not data["civilization_events"].has("last_event_day")
+	):
 		return false
 	for hazard_key in [
 		"active_hazard", "response_plan", "completed_reports", "regional_loss_accumulators",
@@ -1996,6 +2405,13 @@ func from_dict(data: Dictionary) -> bool:
 	environmental_hazard_system = EnvironmentalHazardSystemScript.new()
 	if not environmental_hazard_system.load_state(data["environmental_hazards"]):
 		return false
+	civilization_objectives = CivilizationObjectivesScript.new()
+	if not civilization_objectives.load_state(data["civilization_objectives"]):
+		return false
+	civilization_events = CivilizationEventSystemScript.new()
+	if not civilization_events.load_state(data["civilization_events"]):
+		return false
+	_progression_accumulator = 0.0
 	var saved_event_log: Dictionary = data["event_log"]
 	event_log = (saved_event_log["entries"] as Array).duplicate(true)
 	_next_event_id = maxi(1, int(saved_event_log["next_event_id"]))

@@ -336,6 +336,8 @@ var social_stability: float = 1.0
 var population_health: float = 1.0
 var external_reserved_workers: int = 0
 var hazard_workforce_multiplier: float = 1.0
+var power_priority_mode: String = "balanced"
+var power_priority_days_remaining: float = 0.0
 var last_population_update: Dictionary = {}
 var last_update_days: float = 0.0
 var _active_policy_ids: Array = []
@@ -542,6 +544,15 @@ func enforce_population_invariants() -> void:
 	prepare_population_reduction(population.total)
 
 
+func set_power_priority(p_mode: String, p_days: float) -> void:
+	power_priority_mode = "lifeline" if p_mode == "lifeline" else "balanced"
+	power_priority_days_remaining = maxf(0.0, p_days) if power_priority_mode == "lifeline" else 0.0
+
+
+func is_power_priority_active() -> bool:
+	return power_priority_mode == "lifeline" and power_priority_days_remaining > 0.0
+
+
 func set_policy_effects(p_policy_ids: Array) -> void:
 	_active_policy_ids = p_policy_ids.duplicate()
 	population.policy_growth_multiplier = 1.0
@@ -625,6 +636,10 @@ func get_electricity_balance() -> Dictionary:
 
 
 func update(p_env_params: Dictionary, p_zone_manager = null, p_dt: float = 0.016, p_dehydrated: bool = false) -> void:
+	if power_priority_days_remaining > 0.0:
+		power_priority_days_remaining = maxf(0.0, power_priority_days_remaining - p_dt)
+		if power_priority_days_remaining <= 0.0:
+			power_priority_mode = "balanced"
 	var heat: float = p_env_params.get("heat_level", 0.5)
 	if heat > 0.8:
 		global_efficiency = max(0.5, global_efficiency - 0.01 * p_dt)
@@ -718,6 +733,33 @@ func _process_buildings(p_dt: float, p_zone_manager = null, p_dehydrated: bool =
 			demanded_power += float(building.consumption["electricity"]) * base_ratio
 
 	var power_ratio: float = minf(1.0, generated_power / demanded_power) if demanded_power > 0.0 else 1.0
+	var power_allocations: Dictionary = {}
+	if is_power_priority_active() and demanded_power > 0.0:
+		var remaining_power: float = generated_power
+		var consumers: Array = []
+		for building in buildings:
+			if not building.consumption.has("electricity"):
+				continue
+			var demand: float = float(building.consumption["electricity"]) * float(base_ratios.get(building.id, 0.0))
+			if demand <= 0.000001:
+				continue
+			consumers.append({
+				"id": building.id,
+				"demand": demand,
+				"priority": _power_priority(str(building.building_type)),
+			})
+		consumers.sort_custom(func(a: Dictionary, b: Dictionary):
+			return int(a["priority"]) < int(b["priority"])
+		)
+		for consumer in consumers:
+			var demand: float = float(consumer["demand"])
+			var allocation: float = clampf(remaining_power / demand, 0.0, 1.0)
+			power_allocations[int(consumer["id"])] = allocation
+			remaining_power = maxf(0.0, remaining_power - demand * allocation)
+	else:
+		for building in buildings:
+			if building.consumption.has("electricity"):
+				power_allocations[building.id] = power_ratio
 	var consumed_power: float = 0.0
 	for building in buildings:
 		var full_output: Dictionary = _get_full_output_rate(building, _get_effective_automation(), _get_zone_yield(building, p_zone_manager))
@@ -725,7 +767,7 @@ func _process_buildings(p_dt: float, p_zone_manager = null, p_dehydrated: bool =
 			continue
 		var run_ratio: float = float(base_ratios.get(building.id, 0.0))
 		if building.consumption.has("electricity"):
-			run_ratio *= power_ratio
+			run_ratio *= float(power_allocations.get(building.id, 0.0))
 		run_ratio *= _get_input_affordability(building, p_dt * run_ratio, false)
 		building.last_run_ratio = clampf(run_ratio, 0.0, 1.0)
 		_consume_non_electric_inputs(building, p_dt * building.last_run_ratio)
@@ -756,7 +798,13 @@ func _record_building_outputs(p_building: GameBuilding, p_full_output: Dictionar
 
 
 func _get_effective_automation() -> float:
-	return population.automation_multiplier * global_efficiency * policy_efficiency_multiplier
+	# 社会安定与人口健康不是装饰性数值：长期配给、恐慌和伤病会降低实际生产效率。
+	var morale_factor: float = clampf(0.7 + 0.3 * social_stability, 0.7, 1.0)
+	var health_factor: float = clampf(0.85 + 0.15 * population_health, 0.85, 1.0)
+	return (
+		population.automation_multiplier * global_efficiency
+		* morale_factor * health_factor * policy_efficiency_multiplier
+	)
 
 
 func get_research_building_rate(p_building: GameBuilding, p_base_rate: float) -> float:
@@ -808,6 +856,14 @@ func _get_input_affordability(p_building: GameBuilding, p_scaled_days: float, p_
 	return clampf(affordability, 0.0, 1.0)
 
 
+func _power_priority(p_building_type: String) -> int:
+	var lifeline_types := [
+		"storage_vault", "large_storage_vault", "shelter", "deep_shelter", "radiation_shield",
+		"laboratory", "research_institute", "observatory_station", "academy",
+	]
+	return 0 if p_building_type in lifeline_types else 1
+
+
 func _get_zone_yield(p_building: GameBuilding, p_zone_manager) -> float:
 	if p_zone_manager == null or p_building.zone_id < 0:
 		return 1.0
@@ -821,6 +877,13 @@ func _get_zone_yield(p_building: GameBuilding, p_zone_manager) -> float:
 		"farm": return maxf(0.0, zone.fertility)
 		"algae_collector": return maxf(0.0, zone.algae_density)
 		"algae_foraging": return maxf(0.5, zone.algae_density)
+		"solar_array": return clampf(zone.light_intensity, 0.0, 1.0)
+		"wind_turbine":
+			match zone.get_atmosphere_state():
+				"稳定气态": return 1.0
+				"局部液化": return 0.45
+				"大气稀薄": return 0.15
+				_: return 0.0
 	return 1.0
 
 
@@ -972,6 +1035,8 @@ func get_state() -> Dictionary:
 		"social_stability": social_stability,
 		"population_health": population_health,
 		"hazard_workforce_multiplier": hazard_workforce_multiplier,
+		"power_priority_mode": power_priority_mode,
+		"power_priority_days_remaining": power_priority_days_remaining,
 		"active_policy_ids": _active_policy_ids.duplicate(),
 		"buildings": buildings_data,
 	}
@@ -984,6 +1049,10 @@ func load_state(data: Dictionary) -> void:
 	social_stability = data.get("social_stability", 1.0)
 	population_health = data.get("population_health", 1.0)
 	hazard_workforce_multiplier = clampf(float(data.get("hazard_workforce_multiplier", 1.0)), 0.0, 1.0)
+	power_priority_mode = str(data.get("power_priority_mode", "balanced"))
+	power_priority_days_remaining = maxf(0.0, float(data.get("power_priority_days_remaining", 0.0)))
+	if power_priority_mode != "lifeline":
+		power_priority_mode = "balanced"
 	set_policy_effects(data.get("active_policy_ids", []))
 
 	var resources_data: Dictionary = data.get("resources", {})

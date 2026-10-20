@@ -68,6 +68,8 @@ func _draw() -> void:
 		var value: float = _zone_value(zone)
 		var known := bool(zone.get("known", false))
 		var ratio: float = clampf((value - value_min) / maxf(value_max - value_min, 0.0001), 0.0, 1.0)
+		if view_mode == "food":
+			ratio = clampf(value / 20.0 + 0.5, 0.0, 1.0)
 		draw_rect(rect, _heat_color(ratio) if known else Color(0.035, 0.04, 0.07, 1.0), true)
 
 		var zone_id: int = zone.get("id", -1)
@@ -120,6 +122,7 @@ func _zone_value(zone: Dictionary) -> float:
 		"light": return zone.get("light", 0.0)
 		"population": return zone.get("population", 0.0)
 		"shelter_gap": return zone.get("shelter_gap", 0.0)
+		"food": return zone.get("food_balance", 0.0)
 		_: return zone.get("temp", 0.0)
 
 
@@ -133,6 +136,12 @@ func _heat_color(ratio: float) -> Color:
 			return Color(0.08 + ratio * 0.18, 0.16 + ratio * 0.68, 0.18 + ratio * 0.36)
 		"shelter_gap":
 			return Color(0.12 + ratio * 0.85, 0.2 - ratio * 0.12, 0.2 - ratio * 0.1)
+		"food":
+			if ratio < 0.5:
+				var deficit := ratio * 2.0
+				return Color(0.14 + deficit * 0.7, 0.1 + deficit * 0.08, 0.12 + deficit * 0.06)
+			var surplus := (ratio - 0.5) * 2.0
+			return Color(0.14 - surplus * 0.06, 0.18 + surplus * 0.68, 0.16 + surplus * 0.24)
 		_:
 			if ratio < 0.5:
 				return Color(0.08 + ratio * 0.4, 0.2 + ratio * 1.5, 0.85 - ratio * 0.8)
@@ -146,6 +155,7 @@ func _mode_name() -> String:
 		"light": "光照",
 		"population": "人口",
 		"shelter_gap": "运行庇护缺口",
+		"food": "食物净平衡",
 	}.get(view_mode, view_mode)
 
 
@@ -155,6 +165,7 @@ func _value_text(value: float) -> String:
 		"light": return "%.0f%%" % (value * 100.0)
 		"population": return "%d 人" % int(value)
 		"shelter_gap": return "%d 人" % int(value)
+		"food": return "%+.1f 食物/天" % value
 		_: return "%.2f" % value
 
 

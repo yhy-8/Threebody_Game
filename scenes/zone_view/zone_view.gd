@@ -21,6 +21,7 @@ func _ready() -> void:
 	%ModeLight.pressed.connect(_set_mode.bind("light"))
 	%ModePopulation.pressed.connect(_set_mode.bind("population"))
 	%ModeShelterGap.pressed.connect(_set_mode.bind("shelter_gap"))
+	%ModeFood.pressed.connect(_set_mode.bind("food"))
 	%ZoneMap.zone_selected.connect(_on_zone_selected)
 	%CloseBuildButton.pressed.connect(_close_build_menu)
 	EventBus.game_paused.connect(_on_global_pause_changed)
@@ -42,7 +43,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		_close_build_menu()
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_TAB:
-		var modes := ["temperature", "radiation", "light", "population", "shelter_gap"]
+		var modes := ["temperature", "radiation", "light", "population", "shelter_gap", "food"]
 		_set_mode(modes[(modes.find(view_mode) + 1) % modes.size()])
 		get_viewport().set_input_as_handled()
 
@@ -59,6 +60,7 @@ func _set_mode(p_mode: String) -> void:
 	%ModeLight.button_pressed = p_mode == "light"
 	%ModePopulation.button_pressed = p_mode == "population"
 	%ModeShelterGap.button_pressed = p_mode == "shelter_gap"
+	%ModeFood.button_pressed = p_mode == "food"
 
 
 func _refresh_data(p_force_detail_rebuild: bool = false) -> void:
@@ -147,6 +149,20 @@ func _rebuild_detail() -> void:
 	_add_migration_controls_if_available(detail)
 
 	detail.add_child(_section_label("建筑"))
+	var building_actions := HBoxContainer.new()
+	building_actions.add_theme_constant_override("separation", 8)
+	var auto_assign_button := Button.new()
+	auto_assign_button.name = "AutoAssignZoneWorkers"
+	auto_assign_button.text = "一键补员"
+	auto_assign_button.tooltip_text = "把当地闲置人口优先补入食物、电力、采矿与研究设施；不会调动其他区域的人口。"
+	auto_assign_button.custom_minimum_size = Vector2(140.0, 46.0)
+	auto_assign_button.disabled = (
+		level < GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR
+		or GameState.settlement_system.get_population(selected_zone_id) <= 0
+	)
+	auto_assign_button.pressed.connect(_auto_assign_zone_workers)
+	building_actions.add_child(auto_assign_button)
+	detail.add_child(building_actions)
 	var buildings: Array = GameState.entities.get_buildings_in_zone(selected_zone_id) if level >= GameState.settlement_system.ZoneKnowledgeLevel.FAMILIAR else []
 	if buildings.is_empty():
 		detail.add_child(_label("暂无建筑"))
@@ -498,6 +514,14 @@ func _make_building_card(building, zone) -> PanelContainer:
 		var consumption_label := _label("消耗：" + "  ".join(parts))
 		box.add_child(consumption_label)
 		_building_controls[building.id]["consumption"] = consumption_label
+	var repair_button := Button.new()
+	repair_button.name = "Repair%d" % building.id
+	repair_button.text = "修复设施"
+	repair_button.custom_minimum_size = Vector2(120.0, 40.0)
+	repair_button.tooltip_text = "消耗当地铁与铜，把设施恢复到满耐久；完全损毁的设施不能现场修复。"
+	repair_button.pressed.connect(_repair_building.bind(building.id))
+	box.add_child(repair_button)
+	_building_controls[building.id]["repair"] = repair_button
 	return card
 
 
@@ -616,7 +640,16 @@ func _update_detail_values() -> void:
 	_detail_labels["deposits"].text = "矿藏估计：铁 %s  铜 %s  稀有 %s" % [_estimate_label(estimates, "iron"), _estimate_label(estimates, "copper"), _estimate_label(estimates, "rare_mineral")]
 	_detail_labels["fertility"].text = "地表估计：肥沃度 %s  |  藻类 %s" % [_estimate_label(estimates, "fertility"), _estimate_label(estimates, "algae_density")]
 	var local_inventory: Dictionary = GameState.regional_logistics.get_local_inventory(selected_zone_id)
-	_detail_labels["local_inventory"].text = "地方库存：食物 %.1f  铁 %.1f  铜 %.1f" % [local_inventory.get("food", 0.0), local_inventory.get("iron", 0.0), local_inventory.get("copper", 0.0)]
+	var food_output := 0.0
+	for building in GameState.entities.get_buildings_in_zone(selected_zone_id):
+		if not building.destroyed and not building.under_construction:
+			food_output += maxf(0.0, float(building.last_output_rate.get("food", 0.0)))
+	var local_population: int = GameState.settlement_system.get_population(selected_zone_id)
+	var food_need: float = float(local_population) * float(GameState.entities.population.food_per_person_per_day)
+	_detail_labels["local_inventory"].text = "地方库存：食物 %.1f  铁 %.1f  铜 %.1f\n食物产出 %.1f/天  需求 %.1f/天  净 %+.1f/天" % [
+		local_inventory.get("food", 0.0), local_inventory.get("iron", 0.0), local_inventory.get("copper", 0.0),
+		food_output, food_need, food_output - food_need,
+	]
 	if _detail_labels.has("settlement_status"):
 		var settlement: Dictionary = GameState.get_settlement_view(selected_zone_id)
 		var type_names := {"capital": "首都", "settlement": "常设聚落", "outpost": "前哨"}
@@ -645,6 +678,17 @@ func _update_detail_values() -> void:
 				if not output.is_empty()
 				else "0（尚未运行或当前模拟步停工）"
 			)
+		if controls.has("repair"):
+			var repair_button: Button = controls["repair"]
+			var missing: float = maxf(0.0, float(building.max_durability) - float(building.durability))
+			var cost_iron: int = int(maxf(1.0, ceil(missing * 0.5))) if missing > 0.5 else 0
+			var cost_copper: int = int(maxf(1.0, ceil(missing * 0.08))) if missing > 0.5 else 0
+			repair_button.text = (
+				"修复设施（铁 %d / 铜 %d）" % [cost_iron, cost_copper]
+				if missing > 0.5
+				else "耐久已满"
+			)
+			repair_button.disabled = missing <= 0.5 or bool(building.destroyed)
 
 
 func _building_status(p_building) -> String:
@@ -764,6 +808,20 @@ func _clear_children(p_node: Node) -> void:
 	for child in p_node.get_children():
 		p_node.remove_child(child)
 		child.queue_free()
+
+
+func _repair_building(p_building_id: int) -> void:
+	var result: Dictionary = GameState.repair_regional_building(p_building_id)
+	_show_message(result.get("message", ""), result.get("success", false))
+	_refresh_data(true)
+
+
+func _auto_assign_zone_workers() -> void:
+	if selected_zone_id < 0:
+		return
+	var result: Dictionary = GameState.auto_assign_zone_workers(selected_zone_id)
+	_show_message(result.get("message", ""), result.get("success", false))
+	_refresh_data(true)
 
 
 func _on_back_pressed() -> void:
