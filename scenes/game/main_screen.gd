@@ -338,6 +338,21 @@ func _update_alert(p_public_zone: Dictionary) -> void:
 		causes.append("极端高温 %.1f℃" % temperature)
 	if radiation > 5.0:
 		causes.append("高辐射 %.2f" % radiation)
+	var food_stock: float = GameState.entities.get_resource("food")
+	var food_flow: Dictionary = GameState.entities.get_resource_flow_snapshot().get("food", {})
+	var food_net: float = float(food_flow.get("net", 0.0))
+	if food_stock <= 0.01:
+		causes.append("食物耗尽")
+	elif food_net < -0.001 and food_stock / -food_net < 5.0:
+		causes.append("口粮仅可维持 %.1f 天" % (food_stock / -food_net))
+	var power: Dictionary = GameState.entities.get_electricity_balance()
+	if (
+		float(power.get("consumption", 0.0)) > 0.01
+		and float(power.get("generation", 0.0)) + 0.01 < float(power.get("consumption", 0.0))
+	):
+		causes.append("电力缺口 %.1f kW" % (
+			float(power.get("consumption", 0.0)) - float(power.get("generation", 0.0))
+		))
 	if GameState.entities.social_stability < 0.55:
 		causes.append("社会安定度 %.0f%%" % (GameState.entities.social_stability * 100.0))
 	_alert_active = not causes.is_empty()
@@ -913,6 +928,19 @@ func _objective_card(p_objective: Dictionary, p_is_current: bool) -> PanelContai
 	footer.add_theme_font_size_override("font_size", 15)
 	footer.add_theme_color_override("font_color", Color(0.65, 0.72, 0.88))
 	box.add_child(footer)
+	var target_scene := str(p_objective.get("target_scene", ""))
+	if p_is_current and not complete and not target_scene.is_empty():
+		var go_button := Button.new()
+		go_button.name = "ObjectiveGoButton"
+		go_button.custom_minimum_size = Vector2(150.0, 42.0)
+		go_button.text = (
+			"前往知识图 →"
+			if target_scene.contains("tech_tree")
+			else "前往区域/建筑 →"
+		)
+		go_button.tooltip_text = "打开与该目标直接相关的操作界面；不会自动执行任何命令。"
+		go_button.pressed.connect(func(): get_tree().change_scene_to_file(target_scene))
+		box.add_child(go_button)
 	return card
 
 

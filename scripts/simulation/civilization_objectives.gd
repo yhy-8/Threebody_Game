@@ -27,6 +27,7 @@ const ERA_NOTES: Dictionary = {
 const OBJECTIVES: Array[Dictionary] = [
 	{
 		"id": "food_security",
+		"target_scene": "res://scenes/zone_view/zone_view.tscn",
 		"era": "survival",
 		"title": "站稳脚跟",
 		"description": "建立持续运行的食物来源，并把口粮储备提高到至少 15 天。",
@@ -35,6 +36,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "first_lesson",
+		"target_scene": "res://scenes/tech_tree/tech_tree.tscn",
 		"era": "survival",
 		"title": "把经验交给下一代",
 		"description": "让一项真实的教学计划开始运行；教师和学习者都会占用当前劳动力。",
@@ -43,6 +45,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "knowledge_foundation",
+		"target_scene": "res://scenes/tech_tree/tech_tree.tscn",
 		"era": "knowledge",
 		"title": "知识的基础",
 		"description": "完成至少 8 项知识的理论掌握或工程化，使文明不再只依赖零散经验。",
@@ -51,6 +54,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "industrial_base",
+		"target_scene": "res://scenes/tech_tree/tech_tree.tscn",
 		"era": "industry",
 		"title": "电与实验",
 		"description": "让电力网络真实供电，并完成实验室的工程化，使应用研究可以持续进行。",
@@ -59,6 +63,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "shelter_network",
+		"target_scene": "res://scenes/zone_view/zone_view.tscn",
 		"era": "industry",
 		"title": "为最坏的日子做准备",
 		"description": "让已完工、已配员且获得供能的庇护设施容纳至少 20% 的人口（下限 25 人）。",
@@ -67,6 +72,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "frontier_settlements",
+		"target_scene": "res://scenes/zone_view/zone_view.tscn",
 		"era": "industry",
 		"title": "走出摇篮",
 		"description": "在本区域之外建立至少一处前哨或常设聚落，并让它保持实际人口与补给。",
@@ -75,6 +81,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "population_center",
+		"target_scene": "res://scenes/zone_view/zone_view.tscn",
 		"era": "industry",
 		"title": "人口中心",
 		"description": "让文明人口达到 300 人，同时保持食物与庇护能力不被增长拖垮。",
@@ -83,6 +90,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "sky_watch",
+		"target_scene": "res://scenes/tech_tree/tech_tree.tscn",
 		"era": "planetary",
 		"title": "把天空变成记录",
 		"description": "掌握系统天文观测，并让一座天文观测站持续运行。",
@@ -91,6 +99,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "deep_knowledge",
+		"target_scene": "res://scenes/tech_tree/tech_tree.tscn",
 		"era": "planetary",
 		"title": "知识的纵深",
 		"description": "让至少 16 项知识达到理论掌握或工程化，形成可以互相支撑的知识体系。",
@@ -99,6 +108,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "fusion_theory",
+		"target_scene": "res://scenes/tech_tree/tech_tree.tscn",
 		"era": "interstellar",
 		"title": "聚变之路",
 		"description": "完成受控聚变的理论与工程化准备，证明文明能够在地面复现恒星能量。",
@@ -115,6 +125,7 @@ const OBJECTIVES: Array[Dictionary] = [
 	},
 	{
 		"id": "fusion_era",
+		"target_scene": "res://scenes/zone_view/zone_view.tscn",
 		"era": "interstellar",
 		"title": "点亮聚变",
 		"description": "完成受控聚变工程，并让聚变反应堆真实发电。",

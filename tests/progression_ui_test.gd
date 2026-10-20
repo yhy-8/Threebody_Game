@@ -33,6 +33,8 @@ func _run() -> void:
 			_expect(_inside_viewport(overlay.find_child("Panel", true, false)), "文明目标面板超出视口")
 			var body: Node = overlay.find_child("Panel", true, false).find_child("VBoxContainer", true, false)
 			_expect(body == null or body.get_child_count() > 0, "文明目标面板没有内容")
+			var go_button: Button = overlay.find_child("ObjectiveGoButton", true, false)
+			_expect(go_button != null and str(go_button.text).contains("前往"), "当前目标没有提供前往操作界面的入口")
 			overlay.visible = false
 
 	var context: Dictionary = GameState.get_civilization_context()
