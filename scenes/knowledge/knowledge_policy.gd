@@ -15,10 +15,25 @@ func _ready() -> void:
 	%ResponsePriorityOption.item_selected.connect(_on_response_priority_changed)
 	%CommitResponseButton.pressed.connect(_on_commit_response)
 	EventBus.game_paused.connect(_on_global_pause_changed)
+	if not _game_systems_ready():
+		%PolicyPanel.visible = false
+		%ActionPanel.visible = false
+		_show_message("当前没有进行中的游戏。", false)
+		return
 	_setup_preservation_controls()
 	_refresh_policy_display(true)
 	_rebuild_teaching_nodes()
 	_refresh_status()
+
+
+func _game_systems_ready() -> bool:
+	return (
+		GameState.game_started
+		and GameState.entities != null
+		and GameState.knowledge_policy_system != null
+		and GameState.education_system != null
+		and GameState.knowledge_system != null
+	)
 
 
 func _process(p_delta: float) -> void:
@@ -26,6 +41,8 @@ func _process(p_delta: float) -> void:
 	if _refresh_elapsed < 0.25:
 		return
 	_refresh_elapsed = 0.0
+	if not _game_systems_ready():
+		return
 	_refresh_policy_display()
 	_refresh_status()
 
@@ -36,6 +53,9 @@ func _on_global_pause_changed(p_paused: bool) -> void:
 
 func _setup_preservation_controls() -> void:
 	var preservation_available := false
+	if GameState.entities == null:
+		%PreservationSection.visible = false
+		return
 	for building in GameState.entities.buildings:
 		if (
 			not building.destroyed
@@ -65,6 +85,8 @@ func _setup_preservation_controls() -> void:
 func _rebuild_policy_list() -> void:
 	for child in %PolicyList.get_children():
 		child.queue_free()
+	if GameState.knowledge_policy_system == null:
+		return
 	var visible_policies: Array = GameState.knowledge_policy_system.get_visible_policies()
 	%PolicyPanel.visible = not visible_policies.is_empty()
 	for policy_value in visible_policies:
@@ -101,6 +123,9 @@ func _rebuild_policy_list() -> void:
 
 func _rebuild_teaching_nodes() -> void:
 	%TeachingNodeOption.clear()
+	if GameState.education_system == null or GameState.entities == null:
+		%TeachingSection.visible = false
+		return
 	for view_value in GameState.education_system.get_teachable_node_views():
 		var view: Dictionary = view_value
 		%TeachingNodeOption.add_item(str(view.get("display_name", view.get("id", ""))))
@@ -118,6 +143,8 @@ func _rebuild_teaching_nodes() -> void:
 
 func _rebuild_teaching_methods() -> void:
 	%TeachingMethodOption.clear()
+	if GameState.education_system == null or GameState.entities == null:
+		return
 	if %TeachingNodeOption.selected < 0:
 		return
 	var node_id := str(%TeachingNodeOption.get_item_metadata(%TeachingNodeOption.selected))
@@ -127,6 +154,9 @@ func _rebuild_teaching_methods() -> void:
 
 
 func _refresh_status() -> void:
+	if not _game_systems_ready():
+		%InstitutionStatusLabel.text = "当前没有进行中的游戏。"
+		return
 	var retention: Dictionary = GameState.knowledge_policy_system.get_retention_context()
 	var lines: Array[String] = ["制度运行结果（只来自已完成筹建且持续占岗的制度）"]
 	if GameState.knowledge_system.has_capability("oral_teaching"):
@@ -275,6 +305,7 @@ func _refresh_preservation_preview() -> void:
 	if (
 		not is_node_ready()
 		or not %PreservationSection.visible
+		or GameState.entities == null
 		or GameState.environmental_hazard_system == null
 	):
 		return
@@ -345,6 +376,8 @@ func _on_back_pressed() -> void:
 
 
 func _refresh_policy_display(p_force: bool = false) -> void:
+	if not _game_systems_ready():
+		return
 	var parts: Array[String] = []
 	for view_value in GameState.knowledge_policy_system.get_visible_policies():
 		var view: Dictionary = view_value

@@ -29,7 +29,7 @@ func _on_global_pause_changed(p_paused: bool) -> void:
 
 
 func _refresh_display() -> void:
-	if not GameState.game_started:
+	if not GameState.game_started or GameState.decision_manager == null or GameState.entities == null:
 		return
 	var decision_manager = GameState.decision_manager
 	var population = GameState.entities.population
@@ -53,11 +53,19 @@ func _refresh_display() -> void:
 func _build_policy_cards() -> void:
 	_clear_children(%PolicyVBox)
 	_policy_controls.clear()
+	if GameState.decision_manager == null or GameState.entities == null:
+		var empty_label := Label.new()
+		empty_label.text = "当前没有进行中的游戏。"
+		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		%PolicyVBox.add_child(empty_label)
+		return
 	for decision in GameState.decision_manager.get_policy_decisions():
 		%PolicyVBox.add_child(_make_policy_card(decision))
 
 
 func _update_policy_cards() -> void:
+	if GameState.decision_manager == null or GameState.entities == null:
+		return
 	for decision in GameState.decision_manager.get_policy_decisions():
 		if not _policy_controls.has(decision.id):
 			continue
