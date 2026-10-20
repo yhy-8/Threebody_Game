@@ -1179,7 +1179,10 @@ func auto_assign_zone_workers(p_zone_id: int) -> Dictionary:
 	var local_assigned := 0
 	for building in buildings:
 		local_assigned += int(building.assigned_workers)
-	var available: int = maxi(0, settlement_system.get_population(p_zone_id) - local_assigned)
+	var available: int = mini(
+		maxi(0, settlement_system.get_population(p_zone_id) - local_assigned),
+		entities.get_idle_population()
+	)
 	var assigned_total := 0
 	for building in buildings:
 		if available <= 0:

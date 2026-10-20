@@ -78,6 +78,20 @@ func _test_event_trigger_and_resolution() -> void:
 	_expect(GameState.get_pending_civilization_event().is_empty(), "事件解决后仍停留在待决状态")
 	_expect("night_sky" in GameState.civilization_events.triggered_ids, "事件完成记录没有保存")
 
+	var civic_context := context.duplicate(true)
+	civic_context["game_day"] = 31.0
+	civic_context["teaching_plan_count"] = 1
+	civic_context["population"] = 100
+	civic_context["food_stock"] = 100.0
+	civic_context["food_days"] = 20.0
+	_expect(GameState.civilization_events.evaluate(civic_context, 31.0), "公共工程事件没有按天数触发")
+	var civic_pending: Dictionary = GameState.get_pending_civilization_event()
+	_expect(str(civic_pending.get("event_id", "")) == "civic_works", "第 31 天触发的不是可重复公共工程事件")
+	var civic_result: Dictionary = GameState.resolve_civilization_event("keep_working")
+	_expect(civic_result.get("success", false), "公共工程事件无法解决")
+	_expect(not GameState.civilization_events.evaluate(civic_context, 40.0), "可重复事件在冷却期内再次触发")
+	_expect(GameState.civilization_events.evaluate(civic_context, 80.0), "可重复事件冷却结束后没有再次触发")
+
 
 func _test_zone_operations() -> void:
 	var capital := int(GameState.settlement_system.capital_zone_id)

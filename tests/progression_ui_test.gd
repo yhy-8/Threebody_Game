@@ -22,6 +22,9 @@ func _run() -> void:
 	await get_tree().process_frame
 	var toolbar: Control = scene.get_node("Toolbar")
 	_expect(_inside_viewport(toolbar), "新增目标/抉择/危机按钮后工具栏超出视口")
+	for button_name in ["ObjectivesButton", "CivilizationEventButton", "HazardResponseButton"]:
+		var button: Control = scene.get_node_or_null("Toolbar/%s" % button_name)
+		_expect(button != null and _inside_viewport(button), "%s 超出视口或不存在" % button_name)
 	var objectives_button: Button = scene.get_node_or_null("Toolbar/ObjectivesButton")
 	_expect(objectives_button != null, "主界面缺少文明目标按钮")
 	if objectives_button != null:
