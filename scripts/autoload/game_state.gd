@@ -1220,7 +1220,7 @@ func _worker_priority(p_building_type: String) -> int:
 		"algae_foraging": 0, "farm": 1, "algae_collector": 2,
 		"algae_power_plant": 3, "solar_array": 4, "wind_turbine": 4, "fossil_power_plant": 5, "fusion_reactor": 6,
 		"iron_mine": 7, "copper_mine": 8, "rare_mine": 9, "fossil_mine": 10,
-		"research_institute": 11, "laboratory": 12, "observatory_station": 13, "academy": 14,
+		"research_institute": 11, "laboratory": 12, "field_laboratory": 12, "observatory_station": 13, "academy": 14,
 		"shelter": 15, "deep_shelter": 16, "storage_vault": 17, "large_storage_vault": 18,
 		"radiation_shield": 19,
 	}
@@ -1766,6 +1766,12 @@ func _process_research_output(p_game_days_dt: float) -> void:
 		var output_rate: float = entities.get_research_building_rate(building, lab_output)
 		frame_output["applied"] = frame_output["applied"] + output_rate
 		tech_tree.produce_research("applied", output_rate * p_game_days_dt)
+	# 无电实验工坊产出较低的应用科研，保证电力科技之前存在可行设施
+	var field_lab_output: float = _research_config.get("field_laboratory_output_per_day", 0.8)
+	for field_item in entities.get_buildings_by_type("field_laboratory"):
+		var field_rate: float = entities.get_research_building_rate(field_item, field_lab_output)
+		frame_output["applied"] = frame_output["applied"] + field_rate
+		tech_tree.produce_research("applied", field_rate * p_game_days_dt)
 
 	# 科学院产出
 	var academies: Array = entities.get_buildings_by_type("academy")

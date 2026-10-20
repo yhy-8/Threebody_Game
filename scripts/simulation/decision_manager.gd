@@ -128,6 +128,12 @@ const _DEFAULT_BUILDINGS: Dictionary = {
 		"worker_capacity": 4, "per_worker_output": {},
 		"consumption": {"electricity": 1.0}, "build_time": 5.0, "storage_capacity": 20,
 	},
+	"field_laboratory": {
+		"name": "建造实验工坊", "description": "不依赖电力的手工实验场所；可满足基础实验设施需求并产出少量应用科研，是电力科技之前的过渡设施。",
+		"resource_cost": {"iron": 120, "copper": 20}, "tech_requirement": "laboratory", "requires_zone": true,
+		"worker_capacity": 3, "per_worker_output": {},
+		"consumption": {}, "build_time": 4.0, "storage_capacity": 0,
+	},
 	"laboratory": {
 		"name": "建造实验室", "description": "科学研究设施，产出应用科研点。",
 		"resource_cost": {"iron": 200, "copper": 80}, "tech_requirement": "laboratory", "requires_zone": true,

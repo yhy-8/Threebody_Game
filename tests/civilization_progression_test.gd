@@ -11,6 +11,7 @@ func _ready() -> void:
 	_test_objective_evaluation()
 	_test_event_trigger_and_resolution()
 	_test_zone_operations()
+	_test_field_laboratory_chain()
 	_test_save_roundtrip()
 	if _failures == 0:
 		print("CIVILIZATION_PROGRESSION_TEST_OK")
@@ -131,6 +132,31 @@ func _test_zone_operations() -> void:
 	_expect(solar_decision != null, "建筑目录缺少太阳能阵列")
 	var fusion_decision = GameState.decision_manager.available_decisions.get("build_fusion_reactor")
 	_expect(fusion_decision != null and fusion_decision.tech_requirement == "nuclear_fusion", "聚变反应堆没有接入终局科技")
+
+
+func _test_field_laboratory_chain() -> void:
+	var capital := int(GameState.settlement_system.capital_zone_id)
+	GameState.tech_tree.get_node("laboratory").unlocked = true
+	var build: Dictionary = GameState.execute_regional_construction("build_field_laboratory", capital)
+	_expect(build.get("success", false), "实验工坊建造失败：%s" % build.get("message", ""))
+	var field_lab = null
+	for building in GameState.entities.get_buildings_in_zone(capital):
+		if building.building_type == "field_laboratory":
+			field_lab = building
+			break
+	_expect(field_lab != null, "实验工坊没有进入区域")
+	if field_lab == null:
+		return
+	field_lab.under_construction = false
+	field_lab.active = true
+	field_lab.build_progress = field_lab.build_time
+	GameState.auto_assign_zone_workers(capital)
+	GameState.entities.update({"heat_level": 0.5}, GameState.planet_zones, 0.1, false)
+	_expect(field_lab.last_run_ratio > 0.0, "无电实验工坊没有实际运行")
+	_expect(
+		GameState.research_project_system._check_facilities(["laboratory"], GameState.entities).get("success", false),
+		"无电实验工坊不能满足实验室设施前置，电力科技仍会死锁",
+	)
 
 
 func _test_save_roundtrip() -> void:

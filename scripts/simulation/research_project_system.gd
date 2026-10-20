@@ -198,9 +198,15 @@ func load_state(p_data: Dictionary) -> bool:
 func _check_facilities(p_types: Array, p_entities) -> Dictionary:
 	for facility_type in p_types:
 		var operating := false
-		for building in p_entities.get_buildings_by_type(str(facility_type)):
-			if not building.under_construction and building.last_run_ratio > 0.0:
-				operating = true
+		var accepted_types: Array[String] = [str(facility_type)]
+		if str(facility_type) == "laboratory":
+			accepted_types.append("field_laboratory")
+		for accepted_type in accepted_types:
+			for building in p_entities.get_buildings_by_type(accepted_type):
+				if not building.under_construction and building.last_run_ratio > 0.0:
+					operating = true
+					break
+			if operating:
 				break
 		if not operating:
 			return {"success": false, "message": "缺少可运行设施：%s" % facility_type}
