@@ -463,7 +463,7 @@ func resolve_civilization_event(p_choice_id: String) -> Dictionary:
 		str(choice.get("result", choice.get("label", ""))),
 		"important",
 		"",
-		"civilization-event:%s:%s" % [event_id, p_choice_id]
+		"civilization-event:%s:%s:day%.1f" % [event_id, p_choice_id, game_time]
 	)
 	state_updated.emit()
 	return {"success": true, "message": str(choice.get("result", "抉择已执行"))}
@@ -1625,7 +1625,9 @@ func _update_civilization_progression(p_game_days_dt: float) -> void:
 			"%s 打开主界面「抉择」可查看选项与真实代价。" % str(pending.get("description", "")),
 			"important",
 			"",
-			"civilization-event-pending:%s" % str(pending.get("event_id", ""))
+			"civilization-event-pending:%s:day%.1f" % [
+				str(pending.get("event_id", "")), game_time,
+			]
 		)
 
 
