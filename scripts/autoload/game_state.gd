@@ -310,9 +310,11 @@ func get_civilization_context() -> Dictionary:
 	var food_flow: Dictionary = flow.get("food", {})
 	var food_net: float = float(food_flow.get("net", 0.0))
 	var food_stock: float = entities.get_resource("food")
-	var food_days: float = 999.0
+	var food_days: float = 0.0
 	if food_net < -0.001:
 		food_days = food_stock / -food_net
+	elif food_stock > 0.01:
+		food_days = 999.0
 	var power: Dictionary = entities.get_electricity_balance()
 	var power_generation: float = float(power.get("generation", 0.0))
 	var power_consumption: float = float(power.get("consumption", 0.0))
